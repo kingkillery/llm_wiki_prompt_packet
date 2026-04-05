@@ -66,7 +66,7 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           script = Path("dist/release-assets/install.ps1").read_text(encoding="utf-8")
-          if 'else { "${{ steps.meta.outputs.tag }}" }' in script:
+          if "${{" in script:
               raise SystemExit("Template expression leaked into generated PowerShell script")
           PY
 
