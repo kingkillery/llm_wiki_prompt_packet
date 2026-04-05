@@ -23,6 +23,8 @@ This packet turns the LLM Wiki idea into installable markdown prompts and a cros
 - `prompts/11-claude-command-lint.md` — Claude Code command content
 
 ### Installers
+- `install.ps1` - hosted PowerShell bootstrap installer for GitHub-based one-command installs
+- `install.sh` - hosted shell bootstrap installer for GitHub-based one-command installs
 - `installers/install_obsidian_agent_memory.py` — installs the packet into an Obsidian vault
 - `installers/install_obsidian_agent_memory.sh` — shell wrapper for the Python installer
 - `installers/install_obsidian_agent_memory.ps1` — PowerShell wrapper for the Python installer
@@ -69,6 +71,49 @@ This packet turns the LLM Wiki idea into installable markdown prompts and a cros
 - `scripts/`
 
 ## Installer usage
+
+### Hosted one-command install
+
+Run these from inside the target vault if you want the current directory to be used automatically.
+
+PowerShell:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1)))
+```
+
+Shell:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.sh | bash
+```
+
+Override the vault path explicitly:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1))) -Vault "C:\path\to\Your Vault"
+```
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.sh | bash -s -- "/path/to/Your Vault"
+```
+
+Override targets, branch or tag, and force mode:
+
+```powershell
+$env:LLM_WIKI_TARGETS="claude,codex"
+$env:LLM_WIKI_REF="main"
+$env:LLM_WIKI_FORCE="1"
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1)))
+```
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.sh | bash -s -- "$PWD" "claude,codex" --force main
+```
+
+The hosted bootstrap scripts download the packet zip from GitHub, extract it to a temporary directory, and then run the canonical Python installer so the right prompt files are copied into the right tool-specific paths.
+
+### Local installer
 
 Example:
 
