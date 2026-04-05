@@ -117,6 +117,8 @@ The hosted bootstrap scripts download the packet zip from GitHub, extract it to 
 
 For a pinned release or a "latest stable" installer path, use GitHub release assets instead of `main`.
 
+Release assets are now generated automatically by GitHub Actions from the checked-in root installers when a release is published. The CI pipeline bakes the release tag into the asset defaults so `releases/latest/download/*` stays pinned to the published version instead of drifting with `main`.
+
 PowerShell:
 
 ```powershell

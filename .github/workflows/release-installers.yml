@@ -1,0 +1,82 @@
+name: Release Installers
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to bake into installer assets
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-upload:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set release tag
+        id: meta
+        env:
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          tag="${EVENT_TAG:-${INPUT_TAG:-}}"
+          if [ -z "$tag" ]; then
+            echo "Unable to determine release tag." >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build release installers
+        run: |
+          python scripts/build_release_bootstraps.py \
+            --tag "${{ steps.meta.outputs.tag }}" \
+            --output-dir dist/release-assets
+
+      - name: Verify generated installers
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          root = Path("dist/release-assets")
+          for name in ("install.ps1", "install.sh"):
+              path = root / name
+              data = path.read_bytes()
+              if data.startswith(b"\xef\xbb\xbf"):
+                  raise SystemExit(f"{name} unexpectedly contains a UTF-8 BOM")
+              if b"\r\n" in data:
+                  raise SystemExit(f"{name} unexpectedly contains CRLF line endings")
+          PY
+          bash -n dist/release-assets/install.sh
+          python - <<'PY'
+          from pathlib import Path
+          script = Path("dist/release-assets/install.ps1").read_text(encoding="utf-8")
+          if 'else { "${{ steps.meta.outputs.tag }}" }' in script:
+              raise SystemExit("Template expression leaked into generated PowerShell script")
+          PY
+
+      - name: Upload assets to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          files: |
+            dist/release-assets/install.ps1
+            dist/release-assets/install.sh
+          fail_on_unmatched_files: true
+
