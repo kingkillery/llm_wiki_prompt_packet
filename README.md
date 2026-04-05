@@ -113,6 +113,32 @@ curl -fsSL https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/
 
 The hosted bootstrap scripts download the packet zip from GitHub, extract it to a temporary directory, and then run the canonical Python installer so the right prompt files are copied into the right tool-specific paths.
 
+### Versioned public bootstrap path
+
+For a pinned release or a "latest stable" installer path, use GitHub release assets instead of `main`.
+
+PowerShell:
+
+```powershell
+& ([scriptblock]::Create((irm https://github.com/kingkillery/llm_wiki_prompt_packet/releases/latest/download/install.ps1)))
+```
+
+Shell:
+
+```bash
+curl -fsSL https://github.com/kingkillery/llm_wiki_prompt_packet/releases/latest/download/install.sh | bash
+```
+
+Pinned to a specific release tag:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/v0.1.0/install.ps1)))
+```
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/v0.1.0/install.sh | bash
+```
+
 ### Local installer
 
 Example:
