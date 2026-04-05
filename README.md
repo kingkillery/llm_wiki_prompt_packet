@@ -82,6 +82,12 @@ PowerShell:
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1)))
 ```
 
+`cmd.exe`:
+
+```bat
+%windir%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1)))"
+```
+
 Shell:
 
 ```bash
@@ -122,7 +128,16 @@ Release assets are now generated automatically by GitHub Actions from the checke
 PowerShell:
 
 ```powershell
-& ([scriptblock]::Create((irm https://github.com/kingkillery/llm_wiki_prompt_packet/releases/latest/download/install.ps1)))
+$tmp = Join-Path $env:TEMP 'llm-wiki-install.ps1'
+Invoke-WebRequest https://github.com/kingkillery/llm_wiki_prompt_packet/releases/latest/download/install.ps1 -OutFile $tmp
+& $tmp
+Remove-Item $tmp -Force
+```
+
+`cmd.exe`:
+
+```bat
+%windir%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$tmp = Join-Path $env:TEMP 'llm-wiki-install.ps1'; Invoke-WebRequest https://github.com/kingkillery/llm_wiki_prompt_packet/releases/latest/download/install.ps1 -OutFile $tmp; & $tmp; Remove-Item $tmp -Force"
 ```
 
 Shell:
@@ -135,6 +150,12 @@ Pinned to a specific release tag:
 
 ```powershell
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/v0.1.0/install.ps1)))
+```
+
+`cmd.exe`:
+
+```bat
+%windir%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/v0.1.0/install.ps1)))"
 ```
 
 ```bash
