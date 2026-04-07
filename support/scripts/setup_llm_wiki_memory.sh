@@ -195,6 +195,23 @@ local_qmd_command_path() {
   return 1
 }
 
+local_brv_command_path() {
+  local candidates=(
+    ".llm-wiki/node_modules/.bin/brv"
+    ".llm-wiki/node_modules/.bin/brv.cmd"
+    ".llm-wiki/node_modules/.bin/brv.ps1"
+  )
+
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    if [[ -x "$WORKSPACE_ROOT/$candidate" || -f "$WORKSPACE_ROOT/$candidate" ]]; then
+      printf '%s\n' "$WORKSPACE_ROOT/$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
 resolve_git_source() {
   local repo_url="$1"
   if [[ "$repo_url" == git+* ]]; then
@@ -332,6 +349,17 @@ install_packet_local_qmd_dependency() {
   require_cmd npm
   npm install --prefix "$(dirname "$manifest")"
   local_qmd_command_path
+}
+
+install_packet_local_brv_dependency() {
+  local manifest
+  manifest="$(local_qmd_manifest_path)"
+  if [[ ! -f "$manifest" ]]; then
+    return 1
+  fi
+  require_cmd npm
+  npm install --prefix "$(dirname "$manifest")"
+  local_brv_command_path
 }
 
 ensure_qmd_available() {
@@ -514,17 +542,25 @@ if [[ "$SKIP_QMD" -eq 0 ]]; then
 fi
 
 if [[ "$SKIP_BRV" -eq 0 ]]; then
-  if command -v "$BRV_COMMAND" >/dev/null 2>&1; then
+  if local_cmd="$(local_brv_command_path 2>/dev/null)"; then
+    BRV_COMMAND="$local_cmd"
+    SUMMARY+=("Using packet-local brv dependency at $BRV_COMMAND")
+  elif command -v "$BRV_COMMAND" >/dev/null 2>&1; then
     SUMMARY+=("$BRV_COMMAND already installed")
   elif [[ "$VERIFY_ONLY" -eq 1 ]]; then
     FAILURES+=("Missing Byterover command: $BRV_COMMAND")
   else
-    require_cmd npm
-    npm install -g byterover-cli
-    SUMMARY+=("Installed brv from npm")
+    if local_cmd="$(install_packet_local_brv_dependency 2>/dev/null)"; then
+      BRV_COMMAND="$local_cmd"
+      SUMMARY+=("Installed packet-local brv dependency into .llm-wiki")
+    else
+      require_cmd npm
+      npm install -g byterover-cli
+      SUMMARY+=("Installed brv from npm")
+    fi
   fi
 
-  if command -v "$BRV_COMMAND" >/dev/null 2>&1; then
+  if command -v "$BRV_COMMAND" >/dev/null 2>&1 || [[ -f "$BRV_COMMAND" ]]; then
     if test_brv_status >/dev/null; then
       SUMMARY+=("brv verify: ok")
     else

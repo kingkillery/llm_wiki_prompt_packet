@@ -77,6 +77,21 @@ function Get-LocalQmdCommandPath {
     return $null
 }
 
+function Get-LocalBrvCommandPath {
+    param([string]$WorkspaceRoot)
+    $candidates = @(
+        (Join-Path $WorkspaceRoot ".llm-wiki\node_modules\.bin\brv.cmd"),
+        (Join-Path $WorkspaceRoot ".llm-wiki\node_modules\.bin\brv.ps1"),
+        (Join-Path $WorkspaceRoot ".llm-wiki\node_modules\.bin\brv")
+    )
+    foreach ($candidate in $candidates) {
+        if (Test-Path $candidate) {
+            return $candidate
+        }
+    }
+    return $null
+}
+
 function Resolve-GitSource {
     param([string]$RepoUrl)
     if ($RepoUrl.StartsWith("git+")) {
@@ -255,6 +270,23 @@ function Install-PacketLocalQmdDependency {
 
     & $npm install --prefix (Split-Path -Parent $manifestPath)
     return (Get-LocalQmdCommandPath -WorkspaceRoot $WorkspaceRoot)
+}
+
+function Install-PacketLocalBrvDependency {
+    param([string]$WorkspaceRoot)
+
+    $manifestPath = Get-LocalQmdManifestPath -WorkspaceRoot $WorkspaceRoot
+    if (-not (Test-Path $manifestPath)) {
+        return $null
+    }
+
+    $npm = Get-NpmCommand
+    if (-not $npm) {
+        throw "npm is required to install the packet-local brv dependency."
+    }
+
+    & $npm install --prefix (Split-Path -Parent $manifestPath)
+    return (Get-LocalBrvCommandPath -WorkspaceRoot $WorkspaceRoot)
 }
 
 function Resolve-QmdCommand {
@@ -530,21 +562,33 @@ if (-not $SkipQmd) {
 }
 
 if (-not $SkipBrv) {
-    $brvExists = Get-Command $BrvCommand -ErrorAction SilentlyContinue
-    if ($brvExists) {
-        $summary.Add("$BrvCommand already installed")
-    } elseif ($VerifyOnly) {
-        $failures.Add("Missing Byterover command: $BrvCommand")
+    $localBrv = Get-LocalBrvCommandPath -WorkspaceRoot $WorkspaceRoot
+    if ($localBrv) {
+        $BrvCommand = $localBrv
+        $summary.Add("Using packet-local brv dependency at $BrvCommand")
     } else {
-        $npm = Get-NpmCommand
-        if (-not $npm) {
-            throw "npm is required to install brv."
+        $brvExists = Get-Command $BrvCommand -ErrorAction SilentlyContinue
+        if ($brvExists) {
+            $summary.Add("$BrvCommand already installed")
+        } elseif ($VerifyOnly) {
+            $failures.Add("Missing Byterover command: $BrvCommand")
+        } else {
+            $localInstalledBrv = Install-PacketLocalBrvDependency -WorkspaceRoot $WorkspaceRoot
+            if ($localInstalledBrv) {
+                $BrvCommand = $localInstalledBrv
+                $summary.Add("Installed packet-local brv dependency into .llm-wiki")
+            } else {
+                $npm = Get-NpmCommand
+                if (-not $npm) {
+                    throw "npm is required to install brv."
+                }
+                & $npm install -g byterover-cli
+                $summary.Add("Installed brv from npm")
+            }
         }
-        & $npm install -g byterover-cli
-        $summary.Add("Installed brv from npm")
     }
 
-    if ((Get-Command $BrvCommand -ErrorAction SilentlyContinue)) {
+    if ((Get-Command $BrvCommand -ErrorAction SilentlyContinue) -or (Test-Path $BrvCommand)) {
         $brvStatus = Test-BrvStatus -CommandName $BrvCommand
         if ($brvStatus.Ok) {
             $summary.Add("brv verify: ok")
