@@ -1,2 +1,5 @@
 .omx/
 __pycache__/
+.brv/
+node_modules/
+npm-debug.log*

@@ -1,56 +1,40 @@
-# LLM Wiki Agent Guide
+# LLM Wiki Memory Agent Guide
 
-Maintain this repo as a persistent markdown wiki built from immutable raw sources.
-
-## Rules
-- Never edit raw sources unless explicitly asked.
-- Prefer updating existing wiki pages over creating duplicates.
-- Maintain links and cross-references.
-- Surface contradictions, uncertainty, and open questions explicitly.
-- Make small, reversible edits by default.
-- Ask before deletions, large renames, restructures, or schema changes.
+Maintain this vault as a persistent markdown wiki built from immutable raw sources.
 
 ## Startup
-Before editing:
+
+Before substantive work:
+
 1. Read this file.
-2. Read `wiki/index.md`.
-3. Read recent entries in `wiki/log.md`.
-4. Search for existing relevant pages.
+2. Read `LLM_WIKI_MEMORY.md` if present.
+3. Read `.llm-wiki/config.json` if present.
+4. If `pk-qmd`, `brv`, or GitVizz are missing, run the installed setup helper before deeper work:
+   - PowerShell: `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup_llm_wiki_memory.ps1`
+   - Shell: `bash ./scripts/setup_llm_wiki_memory.sh`
+5. Read `wiki/index.md`.
+6. Read recent `wiki/log.md`.
+7. Search for existing related pages.
 
-## Task types
+## Tool routing
 
-### Ingest
-When a new source is added:
-- read it
-- create or update a source summary
-- update affected entity/concept/synthesis pages
-- update `wiki/index.md`
-- append an entry to `wiki/log.md`
+- Use `pk-qmd` for repo-specific source evidence.
+- Use `pk-qmd` first when the target file, folder, prompt, or note is not yet known.
+- Use `brv` only for durable preferences, decisions, and workflow quirks.
+- Prefer current source evidence over `brv` memory when they conflict.
+- If BRV has no connected provider, do not rely on `brv query` or `brv curate` for task completion.
+- Use configured `GitVizz` URLs for local graph and web access.
+- Use `GitVizz` when you need repo topology, API surface, route relationships, or to hone in after `pk-qmd` found the likely area.
+- Do not surface raw tool choices to end users unless asked.
 
-### Query
-When answering questions:
-- start from the wiki, not raw files
-- read raw sources only when needed
-- if the answer is durable, file it back into the wiki
-- update `index.md` and `log.md` when filing
+## Rules
 
-### Lint
-Periodically check for:
-- contradictions
-- stale claims
-- orphan or weakly linked pages
-- missing concept/entity pages
-- duplicate pages
-- broken links
-- obvious research gaps
-
-Fix safe issues directly. Flag judgment-heavy issues.
-
-## Defaults
-- Prefer one-source-at-a-time ingestion unless asked to batch.
-- Prefer concise pages over long notes.
-- Preserve existing naming, structure, and link style.
-- Keep `log.md` append-only.
+- Never edit `raw/` unless explicitly asked.
+- Prefer updating existing pages over creating duplicates.
+- Maintain links, contradictions, and open questions.
+- Make small, reversible edits by default.
+- Ask before deletions, large renames, or restructures.
 
 ## Done when
-A task is complete only when the relevant wiki pages are updated, `index.md` is updated if needed, and `log.md` is updated if needed.
+
+A task is complete only when relevant pages are updated, `index.md` is updated if needed, and `log.md` is updated if needed.

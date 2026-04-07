@@ -1,40 +1,37 @@
 ---
 name: llm-wiki-organizer
-description: Use this skill when the repo is an Obsidian-style knowledge vault and the task is to ingest a source, answer from the persistent wiki, file a durable answer back into the wiki, or lint and maintain the wiki. Do not use it for unrelated code changes.
+description: Use this skill when the repo is an llm-wiki-memory vault and the task is to ingest a source, answer from the persistent wiki, use pk-qmd for repo-local evidence retrieval, consult brv for durable memory, or lint and maintain the wiki.
 ---
 
-# LLM Wiki Organizer
+# LLM Wiki Memory Organizer
 
-This skill helps maintain a persistent markdown wiki built from immutable raw sources.
-
-## Rules
-- Never edit raw sources unless explicitly asked.
-- Update existing wiki pages before creating duplicates.
-- Keep links, contradictions, and open questions current.
-- Update `wiki/index.md` when page inventory or routing changes.
-- Append `wiki/log.md` for ingests, filed query outputs, and lint passes.
-- Ask before deletions, restructures, or schema changes.
+This skill helps maintain a persistent markdown wiki backed by an explicit retrieval and memory stack.
 
 ## Startup
-1. Read `AGENTS.md` if present.
-2. Read `wiki/index.md`.
-3. Read recent `wiki/log.md`.
-4. Search for existing pages before creating new ones.
 
-## Workflows
+1. Read `AGENTS.md`.
+2. Read `LLM_WIKI_MEMORY.md` if present.
+3. Read `.llm-wiki/config.json` if present.
+4. If `pk-qmd`, `brv`, or GitVizz are not ready, run `scripts/setup_llm_wiki_memory.ps1` or `scripts/setup_llm_wiki_memory.sh` before substantive work.
+5. Read `wiki/index.md`.
+6. Read recent `wiki/log.md`.
+7. Search for existing pages before creating new ones.
 
-### Ingest
-Read the source, create or update its summary, update affected pages, then update `index.md` and append `log.md`.
+## Routing
 
-### Query
-Answer from the wiki first. Read raw sources only when needed. If the result will likely be useful again, file it back into the wiki and update `index.md` and `log.md`.
-
-### Lint
-Check for contradictions, stale claims, orphan pages, duplicates, broken links, missing entity or concept pages, and uncited claims. Fix safe issues directly and flag judgment-heavy ones.
+- `pk-qmd` is the default evidence lookup tool for repo-specific work.
+- Use `pk-qmd` first for difficult searches when the target repo area is not known yet.
+- `brv` is for durable preferences, prior decisions, and costly rediscoveries.
+- If BRV has no connected provider, do not block on BRV query/curate.
+- `GitVizz` is the local graph and web surface.
+- Use `GitVizz` to inspect repo topology, API routes, dependency context, and to narrow in once `pk-qmd` has located the relevant area.
+- Source evidence beats memory for current factual claims.
 
 ## Response shape
+
 - Task type
+- Stack/config used
 - Files read
 - Files changed
 - What changed
-- Unresolved questions / conflicts
+- Unresolved questions or conflicts

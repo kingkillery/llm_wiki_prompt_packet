@@ -1,32 +1,35 @@
-# LLM Wiki Claude Guide
+# LLM Wiki Memory Claude Guide
 
 Keep this file brief and directive.
 
-## Scope
-Maintain this vault as a persistent markdown wiki built from immutable raw sources.
+## Startup
+
+Before editing:
+
+1. Read `.llm-wiki/config.json` if present.
+2. Read `LLM_WIKI_MEMORY.md` if present.
+3. If the stack is missing or inactive, run `.\scripts\setup_llm_wiki_memory.ps1` on Windows PowerShell or `./scripts/setup_llm_wiki_memory.sh` on shell-based systems before deeper work.
+4. Read `wiki/index.md`.
+5. Read recent `wiki/log.md`.
+6. Search for existing related pages.
+
+## Routing
+
+- Use `pk-qmd` for repo-specific evidence and prompt or docs lookup.
+- Use `pk-qmd` first when you still need to locate the right repo area.
+- Use `brv` only for durable memory and repeated workflow knowledge.
+- If `pk-qmd` and `brv` disagree, trust current source evidence.
+- If BRV has no connected provider, skip BRV query/curate and continue with source evidence.
+- Treat `GitVizz` as the configured local graph surface.
+- Use `GitVizz` when the task is about repo structure, API surface, dependency context, or narrowing around a known folder, route, or component.
 
 ## Rules
+
 - Do not edit raw sources unless explicitly asked.
 - Update existing wiki pages before creating new ones.
 - Maintain links, contradictions, and open questions.
 - Keep edits small and reversible.
-- Ask before deletions, large renames, restructures, or schema changes.
-
-## Startup
-Before editing:
-1. Read `wiki/index.md`.
-2. Read recent `wiki/log.md`.
-3. Search for existing related pages.
-
-## Workflows
-### Ingest
-Read source → update source summary → update affected pages → update `wiki/index.md` → append `wiki/log.md`
-
-### Query
-Answer from the wiki first. Read raw files only when needed. File durable outputs back into the wiki.
-
-### Lint
-Check for contradictions, stale claims, weak links, duplicates, broken links, and missing pages. Fix safe issues directly.
 
 ## Done
+
 The task is complete only when relevant pages are updated, plus `index.md` and `log.md` when needed.

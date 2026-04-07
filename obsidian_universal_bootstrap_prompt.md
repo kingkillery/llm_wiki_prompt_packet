@@ -1,9 +1,9 @@
-# Universal bootstrap prompt for an Obsidian organizer / memory system
+# Universal bootstrap prompt for the llm-wiki-memory system
 
 Paste this into Claude Code, Codex, Droid, Antigravity, or another terminal-capable coding agent.
 
 ```md
-You are a senior developer-operator. Your job is to bootstrap an Obsidian-based organizer / memory system inside my existing vault and install the repo-local agent files needed for Claude Code, Codex, Droid, and Antigravity-style workflows.
+You are a senior developer-operator. Your job is to bootstrap the llm-wiki-memory system inside my existing Obsidian vault and install the repo-local agent files needed for Claude Code, Codex, Droid, and Antigravity-style workflows.
 
 ## Objective
 
@@ -11,12 +11,22 @@ Set up my vault as a persistent markdown knowledge base with:
 - immutable raw sources
 - a maintained wiki layer
 - concise top-level guidance files
-- reusable repo-local skills / workflows / commands
-- a repeatable local installer script
+- reusable repo-local skills, workflows, and commands
+- an explicit stack config for `pk-qmd`, `brv`, and `GitVizz`
+- repeatable local verification scripts
 
 Assume this is an implementation task, not a planning-only task.
 Do the work.
-Only stop for GUI downloads, browser sign-in, OS permission prompts, admin elevation, or destructive overwrite decisions.
+Only stop for GUI downloads, browser sign-in, OS permission prompts, admin elevation, private-repo authentication, or destructive overwrite decisions.
+
+## System model
+
+The stack is:
+- `pk-qmd` for source evidence and corpus retrieval
+- `Byterover` (`brv`) for durable memory and recurring workflow knowledge
+- `GitVizz` for repo graph and local web access
+
+End users should experience one coherent intelligence surface. Do not make them manage raw tool choices unless they explicitly ask.
 
 ## Inputs
 
@@ -26,6 +36,10 @@ Use these variables and ask for them only if missing:
 - `INSTALL_TOOLS`: default `true`
 - `INSTALL_OBSIDIAN`: default `false` if Obsidian is already installed, otherwise `true`
 - `FORCE_OVERWRITE`: default `false`
+- `GITVIZZ_FRONTEND_URL`: default `http://127.0.0.1:3000`
+- `GITVIZZ_BACKEND_URL`: default `http://127.0.0.1:8003`
+- `PK_QMD_MCP_URL`: default `http://127.0.0.1:8181/mcp`
+- `PK_QMD_REPO_URL`: default `https://github.com/kingkillery/pk-qmd`
 
 If a value is missing, infer it when safe.
 
@@ -33,13 +47,22 @@ If a value is missing, infer it when safe.
 
 Keep `AGENTS.md` and `CLAUDE.md` brief, directive, and operational.
 They should guide the agent, not become long documentation essays.
-Put larger procedures into skills, workflows, commands, or support files.
+Put larger procedures into skills, workflows, commands, config, and support files.
 
 ## Canonical file layout to install in the vault
 
 ### Shared root
 - `AGENTS.md`
 - `CLAUDE.md`
+
+### Stack config and health checks
+- `.llm-wiki/config.json`
+- `.llm-wiki/package.json`
+- `.llm-wiki/qmd-embed-state.json`
+- `.brv/context-tree/.gitkeep`
+- `scripts/check_llm_wiki_memory.ps1`
+- `scripts/check_llm_wiki_memory.sh`
+- `scripts/qmd_embed_runner.mjs`
 
 ### Vault content
 - `raw/`
@@ -70,112 +93,100 @@ Put larger procedures into skills, workflows, commands, or support files.
 
 ### Droid
 - root `AGENTS.md`
-- do not invent extra Droid-only config unless it is clearly needed
+- do not invent extra Droid-only config unless clearly needed
 
 ### Antigravity
 - `.agent/workflows/wiki-ingest.md`
 - `.agent/workflows/wiki-query.md`
 - `.agent/workflows/wiki-lint.md`
 
-### Local installer
-- `scripts/install_obsidian_agent_memory.py`
-- `scripts/install_obsidian_agent_memory.sh`
-- optional Windows wrapper: `scripts/install_obsidian_agent_memory.ps1`
-
 ## What you must do
 
-### 1) Verify or install tooling, if missing
+### 1. Verify or install tooling, if missing
 
 Use official docs and package-manager installs where documented.
 If a tool is already installed and working, do not reinstall it.
 
-#### Obsidian
-- Download page: https://obsidian.md/download
-- Install help: https://obsidian.md/help/install
+#### `pk-qmd`
+- This packet should carry a direct dependency path to `pk-qmd`, so use the packet-local manifest first.
+- Preferred source repo: `https://github.com/kingkillery/pk-qmd`
+- First try the packet-local install:
 
-#### Claude Code
-- Quickstart: https://code.claude.com/docs/en/quickstart
-- Setup / system requirements: https://code.claude.com/docs/en/setup
-- Memory / `CLAUDE.md`: https://code.claude.com/docs/en/memory
-- `.claude` directory: https://code.claude.com/docs/en/claude-directory
-- Skills and commands docs: https://code.claude.com/docs/en/skills
+```powershell
+npm install --prefix .\.llm-wiki
+.\.llm-wiki\node_modules\.bin\pk-qmd.cmd --help
+```
 
-#### Codex
-- Quickstart: https://developers.openai.com/codex/quickstart
-- CLI: https://developers.openai.com/codex/cli
-- Windows guidance: https://developers.openai.com/codex/windows
-- `AGENTS.md`: https://developers.openai.com/codex/guides/agents-md/
-- Skills: https://developers.openai.com/codex/skills/
+- If the fork already exists locally, use that checkout instead of recloning.
+- Fallback install from the fork checkout:
 
-#### Droid / Factory
-- CLI quickstart: https://docs.factory.ai/cli/getting-started/quickstart
-- CLI overview: https://docs.factory.ai/cli/getting-started/overview
-- `AGENTS.md` compatibility: https://docs.factory.ai/cli/configuration/agents-md
-- Settings: https://docs.factory.ai/cli/configuration/settings
+```powershell
+git clone https://github.com/kingkillery/pk-qmd.git pk-qmd
+cd pk-qmd
+bun install
+bun link
+pk-qmd --help
+```
 
-#### Antigravity
-- Home / downloads: https://antigravity.google
-- Docs: https://antigravity.google/docs
-- Getting started codelab: https://codelabs.developers.google.com/getting-started-google-antigravity
+- After installation, run the fork's MCP wiring helper if present:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-pk-qmd-mcp-all.ps1
+```
+
+#### Byterover
+- macOS Apple Silicon / Linux: `curl -fsSL https://byterover.dev/install.sh | sh`
+- Windows or macOS Intel: `npm install -g byterover-cli`
+- Then authenticate with either `brv login --api-key <key>` or `BYTEROVER_API_KEY`
+
+#### GitVizz
+- frontend origin should be `http://localhost:3000/`
+- backend origin should be `http://localhost:8003/`
+- GitHub App config should use:
+  - Homepage URL: `http://localhost:3000/`
+  - Setup URL: `http://localhost:3000/`
+  - Callback URL: `http://localhost:3000/api/auth/callback/github`
 
 #### Common prerequisites
-- Node.js: https://nodejs.org/en/download
-- npm docs: https://docs.npmjs.com/downloading-and-installing-node-js-and-npm/
-- Git: https://git-scm.com/install/
-
-## OS-specific install behavior
-
-### macOS
-- Obsidian: install from the official download page if missing.
-- Claude Code: `curl -fsSL https://claude.ai/install.sh | bash`
-- Codex: `brew install codex` if Homebrew is present, otherwise `npm install -g @openai/codex`
-- Droid: `curl -fsSL https://app.factory.ai/cli | sh`
-- Antigravity: use the official macOS download and continue with vault setup if GUI confirmation is needed.
-
-### Windows
-- Obsidian: install from the official download page if missing.
-- Claude Code PowerShell: `irm https://claude.ai/install.ps1 | iex`
-- Claude Code WinGet alternative: `winget install Anthropic.ClaudeCode`
-- Codex: `npm install -g @openai/codex`
-- Droid: use the official current Windows path from Factory docs; do not invent an undocumented command
-- Antigravity: use the official Windows download and continue with vault setup if GUI confirmation is needed.
-
-### Linux
-- Obsidian: prefer `flatpak install flathub md.obsidian.Obsidian`; otherwise use AppImage or Snap from official Obsidian help.
-- Claude Code: `curl -fsSL https://claude.ai/install.sh | bash`
-- Codex: `npm install -g @openai/codex`
-- Droid: `curl -fsSL https://app.factory.ai/cli | sh`
-- Antigravity: use the official Linux-compatible distribution if available; continue with vault setup even if install must be finished manually.
+- Bun
+- Node.js
+- Python
+- Git
 
 ## File content requirements
 
-Write concise but useful versions of these prompt files:
+Write concise but useful versions of these files:
 
 1. `AGENTS.md`
 2. `CLAUDE.md`
-3. `.claude/commands/wiki-ingest.md`
-4. `.claude/commands/wiki-query.md`
-5. `.claude/commands/wiki-lint.md`
-6. `.agents/skills/llm-wiki-organizer/SKILL.md`
-7. `.agents/skills/llm-wiki-organizer/assets/system-prompt.md`
-8. `.agents/skills/llm-wiki-organizer/assets/tool-directives.md`
-9. `.agents/skills/llm-wiki-organizer/assets/output-contract.md`
-10. `.agent/workflows/wiki-ingest.md`
-11. `.agent/workflows/wiki-query.md`
-12. `.agent/workflows/wiki-lint.md`
-13. `scripts/install_obsidian_agent_memory.py`
-14. `scripts/install_obsidian_agent_memory.sh`
+3. `.llm-wiki/config.json`
+4. `scripts/check_llm_wiki_memory.ps1`
+5. `scripts/check_llm_wiki_memory.sh`
+6. `scripts/qmd_embed_runner.mjs`
+7. `.claude/commands/wiki-ingest.md`
+8. `.claude/commands/wiki-query.md`
+9. `.claude/commands/wiki-lint.md`
+10. `.agents/skills/llm-wiki-organizer/SKILL.md`
+11. `.agents/skills/llm-wiki-organizer/assets/system-prompt.md`
+12. `.agents/skills/llm-wiki-organizer/assets/tool-directives.md`
+13. `.agents/skills/llm-wiki-organizer/assets/output-contract.md`
+14. `.agent/workflows/wiki-ingest.md`
+15. `.agent/workflows/wiki-query.md`
+16. `.agent/workflows/wiki-lint.md`
+17. `installers/install_obsidian_agent_memory.py`
+18. `installers/install_obsidian_agent_memory.sh`
 
 ## Content rules
 
 - Keep top-level instruction files short.
-- Put detailed operating procedures into skills, workflows, commands, and support files.
-- Preserve the core model: immutable raw sources, maintained wiki, schema-guided behavior.
-- Prefer updating existing pages over duplicating them.
-- Surface contradictions and uncertainty explicitly.
+- Store stack endpoints and command names in `.llm-wiki/config.json`.
+- Use `pk-qmd` for repo-specific evidence retrieval.
+- Bootstrap a real QMD collection and embeddings for the vault, not just the CLI install.
+- Use `brv` only for durable memory, preferences, and non-obvious workflow conventions.
+- Initialize `.brv/config.json` when BRV is available.
+- Prefer current source evidence over memory when they conflict.
 - Keep logs append-only.
 - Use markdown that works well in Obsidian.
-- Use relative paths inside the vault whenever possible.
 - Do not overwrite user-authored content unless forced.
 
 ## Verification steps
@@ -183,9 +194,10 @@ Write concise but useful versions of these prompt files:
 After setup:
 1. verify each installed CLI with a version check or executable lookup
 2. verify the vault folders and key files exist
-3. verify `wiki/index.md` and `wiki/log.md` exist
+3. verify `.llm-wiki/config.json` exists and contains the stack endpoints
 4. run the local installer in dry-run mode
-5. print a short operator report
+5. run the local health check script
+6. print a short operator report
 
 ## Required final report format
 
@@ -215,9 +227,9 @@ Return exactly these sections:
 ## Execution policy
 
 - Proceed automatically for safe, reversible actions.
-- Ask only for admin elevation, GUI confirmation, browser sign-in, or overwrite of existing user-authored files.
-- If a single tool install is blocked, continue with the vault structure and repo-local agent files.
-- If current official docs conflict with an expected command, trust the docs and adapt.
+- Ask only for admin elevation, GUI confirmation, browser sign-in, private repo auth, or overwrite of existing user-authored files.
+- If `pk-qmd` install is blocked by private repo access, continue with the vault structure, config, prompts, and verification scripts.
+- If a single tool install is blocked, continue with the repo-local setup.
 
 Begin now.
 ```

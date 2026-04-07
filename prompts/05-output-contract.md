@@ -4,6 +4,9 @@ For strict operational turns, respond in this shape:
 
 Task type: <ingest|query|lint|schema|other>
 
+Stack/config used:
+- <config path or defaults>
+
 Files read:
 - <path>
 - <path>

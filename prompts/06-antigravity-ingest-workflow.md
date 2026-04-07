@@ -1,25 +1,19 @@
----
-description: ingest one source into the persistent obsidian wiki
----
-# Wiki ingest workflow
+Read `CLAUDE.md`, then read `LLM_WIKI_MEMORY.md` if present, `.llm-wiki/config.json`, `wiki/index.md`, and recent `wiki/log.md`.
 
-1. Read `AGENTS.md` if present.
-2. Read `wiki/index.md`.
-3. Read recent `wiki/log.md`.
-4. Read the source the user wants ingested.
-5. Extract:
-   - entities
-   - concepts
-   - claims
-   - dates or timeline items
-   - contradictions
-   - open questions
-6. Create or update the source summary page.
-7. Update all materially affected wiki pages.
-8. Update `wiki/index.md`.
-9. Append an `ingest` entry to `wiki/log.md`.
-10. Return:
-   - files read
-   - files changed
-   - uncertainties
-   - next best actions
+Ingest the specified source into the wiki:
+- create or update a source summary
+- update affected entity, concept, synthesis, comparison, or timeline pages
+- update `wiki/index.md`
+- append an `ingest` entry to `wiki/log.md`
+
+Routing:
+- use `pk-qmd` for repo-specific evidence retrieval if the source is not already in scope
+- use `brv` only for stable workflow or preference context
+- trust current source evidence over memory
+
+Return:
+- stack/config used
+- files read
+- files changed
+- what changed
+- unresolved questions

@@ -1,0 +1,9 @@
+{
+  "name": "llm-wiki-prompt-packet",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Bootstrap packet for the llm-wiki-memory stack",
+  "dependencies": {
+    "@kingkillery/pk-qmd": "git+https://github.com/kingkillery/pk-qmd.git#main"
+  }
+}
