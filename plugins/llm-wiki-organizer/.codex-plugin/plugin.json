@@ -34,6 +34,13 @@
       "Query the wiki for supporting evidence.",
       "Lint recent pages and flag conflicts."
     ],
-    "brandColor": "#3B82F6"
+    "brandColor": "#3B82F6",
+    "composerIcon": "./assets/composer-icon.png",
+    "logo": "./assets/logo.png",
+    "screenshots": [
+      "./assets/screenshot1.png",
+      "./assets/screenshot2.png",
+      "./assets/screenshot3.png"
+    ]
   }
 }
