@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+PYTHON_BIN="${PYTHON_BIN:-python3}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_PATH="${1:-$(cd "$SCRIPT_DIR/.." && pwd)/.llm-wiki/config.json}"
@@ -9,7 +10,7 @@ if [[ ! -f "$CONFIG_PATH" ]]; then
   exit 1
 fi
 
-mapfile -t CFG < <(python3 - "$CONFIG_PATH" <<'PY'
+mapfile -t CFG < <("$PYTHON_BIN" - "$CONFIG_PATH" <<'PY'
 import json
 import sys
 
@@ -55,7 +56,7 @@ resolve_qmd_command() {
 QMD_COMMAND="$(resolve_qmd_command "$QMD_COMMAND" "${LOCAL_QMD_COMMAND_CANDIDATES[@]}")"
 
 check_tcp_url() {
-  python3 - "$1" <<'PY'
+  "$PYTHON_BIN" - "$1" <<'PY'
 import socket
 import sys
 from urllib.parse import urlparse

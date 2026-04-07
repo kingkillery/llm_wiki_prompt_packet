@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+PYTHON_BIN="${PYTHON_BIN:-python3}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_PARENT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -113,7 +114,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-mapfile -t CFG < <(python3 - "$CONFIG_PATH" "$WORKSPACE_ROOT" <<'PY'
+mapfile -t CFG < <("$PYTHON_BIN" - "$CONFIG_PATH" "$WORKSPACE_ROOT" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -235,7 +236,7 @@ patch_json_config() {
   local target="$1"
   local mode="$2"
   local command_name="$3"
-  python3 - "$target" "$mode" "$command_name" <<'PY'
+  "$PYTHON_BIN" - "$target" "$mode" "$command_name" <<'PY'
 from pathlib import Path
 import json
 import sys
@@ -269,7 +270,7 @@ PY
 patch_codex_toml() {
   local target="$1"
   local command_name="$2"
-  python3 - "$target" "$command_name" <<'PY'
+  "$PYTHON_BIN" - "$target" "$command_name" <<'PY'
 from pathlib import Path
 import re
 import sys
@@ -295,7 +296,7 @@ PY
 }
 
 check_tcp_url() {
-  python3 - "$1" <<'PY'
+  "$PYTHON_BIN" - "$1" <<'PY'
 import socket
 import sys
 from urllib.parse import urlparse
@@ -568,7 +569,7 @@ if [[ "$SKIP_BRV" -eq 0 ]]; then
     fi
 
     providers_json="$(get_brv_providers)"
-    if [[ -n "$providers_json" ]] && python3 - "$providers_json" <<'PY'
+    if [[ -n "$providers_json" ]] && "$PYTHON_BIN" - "$providers_json" <<'PY'
 import json
 import sys
 data = json.loads(sys.argv[1])
@@ -578,7 +579,7 @@ if connected:
     print(connected.get("id", "unknown"))
 PY
     then
-      connected_provider="$(python3 - "$providers_json" <<'PY'
+      connected_provider="$("$PYTHON_BIN" - "$providers_json" <<'PY'
 import json
 import sys
 data = json.loads(sys.argv[1])

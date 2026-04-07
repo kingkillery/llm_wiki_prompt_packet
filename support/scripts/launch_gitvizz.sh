@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+PYTHON_BIN="${PYTHON_BIN:-python3}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_PATH="$(cd "$SCRIPT_DIR/.." && pwd)/.llm-wiki/config.json"
@@ -28,7 +29,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$REPO_PATH" && -f "$CONFIG_PATH" ]]; then
-  mapfile -t CFG < <(python3 - "$CONFIG_PATH" <<'PY'
+  mapfile -t CFG < <("$PYTHON_BIN" - "$CONFIG_PATH" <<'PY'
 import json
 import sys
 

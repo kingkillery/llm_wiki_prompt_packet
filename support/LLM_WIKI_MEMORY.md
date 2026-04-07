@@ -165,6 +165,7 @@ These vault-local helpers are installed with the packet:
 - `scripts/check_llm_wiki_memory.ps1`
 - `scripts/check_llm_wiki_memory.sh`
 - `scripts/qmd_embed_runner.mjs`
+- `scripts/invoke_bash_helper.ps1`
 - `scripts/brv_query.ps1`
 - `scripts/brv_query.sh`
 - `scripts/brv_curate.ps1`
@@ -261,6 +262,14 @@ Shell:
 bash ./scripts/setup_llm_wiki_memory.sh
 ```
 
+If you are in PowerShell and need to invoke a packet `.sh` helper directly, use the Bash bridge so Windows paths are translated correctly for Git Bash:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\invoke_bash_helper.ps1 `
+  -ScriptPath .\scripts\setup_llm_wiki_memory.sh `
+  --verify-only
+```
+
 When your current `pk-qmd` on PATH is the stripped-down build without `collection` and `context` commands, point the helper at the richer local checkout:
 
 ```powershell
@@ -279,6 +288,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\check_llm_wiki_mem
 
 ```bash
 bash ./scripts/check_llm_wiki_memory.sh
+```
+
+PowerShell bridge example:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\invoke_bash_helper.ps1 `
+  -ScriptPath .\scripts\check_llm_wiki_memory.sh
 ```
 
 ## Environment overrides

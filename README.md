@@ -187,6 +187,14 @@ Shell:
 bash ./scripts/setup_llm_wiki_memory.sh --qmd-source "/path/to/pk-qmd-main"
 ```
 
+If you are launching a packet `.sh` helper from PowerShell, use the installed bridge so Git Bash receives translated paths:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\invoke_bash_helper.ps1 `
+  -ScriptPath .\scripts\setup_llm_wiki_memory.sh `
+  --verify-only
+```
+
 What the setup helper now does:
 
 - installs or verifies `pk-qmd`

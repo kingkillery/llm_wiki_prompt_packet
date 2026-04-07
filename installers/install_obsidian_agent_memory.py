@@ -57,6 +57,7 @@ STACK_FILES = {
     "scripts/setup_llm_wiki_memory.ps1": SUPPORT / "scripts" / "setup_llm_wiki_memory.ps1",
     "scripts/setup_llm_wiki_memory.sh": SUPPORT / "scripts" / "setup_llm_wiki_memory.sh",
     "scripts/qmd_embed_runner.mjs": SUPPORT / "scripts" / "qmd_embed_runner.mjs",
+    "scripts/invoke_bash_helper.ps1": SUPPORT / "scripts" / "invoke_bash_helper.ps1",
     "scripts/brv_query.ps1": SUPPORT / "scripts" / "brv_query.ps1",
     "scripts/brv_query.sh": SUPPORT / "scripts" / "brv_query.sh",
     "scripts/brv_curate.ps1": SUPPORT / "scripts" / "brv_curate.ps1",

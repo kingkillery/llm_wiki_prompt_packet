@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+PYTHON_BIN="${PYTHON_BIN:-python3}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_PATH="$(cd "$SCRIPT_DIR/.." && pwd)/.llm-wiki/config.json"
@@ -27,4 +28,4 @@ if [[ -n "$BRV_COMMAND" ]]; then
   ARGS+=(--brv-command "$BRV_COMMAND")
 fi
 
-python3 "$SCRIPT_DIR/brv_benchmark.py" --config-path "$CONFIG_PATH" "${ARGS[@]}"
+"$PYTHON_BIN" "$SCRIPT_DIR/brv_benchmark.py" --config-path "$CONFIG_PATH" "${ARGS[@]}"
