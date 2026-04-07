@@ -27,6 +27,7 @@ SKIP_QMD_EMBED=0
 SKIP_BRV=0
 SKIP_BRV_INIT=0
 SKIP_GITVIZZ_START=0
+SKIP_GITVIZZ=0
 VERIFY_ONLY=0
 
 while [[ $# -gt 0 ]]; do
@@ -100,6 +101,11 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --skip-gitvizz-start)
+      SKIP_GITVIZZ_START=1
+      shift
+      ;;
+    --skip-gitvizz)
+      SKIP_GITVIZZ=1
       SKIP_GITVIZZ_START=1
       shift
       ;;
@@ -190,6 +196,37 @@ local_qmd_command_path() {
   for candidate in "${candidates[@]}"; do
     if [[ -x "$WORKSPACE_ROOT/$candidate" || -f "$WORKSPACE_ROOT/$candidate" ]]; then
       printf '%s\n' "$WORKSPACE_ROOT/$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+local_qmd_source_command_path() {
+  if [[ -z "$QMD_SOURCE" ]]; then
+    return 1
+  fi
+
+  if [[ -f "$QMD_SOURCE/dist/cli/qmd.js" ]]; then
+    local wrapper="$WORKSPACE_ROOT/.llm-wiki/pk-qmd-source"
+    cat >"$wrapper" <<EOF
+#!/usr/bin/env bash
+exec node "$QMD_SOURCE/dist/cli/qmd.js" "\$@"
+EOF
+    chmod +x "$wrapper"
+    printf '%s\n' "$wrapper"
+    return 0
+  fi
+
+  local candidates=(
+    "$QMD_SOURCE/bin/qmd"
+    "$QMD_SOURCE/bin/pk-qmd"
+  )
+
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    if [[ -f "$candidate" ]]; then
+      printf '%s\n' "$candidate"
       return 0
     fi
   done
@@ -381,6 +418,12 @@ ensure_qmd_available() {
   fi
 
   if [[ -n "$QMD_SOURCE" ]]; then
+    if local_cmd="$(local_qmd_source_command_path 2>/dev/null)"; then
+      QMD_COMMAND="$local_cmd"
+      QMD_SOURCE_RESULT="$QMD_SOURCE"
+      return 0
+    fi
+
     require_cmd npm
     npm install -g "$QMD_SOURCE"
     QMD_SOURCE_RESULT="$QMD_SOURCE"
@@ -609,16 +652,20 @@ if [[ "$SKIP_GITVIZZ_START" -eq 0 ]]; then
   start_gitvizz_if_needed
 fi
 
-if check_tcp_url "$GITVIZZ_FRONTEND_URL"; then
-  SUMMARY+=("GitVizz frontend reachable: $GITVIZZ_FRONTEND_URL")
+if [[ "$SKIP_GITVIZZ" -eq 1 ]]; then
+  SUMMARY+=("GitVizz checks skipped")
 else
-  FAILURES+=("GitVizz frontend unreachable: $GITVIZZ_FRONTEND_URL")
-fi
+  if check_tcp_url "$GITVIZZ_FRONTEND_URL"; then
+    SUMMARY+=("GitVizz frontend reachable: $GITVIZZ_FRONTEND_URL")
+  else
+    FAILURES+=("GitVizz frontend unreachable: $GITVIZZ_FRONTEND_URL")
+  fi
 
-if check_tcp_url "$GITVIZZ_BACKEND_URL"; then
-  SUMMARY+=("GitVizz backend reachable: $GITVIZZ_BACKEND_URL")
-else
-  FAILURES+=("GitVizz backend unreachable: $GITVIZZ_BACKEND_URL")
+  if check_tcp_url "$GITVIZZ_BACKEND_URL"; then
+    SUMMARY+=("GitVizz backend reachable: $GITVIZZ_BACKEND_URL")
+  else
+    FAILURES+=("GitVizz backend unreachable: $GITVIZZ_BACKEND_URL")
+  fi
 fi
 
 printf '%s\n' "${SUMMARY[@]}"

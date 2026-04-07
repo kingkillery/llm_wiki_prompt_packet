@@ -1,5 +1,6 @@
 param(
-    [string]$ConfigPath = $(Join-Path (Split-Path -Parent $PSScriptRoot) ".llm-wiki\config.json")
+    [string]$ConfigPath = $(Join-Path (Split-Path -Parent $PSScriptRoot) ".llm-wiki\config.json"),
+    [switch]$SkipGitvizz
 )
 
 $ErrorActionPreference = "Stop"
@@ -101,12 +102,16 @@ Write-Output "`n=== GitVizz ==="
 Write-Output "Frontend: $frontendUrl"
 Write-Output "Backend:  $backendUrl"
 
-if (-not (Test-TcpUrl -Url $frontendUrl)) {
-    $failures.Add("GitVizz frontend is not reachable: $frontendUrl")
-}
+if ($SkipGitvizz) {
+    Write-Output "GitVizz checks skipped."
+} else {
+    if (-not (Test-TcpUrl -Url $frontendUrl)) {
+        $failures.Add("GitVizz frontend is not reachable: $frontendUrl")
+    }
 
-if (-not (Test-TcpUrl -Url $backendUrl)) {
-    $failures.Add("GitVizz backend is not reachable: $backendUrl")
+    if (-not (Test-TcpUrl -Url $backendUrl)) {
+        $failures.Add("GitVizz backend is not reachable: $backendUrl")
+    }
 }
 
 if ($failures.Count -gt 0) {

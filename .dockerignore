@@ -1,0 +1,10 @@
+.git
+.omx
+.brv
+node_modules
+installers/__pycache__
+support/scripts/__pycache__
+*.pyc
+*.pyo
+*.pyd
+Dockerfile

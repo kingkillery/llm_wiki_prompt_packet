@@ -1,5 +1,5 @@
 param(
-    [string]$ConfigPath = $(Join-Path (Split-Path -Parent $PSScriptRoot) ".llm-wiki\config.json"),
+    [string]$ConfigPath,
     [string]$QmdSource = $env:LLM_WIKI_QMD_SOURCE,
     [string]$QmdRepoUrl = $env:LLM_WIKI_QMD_REPO_URL,
     [string]$QmdCommand = $env:LLM_WIKI_QMD_COMMAND,
@@ -15,18 +15,38 @@ param(
     [switch]$SkipQmdEmbed,
     [switch]$SkipBrvInit,
     [switch]$SkipBrv,
+    [switch]$SkipGitvizz,
     [switch]$SkipGitvizzStart,
     [switch]$VerifyOnly
 )
 
 $ErrorActionPreference = "Stop"
 
-function Get-WorkspaceRoot {
+function Resolve-ScriptWorkspaceRoot {
     $scriptParent = Split-Path -Parent $PSScriptRoot
+    $scriptGrandparent = Split-Path -Parent $scriptParent
+
     if (Test-Path (Join-Path $scriptParent ".llm-wiki\config.json")) {
         return $scriptParent
     }
+
+    if (Test-Path (Join-Path $scriptGrandparent ".llm-wiki\config.json")) {
+        return $scriptGrandparent
+    }
+
+    return $scriptParent
+}
+
+function Get-WorkspaceRoot {
+    $resolvedRoot = Resolve-ScriptWorkspaceRoot
+    if (Test-Path (Join-Path $resolvedRoot ".llm-wiki\config.json")) {
+        return $resolvedRoot
+    }
     return (Get-Location).Path
+}
+
+if (-not $PSBoundParameters.ContainsKey("ConfigPath") -or [string]::IsNullOrWhiteSpace($ConfigPath)) {
+    $ConfigPath = Join-Path (Resolve-ScriptWorkspaceRoot) ".llm-wiki\config.json"
 }
 
 function Get-ConfigValue {
@@ -112,7 +132,7 @@ function Invoke-JsonMerge {
         [switch]$FactoryStyle
     )
 
-    $script = @"
+    $script = @'
 from pathlib import Path
 import json
 import sys
@@ -141,9 +161,20 @@ mcp[server_key] = payload
 mcp.pop("qmd", None)
 path.parent.mkdir(parents=True, exist_ok=True)
 path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-"@
+'@
 
-    & $PythonCommand -c $script $TargetPath $ServerKey $CommandName $(if ($FactoryStyle) { "1" } else { "0" }) | Out-Null
+    $tempScript = [System.IO.Path]::GetTempFileName()
+    try {
+        Set-Content -Path $tempScript -Value $script -Encoding utf8
+        & $PythonCommand $tempScript $TargetPath $ServerKey $CommandName $(if ($FactoryStyle) { "1" } else { "0" }) | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to update MCP config at $TargetPath"
+        }
+    } finally {
+        if (Test-Path $tempScript) {
+            Remove-Item -LiteralPath $tempScript -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 function Set-CodexMcp {
@@ -541,15 +572,15 @@ if (-not $SkipQmd) {
             if (-not $python) {
                 throw "Python is required to write MCP config files."
             }
-            $home = [Environment]::GetFolderPath("UserProfile")
+            $userHome = [Environment]::GetFolderPath("UserProfile")
 
-            Invoke-JsonMerge -PythonCommand $python -TargetPath (Join-Path $home ".claude\settings.json") -ServerKey "pk-qmd" -CommandName $QmdCommand
+            Invoke-JsonMerge -PythonCommand $python -TargetPath (Join-Path $userHome ".claude\settings.json") -ServerKey "pk-qmd" -CommandName $QmdCommand
             $summary.Add("Updated ~/.claude/settings.json")
 
-            Set-CodexMcp -Path (Join-Path $home ".codex\config.toml") -CommandName $QmdCommand
+            Set-CodexMcp -Path (Join-Path $userHome ".codex\config.toml") -CommandName $QmdCommand
             $summary.Add("Updated ~/.codex/config.toml")
 
-            Invoke-JsonMerge -PythonCommand $python -TargetPath (Join-Path $home ".factory\mcp.json") -ServerKey "pk-qmd" -CommandName $QmdCommand -FactoryStyle
+            Invoke-JsonMerge -PythonCommand $python -TargetPath (Join-Path $userHome ".factory\mcp.json") -ServerKey "pk-qmd" -CommandName $QmdCommand -FactoryStyle
             $summary.Add("Updated ~/.factory/mcp.json")
         }
 
@@ -616,20 +647,28 @@ if (-not $SkipBrv) {
     }
 }
 
+if ($SkipGitvizz) {
+    $SkipGitvizzStart = $true
+}
+
 if (-not $SkipGitvizzStart) {
     $summary.Add((Start-GitVizzIfNeeded -RepoPath $GitvizzRepoPath -FrontendUrl $GitvizzFrontendUrl -BackendUrl $GitvizzBackendUrl -Verify:$VerifyOnly))
 }
 
-if (Test-TcpUrl -Url $GitvizzFrontendUrl) {
-    $summary.Add("GitVizz frontend reachable: $GitvizzFrontendUrl")
+if ($SkipGitvizz) {
+    $summary.Add("GitVizz checks skipped")
 } else {
-    $failures.Add("GitVizz frontend unreachable: $GitvizzFrontendUrl")
-}
+    if (Test-TcpUrl -Url $GitvizzFrontendUrl) {
+        $summary.Add("GitVizz frontend reachable: $GitvizzFrontendUrl")
+    } else {
+        $failures.Add("GitVizz frontend unreachable: $GitvizzFrontendUrl")
+    }
 
-if (Test-TcpUrl -Url $GitvizzBackendUrl) {
-    $summary.Add("GitVizz backend reachable: $GitvizzBackendUrl")
-} else {
-    $failures.Add("GitVizz backend unreachable: $GitvizzBackendUrl")
+    if (Test-TcpUrl -Url $GitvizzBackendUrl) {
+        $summary.Add("GitVizz backend reachable: $GitvizzBackendUrl")
+    } else {
+        $failures.Add("GitVizz backend unreachable: $GitvizzBackendUrl")
+    }
 }
 
 $summary | ForEach-Object { Write-Output $_ }

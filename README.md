@@ -286,6 +286,70 @@ The installer writes `.llm-wiki/config.json` using these defaults:
 - `LLM_WIKI_GITVIZZ_BACKEND_URL=http://localhost:8003`
 - `LLM_WIKI_GITVIZZ_REPO_PATH=<optional local checkout path>`
 
+### Docker container
+
+The repo now includes a containerized bootstrap path for the packet-managed stack.
+
+What it does:
+
+- builds a Linux image with `node`, `npm`, `python3`, `git`, and `brv`
+- installs the packet into a mounted vault at container start
+- runs `scripts/setup_llm_wiki_memory.sh` inside the container
+- persists container-local Claude/Codex/Factory MCP config under a named Docker volume
+- starts `pk-qmd mcp` as the container foreground process by default
+
+Quick start:
+
+```bash
+mkdir -p .docker/vault
+docker compose up --build
+```
+
+Default container behavior:
+
+- vault mount: `./.docker/vault -> /workspace`
+- MCP port: `8181`
+- targets installed into the mounted vault: `claude,codex,droid`
+- GitVizz checks are skipped by default in-container unless you opt in
+
+Useful overrides:
+
+- `LLM_WIKI_VAULT_PATH=/absolute/path/to/vault`
+- `LLM_WIKI_TARGETS=claude,codex,droid`
+- `LLM_WIKI_FORCE_INSTALL=1`
+- `LLM_WIKI_QMD_SOURCE=/path/to/pk-qmd`
+- `BYTEROVER_API_KEY=<key>`
+- `GEMINI_API_KEY=<key>`
+- `GH_TOKEN=<token>` or `GITHUB_TOKEN=<token>` for private `pk-qmd` fetches
+- `LLM_WIKI_SKIP_GITVIZZ=0`
+- `LLM_WIKI_MCP_SERVER_CMD="pk-qmd mcp"`
+
+If the `kingkillery/pk-qmd` repo is not anonymously installable in your environment, mount a local checkout and point the container at it:
+
+```bash
+docker compose run --rm \
+  -e LLM_WIKI_QMD_SOURCE=/qmd-source \
+  -v /absolute/path/to/pk-qmd:/qmd-source \
+  llm-wiki bootstrap
+```
+
+If the repo is private but reachable with a GitHub token, export `GH_TOKEN` or `GITHUB_TOKEN` before `docker compose up` and the container entrypoint will configure git for authenticated fetches.
+
+One-off commands:
+
+```bash
+docker compose run --rm llm-wiki init
+docker compose run --rm llm-wiki bootstrap
+docker compose run --rm llm-wiki health
+docker compose run --rm llm-wiki shell
+```
+
+Notes:
+
+- the container health check uses `scripts/check_llm_wiki_memory.sh --skip-gitvizz`
+- if you want GitVizz included in the health path, set `LLM_WIKI_SKIP_GITVIZZ=0` and point the stack URLs at a reachable GitVizz frontend/backend
+- the MCP config written by the setup helper lives inside the container home volume, not your host home directory
+
 ### GitVizz command-line wrapper
 
 The packet now installs thin wrappers for GitVizz backend access and local launch.

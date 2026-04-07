@@ -4,6 +4,12 @@ PYTHON_BIN="${PYTHON_BIN:-python3}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_PATH="${1:-$(cd "$SCRIPT_DIR/.." && pwd)/.llm-wiki/config.json}"
+SKIP_GITVIZZ=0
+
+if [[ "${1:-}" == "--skip-gitvizz" ]]; then
+  SKIP_GITVIZZ=1
+  CONFIG_PATH="${2:-$(cd "$SCRIPT_DIR/.." && pwd)/.llm-wiki/config.json}"
+fi
 
 if [[ ! -f "$CONFIG_PATH" ]]; then
   echo "Stack config not found: $CONFIG_PATH" >&2
@@ -42,6 +48,17 @@ resolve_qmd_command() {
   local configured="$1"
   shift
   local candidate
+
+  if [[ -n "${LLM_WIKI_QMD_SOURCE:-}" && -f "${LLM_WIKI_QMD_SOURCE}/dist/cli/qmd.js" ]]; then
+    local wrapper="$WORKSPACE_ROOT/.llm-wiki/pk-qmd-source"
+    cat >"$wrapper" <<EOF
+#!/usr/bin/env bash
+exec node "${LLM_WIKI_QMD_SOURCE}/dist/cli/qmd.js" "\$@"
+EOF
+    chmod +x "$wrapper"
+    printf '%s\n' "$wrapper"
+    return 0
+  fi
 
   for candidate in "$@"; do
     if [[ -x "$WORKSPACE_ROOT/$candidate" || -f "$WORKSPACE_ROOT/$candidate" ]]; then
@@ -111,12 +128,16 @@ echo "=== GitVizz ==="
 echo "Frontend: $FRONTEND_URL"
 echo "Backend:  $BACKEND_URL"
 
-if ! check_tcp_url "$FRONTEND_URL"; then
-  FAILURES+=("GitVizz frontend is not reachable: $FRONTEND_URL")
-fi
+if [[ "$SKIP_GITVIZZ" -eq 1 ]]; then
+  echo "GitVizz checks skipped."
+else
+  if ! check_tcp_url "$FRONTEND_URL"; then
+    FAILURES+=("GitVizz frontend is not reachable: $FRONTEND_URL")
+  fi
 
-if ! check_tcp_url "$BACKEND_URL"; then
-  FAILURES+=("GitVizz backend is not reachable: $BACKEND_URL")
+  if ! check_tcp_url "$BACKEND_URL"; then
+    FAILURES+=("GitVizz backend is not reachable: $BACKEND_URL")
+  fi
 fi
 
 if [[ ${#FAILURES[@]} -gt 0 ]]; then

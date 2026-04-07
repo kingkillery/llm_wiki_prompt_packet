@@ -1,5 +1,6 @@
 .omx/
 __pycache__/
 .brv/
+.docker/vault/
 node_modules/
 npm-debug.log*

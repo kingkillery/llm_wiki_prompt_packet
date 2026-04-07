@@ -1,0 +1,36 @@
+services:
+  llm-wiki:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: llm-wiki-prompt-packet:local
+    container_name: llm-wiki-prompt-packet
+    environment:
+      LLM_WIKI_VAULT: /workspace
+      LLM_WIKI_TARGETS: ${LLM_WIKI_TARGETS:-claude,codex,droid}
+      LLM_WIKI_FORCE_INSTALL: ${LLM_WIKI_FORCE_INSTALL:-0}
+      LLM_WIKI_SKIP_GITVIZZ: ${LLM_WIKI_SKIP_GITVIZZ:-1}
+      LLM_WIKI_QMD_SOURCE: ${LLM_WIKI_QMD_SOURCE:-}
+      LLM_WIKI_QMD_REPO_URL: ${LLM_WIKI_QMD_REPO_URL:-https://github.com/kingkillery/pk-qmd}
+      LLM_WIKI_QMD_MCP_URL: ${LLM_WIKI_QMD_MCP_URL:-http://localhost:8181/mcp}
+      LLM_WIKI_BRV_COMMAND: brv
+      BYTEROVER_API_KEY: ${BYTEROVER_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GH_TOKEN: ${GH_TOKEN:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      LLM_WIKI_MCP_SERVER_CMD: ${LLM_WIKI_MCP_SERVER_CMD:-pk-qmd mcp}
+    ports:
+      - "${LLM_WIKI_MCP_PORT:-8181}:8181"
+    volumes:
+      - ${LLM_WIKI_VAULT_PATH:-./.docker/vault}:/workspace
+      - llm_wiki_home:/home/llmwiki
+    command: ["serve"]
+    healthcheck:
+      test: ["CMD-SHELL", "bash /workspace/scripts/check_llm_wiki_memory.sh --skip-gitvizz"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+volumes:
+  llm_wiki_home:
