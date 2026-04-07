@@ -82,14 +82,11 @@ The stack contract baked into this packet is:
 - `templates/`
 - `scripts/`
 
-## Manual prerequisites
+## Bootstrap path
 
-The packet configures the stack, but two parts remain intentionally manual:
+The packet configures the stack, but the easiest path is now the hosted installer. It prompts for the vault folder when you do not pass one, lays down the packet, and then runs the vault setup helper unless you explicitly skip it.
 
-1. `pk-qmd` is bundled as a dependency of this packet and can also be installed directly from the custom fork.
-2. BRV auth and GitVizz app wiring depend on your local credentials and GitHub App settings.
-
-Use the installed helpers from the vault root when you want machine-level setup or verification:
+Use the installed helpers from the vault root when you want machine-level setup, repeatable verification, or a re-run after changing config:
 
 - `scripts/setup_llm_wiki_memory.ps1`
 - `scripts/setup_llm_wiki_memory.sh`
@@ -103,9 +100,9 @@ The canonical repo is:
 
 - `https://github.com/kingkillery/pk-qmd`
 
-If you already have the fork locally, use that checkout instead of recloning. On this machine the local path is:
+The packet-local dependency manifest installs this fork first when you run the hosted bootstrap, so you only need the manual path when you want to work from a standalone checkout.
 
-- `C:\dev\Desktop-Projects\pk-qmd-main`
+If you already have the fork locally, use that checkout instead of recloning.
 
 Typical manual install from a checkout:
 
@@ -124,10 +121,14 @@ bun link
 pk-qmd --help
 ```
 
-After `pk-qmd` is installed, wire the MCP config from the fork repo:
+After `pk-qmd` is installed, run the vault setup helper to wire MCP config and bootstrap the collection:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-pk-qmd-mcp-all.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup_llm_wiki_memory.ps1
+```
+
+```bash
+bash ./scripts/setup_llm_wiki_memory.sh
 ```
 
 Key fork behavior this packet assumes:
@@ -173,7 +174,7 @@ For local GitHub App wiring, use:
 
 Do not treat `localhost:3000` as the backend API origin. The packet writes both frontend and backend URLs into `.llm-wiki/config.json`.
 
-### Optional local setup helpers
+### Full-system helper
 
 PowerShell:
 
@@ -194,6 +195,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\invoke_bash_helper
   -ScriptPath .\scripts\setup_llm_wiki_memory.sh `
   --verify-only
 ```
+
+The hosted installers call this helper automatically unless `LLM_WIKI_SKIP_SETUP=1` is set. Use it directly when you want to re-run bootstrap or verification after the packet is already installed.
 
 What the setup helper now does:
 
@@ -224,7 +227,9 @@ bash ./scripts/check_llm_wiki_memory.sh
 
 ### Hosted one-command install
 
-Run these from inside the target vault if you want the current directory used automatically.
+Run these from inside the target vault if you want the current directory used automatically. If you omit the vault path, the installers now prompt for it and then run the full setup helper.
+
+Set `LLM_WIKI_SKIP_SETUP=1` if you only want the packet files and plan to run the helper later.
 
 PowerShell:
 
@@ -417,7 +422,7 @@ $env:LLM_WIKI_GITVIZZ_BACKEND_URL = "http://localhost:8003"
 
 ### Versioned public bootstrap path
 
-Release assets are generated automatically by GitHub Actions from the checked-in root installers when a release is published. The release installers default to the release tag instead of `main`.
+Release assets are generated automatically by GitHub Actions from the checked-in root installers when a release is published. The release installers default to the release tag instead of `main`, and they behave like the hosted installer above: prompt for the vault folder, then run the full setup helper.
 
 PowerShell:
 
@@ -435,6 +440,8 @@ curl -fsSL https://github.com/kingkillery/llm_wiki_prompt_packet/releases/latest
 ```
 
 ### Local installer
+
+Use this when you only want to lay down the packet files. The hosted `install.sh` / `install.ps1` wrappers are the ones that prompt for the vault and then run the full bootstrap helper.
 
 ```bash
 python3 installers/install_obsidian_agent_memory.py --vault "/path/to/Your Vault"
