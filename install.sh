@@ -1,11 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VAULT="${1:-${LLM_WIKI_VAULT:-$PWD}}"
+VAULT="${1:-${LLM_WIKI_VAULT:-}}"
 TARGETS="${2:-${LLM_WIKI_TARGETS:-claude,antigravity,codex,droid}}"
 FORCE_FLAG="${3:-}"
 REF="${4:-${LLM_WIKI_REF:-main}}"
 REPO="kingkillery/llm_wiki_prompt_packet"
+
+if [[ -z "$VAULT" ]]; then
+  if [[ -r /dev/tty ]]; then
+    exec 3</dev/tty
+    read -r -p "Vault folder to index [current directory]: " VAULT <&3
+  fi
+  VAULT="${VAULT:-$PWD}"
+fi
+
+if [[ ! -d "$VAULT" ]]; then
+  echo "Vault does not exist: $VAULT" >&2
+  exit 1
+fi
+
+VAULT="$(cd "$VAULT" && pwd -P)"
 
 TMP_DIR="$(mktemp -d)"
 ZIP_PATH="$TMP_DIR/packet.zip"
@@ -44,3 +59,12 @@ if [[ "$FORCE_FLAG" == "--force" || "${LLM_WIKI_FORCE:-0}" == "1" ]]; then
 fi
 
 python3 "${INSTALL_ARGS[@]}"
+
+if [[ "${LLM_WIKI_SKIP_SETUP:-0}" != "1" ]]; then
+  SETUP_HELPER="$VAULT/scripts/setup_llm_wiki_memory.sh"
+  if [[ ! -f "$SETUP_HELPER" ]]; then
+    echo "Setup helper not found: $SETUP_HELPER" >&2
+    exit 1
+  fi
+  bash "$SETUP_HELPER" --workspace "$VAULT"
+fi

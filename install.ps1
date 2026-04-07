@@ -8,8 +8,18 @@ param(
 $ErrorActionPreference = "Stop"
 
 if (-not $Vault) {
-    $Vault = (Get-Location).Path
+    $Vault = Read-Host "Vault folder to index [current directory]"
+    if (-not $Vault) {
+        $Vault = (Get-Location).Path
+    }
 }
+
+$Vault = $Vault.Trim()
+if (-not (Test-Path -LiteralPath $Vault -PathType Container)) {
+    throw "Vault does not exist: $Vault"
+}
+
+$Vault = (Resolve-Path -LiteralPath $Vault).Path
 
 $repo = "kingkillery/llm_wiki_prompt_packet"
 $zipUrl = "https://github.com/$repo/archive/$Ref.zip"
@@ -48,6 +58,14 @@ try {
         & py @installArgs
     } else {
         & python @installArgs
+    }
+
+    if ($env:LLM_WIKI_SKIP_SETUP -ne "1") {
+        $setupHelper = Join-Path $Vault "scripts/setup_llm_wiki_memory.ps1"
+        if (-not (Test-Path $setupHelper)) {
+            throw "Setup helper not found: $setupHelper"
+        }
+        & $setupHelper
     }
 
     exit $LASTEXITCODE
