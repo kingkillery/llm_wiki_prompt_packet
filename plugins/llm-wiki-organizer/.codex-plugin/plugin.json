@@ -1,0 +1,46 @@
+{
+  "name": "llm-wiki-organizer",
+  "version": "0.1.0",
+  "description": "Codex skill bundle for the llm-wiki-memory stack.",
+  "author": {
+    "name": "Kingkillery",
+    "email": "opensource@kingkillery.com",
+    "url": "https://github.com/kingkillery"
+  },
+  "homepage": "https://github.com/kingkillery/llm_wiki_prompt_packet",
+  "repository": "https://github.com/kingkillery/llm_wiki_prompt_packet",
+  "license": "MIT",
+  "keywords": [
+    "llm-wiki",
+    "memory",
+    "codex"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "LLM Wiki Memory Organizer",
+    "shortDescription": "Retrieve, curate, and lint the llm-wiki memory stack.",
+    "longDescription": "Codex plugin scaffold for the llm-wiki-memory packet. It packages the llm-wiki-organizer skill plus prompt assets for vault-backed evidence retrieval, durable memory, and wiki maintenance.",
+    "developerName": "Kingkillery",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/kingkillery/llm_wiki_prompt_packet",
+    "privacyPolicyURL": "https://github.com/kingkillery/llm_wiki_prompt_packet/blob/main/README.md",
+    "termsOfServiceURL": "https://github.com/kingkillery/llm_wiki_prompt_packet/blob/main/README.md",
+    "defaultPrompt": [
+      "Ingest a source into the wiki.",
+      "Query the wiki for supporting evidence.",
+      "Lint recent pages and flag conflicts."
+    ],
+    "brandColor": "#3B82F6",
+    "composerIcon": "./assets/composer-icon.png",
+    "logo": "./assets/logo.png",
+    "screenshots": [
+      "./assets/screenshot1.png",
+      "./assets/screenshot2.png",
+      "./assets/screenshot3.png"
+    ]
+  }
+}
