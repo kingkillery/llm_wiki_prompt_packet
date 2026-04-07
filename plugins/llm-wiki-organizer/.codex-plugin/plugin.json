@@ -3,13 +3,13 @@
   "version": "0.1.0",
   "description": "Codex skill bundle for the llm-wiki-memory stack.",
   "author": {
-    "name": "[TODO: Author Name]",
-    "email": "[TODO: author@example.com]",
-    "url": "[TODO: https://github.com/author]"
+    "name": "Kingkillery",
+    "email": "opensource@kingkillery.com",
+    "url": "https://github.com/kingkillery"
   },
-  "homepage": "[TODO: https://docs.example.com/plugin]",
-  "repository": "[TODO: https://github.com/author/plugin]",
-  "license": "[TODO: MIT]",
+  "homepage": "https://github.com/kingkillery/llm_wiki_prompt_packet",
+  "repository": "https://github.com/kingkillery/llm_wiki_prompt_packet",
+  "license": "MIT",
   "keywords": [
     "llm-wiki",
     "memory",
@@ -20,15 +20,15 @@
     "displayName": "LLM Wiki Memory Organizer",
     "shortDescription": "Retrieve, curate, and lint the llm-wiki memory stack.",
     "longDescription": "Codex plugin scaffold for the llm-wiki-memory packet. It packages the llm-wiki-organizer skill plus prompt assets for vault-backed evidence retrieval, durable memory, and wiki maintenance.",
-    "developerName": "[TODO: Developer Name]",
+    "developerName": "Kingkillery",
     "category": "Productivity",
     "capabilities": [
       "Interactive",
       "Write"
     ],
-    "websiteURL": "[TODO: https://example.com/]",
-    "privacyPolicyURL": "[TODO: https://example.com/privacy]",
-    "termsOfServiceURL": "[TODO: https://example.com/terms]",
+    "websiteURL": "https://github.com/kingkillery/llm_wiki_prompt_packet",
+    "privacyPolicyURL": "https://github.com/kingkillery/llm_wiki_prompt_packet/blob/main/README.md",
+    "termsOfServiceURL": "https://github.com/kingkillery/llm_wiki_prompt_packet/blob/main/README.md",
     "defaultPrompt": [
       "Ingest a source into the wiki.",
       "Query the wiki for supporting evidence.",

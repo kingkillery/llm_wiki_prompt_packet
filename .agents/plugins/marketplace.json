@@ -1,7 +1,7 @@
 {
-  "name": "[TODO: marketplace-name]",
+  "name": "llm-wiki-memory-marketplace",
   "interface": {
-    "displayName": "[TODO: Marketplace Display Name]"
+    "displayName": "LLM Wiki Memory"
   },
   "plugins": [
     {
