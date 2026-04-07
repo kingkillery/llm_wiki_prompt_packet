@@ -1,0 +1,39 @@
+{
+  "name": "llm-wiki-organizer",
+  "version": "0.1.0",
+  "description": "Codex skill bundle for the llm-wiki-memory stack.",
+  "author": {
+    "name": "[TODO: Author Name]",
+    "email": "[TODO: author@example.com]",
+    "url": "[TODO: https://github.com/author]"
+  },
+  "homepage": "[TODO: https://docs.example.com/plugin]",
+  "repository": "[TODO: https://github.com/author/plugin]",
+  "license": "[TODO: MIT]",
+  "keywords": [
+    "llm-wiki",
+    "memory",
+    "codex"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "LLM Wiki Memory Organizer",
+    "shortDescription": "Retrieve, curate, and lint the llm-wiki memory stack.",
+    "longDescription": "Codex plugin scaffold for the llm-wiki-memory packet. It packages the llm-wiki-organizer skill plus prompt assets for vault-backed evidence retrieval, durable memory, and wiki maintenance.",
+    "developerName": "[TODO: Developer Name]",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "[TODO: https://example.com/]",
+    "privacyPolicyURL": "[TODO: https://example.com/privacy]",
+    "termsOfServiceURL": "[TODO: https://example.com/terms]",
+    "defaultPrompt": [
+      "Ingest a source into the wiki.",
+      "Query the wiki for supporting evidence.",
+      "Lint recent pages and flag conflicts."
+    ],
+    "brandColor": "#3B82F6"
+  }
+}
