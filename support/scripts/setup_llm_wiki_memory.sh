@@ -444,13 +444,13 @@ init_brv_workspace() {
 
   (
     cd "$WORKSPACE_ROOT"
-    "$BRV_COMMAND" init
+    "$BRV_COMMAND" status --format json >/dev/null
   )
 
   if [[ -f "$brv_config" ]]; then
-    SUMMARY+=("Initialized BRV workspace")
+    SUMMARY+=("Initialized BRV workspace via status")
   else
-    SUMMARY+=("BRV init ran but no config was created at $brv_config")
+    SUMMARY+=("BRV status ran but no config was created at $brv_config")
   fi
 }
 

@@ -430,16 +430,16 @@ function Initialize-BrvWorkspace {
 
     Push-Location $WorkspaceRoot
     try {
-        & $CommandName init
+        & $CommandName status --format json | Out-Null
     } finally {
         Pop-Location
     }
 
     if (Test-Path $configPath) {
-        return "Initialized BRV workspace"
+        return "Initialized BRV workspace via status"
     }
 
-    return "BRV init ran but no config was created at $configPath"
+    return "BRV status ran but no config was created at $configPath"
 }
 
 function Test-BrvStatus {
