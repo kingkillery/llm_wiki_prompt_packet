@@ -35,3 +35,14 @@ This skill helps maintain a persistent markdown wiki backed by an explicit retri
 - Files changed
 - What changed
 - Unresolved questions or conflicts
+
+## Skill pack resources
+
+These files live alongside this skill in `assets/` and provide worked examples, evaluation criteria, failure-pattern guidance, decision tables, checklists, and a versioned improvement log.
+
+- `EXAMPLES.md` — Worked examples for ingest, query, lint, conflict resolution, and multi-tool routing.
+- `EVALS.md` — Pass/fail evaluation criteria for grading skill runs (task classification, routing, dedup, contract completeness).
+- `FAILURE_MODES.md` — Known failure patterns with symptoms, root causes, detection, prevention, and recovery.
+- `DECISION_RULES.md` — Condensed routing decision table, task classification rules, and evidence hierarchy.
+- `CHECKLISTS.md` — Preflight startup checklist and exit checklist with task-specific additions.
+- `PROCESS_IMPROVEMENTS.md` — Append-only log of approved behavioral changes with validation notes.
