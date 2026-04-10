@@ -28,7 +28,23 @@ SKIP_BRV=0
 SKIP_BRV_INIT=0
 SKIP_GITVIZZ_START=0
 SKIP_GITVIZZ=0
+ALLOW_GLOBAL_TOOL_INSTALL=0
 VERIFY_ONLY=0
+
+truthy_flag() {
+  case "${1:-}" in
+    1|true|TRUE|yes|YES|on|ON)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+if truthy_flag "${LLM_WIKI_ALLOW_GLOBAL_TOOL_INSTALL:-0}"; then
+  ALLOW_GLOBAL_TOOL_INSTALL=1
+fi
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -109,6 +125,10 @@ while [[ $# -gt 0 ]]; do
       SKIP_GITVIZZ_START=1
       shift
       ;;
+    --allow-global-tool-install)
+      ALLOW_GLOBAL_TOOL_INSTALL=1
+      shift
+      ;;
     --verify-only)
       VERIFY_ONLY=1
       shift
@@ -136,6 +156,7 @@ defaults = [
     "https://github.com/kingkillery/pk-qmd",
     workspace.name.lower().replace(" ", "-"),
     f"Primary llm-wiki-memory vault for {workspace}",
+    "",
 ]
 
 if not config_path.exists():
@@ -168,6 +189,27 @@ QMD_COLLECTION="${QMD_COLLECTION:-${CFG[5]}}"
 QMD_CONTEXT="${QMD_CONTEXT:-${CFG[6]}}"
 GITVIZZ_REPO_PATH="${GITVIZZ_REPO_PATH:-${CFG[7]}}"
 LOCAL_QMD_COMMAND_CANDIDATES=("${CFG[@]:8}")
+mapfile -t SKILL_CFG < <("$PYTHON_BIN" - "$CONFIG_PATH" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+config_path = Path(sys.argv[1])
+if not config_path.exists():
+    print("llm-wiki-skills")
+    print("scripts/llm_wiki_skill_mcp.py")
+    raise SystemExit
+
+with config_path.open("r", encoding="utf-8") as handle:
+    cfg = json.load(handle)
+
+skills = cfg.get("skills", {})
+print(skills.get("mcp_server_key", "llm-wiki-skills"))
+print(skills.get("script_path", "scripts/llm_wiki_skill_mcp.py"))
+PY
+)
+SKILL_SERVER_KEY="${SKILL_CFG[0]:-llm-wiki-skills}"
+SKILL_SCRIPT_RELATIVE_PATH="${SKILL_CFG[1]:-scripts/llm_wiki_skill_mcp.py}"
 
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -304,6 +346,44 @@ path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 PY
 }
 
+patch_json_server_config() {
+  local target="$1"
+  local mode="$2"
+  local server_key="$3"
+  local command_name="$4"
+  local args_json="$5"
+  "$PYTHON_BIN" - "$target" "$mode" "$server_key" "$command_name" "$args_json" <<'PY'
+from pathlib import Path
+import json
+import sys
+
+path = Path(sys.argv[1]).expanduser()
+mode = sys.argv[2]
+server_key = sys.argv[3]
+command_name = sys.argv[4]
+args = json.loads(sys.argv[5])
+
+data = {}
+if path.exists():
+    raw = path.read_text(encoding="utf-8").strip()
+    if raw:
+        data = json.loads(raw)
+
+mcp = data.get("mcpServers")
+if not isinstance(mcp, dict):
+    mcp = {}
+data["mcpServers"] = mcp
+
+payload = {"command": command_name, "args": args}
+if mode == "factory":
+    payload = {"type": "stdio", "command": command_name, "args": args, "disabled": False}
+
+mcp[server_key] = payload
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+PY
+}
+
 patch_codex_toml() {
   local target="$1"
   local command_name="$2"
@@ -327,6 +407,38 @@ else:
     content += "\n" + block + "\n"
 
 content = legacy.sub("", content)
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(content, encoding="utf-8")
+PY
+}
+
+patch_codex_server_toml() {
+  local target="$1"
+  local server_key="$2"
+  local command_name="$3"
+  local args_json="$4"
+  "$PYTHON_BIN" - "$target" "$server_key" "$command_name" "$args_json" <<'PY'
+from pathlib import Path
+import json
+import re
+import sys
+
+path = Path(sys.argv[1]).expanduser()
+server_key = sys.argv[2]
+command_name = sys.argv[3]
+args = json.loads(sys.argv[4])
+content = path.read_text(encoding="utf-8") if path.exists() else ""
+args_literal = "[" + ", ".join(json.dumps(value) for value in args) + "]"
+block = f"[mcp_servers.{server_key}]\ncommand = {json.dumps(command_name)}\nargs = {args_literal}\n"
+section = re.compile(rf"(?ms)^\[mcp_servers\.{re.escape(server_key)}\]\n(?:.*?)(?=^\[|\Z)")
+
+if section.search(content):
+    content = section.sub(block + "\n", content)
+else:
+    if content and not content.endswith("\n"):
+        content += "\n"
+    content += "\n" + block + "\n"
+
 path.parent.mkdir(parents=True, exist_ok=True)
 path.write_text(content, encoding="utf-8")
 PY
@@ -384,7 +496,9 @@ install_packet_local_qmd_dependency() {
   if [[ ! -f "$manifest" ]]; then
     return 1
   fi
-  require_cmd npm
+  if ! command -v npm >/dev/null 2>&1; then
+    return 1
+  fi
   npm install --prefix "$(dirname "$manifest")"
   local_qmd_command_path
 }
@@ -395,7 +509,9 @@ install_packet_local_brv_dependency() {
   if [[ ! -f "$manifest" ]]; then
     return 1
   fi
-  require_cmd npm
+  if ! command -v npm >/dev/null 2>&1; then
+    return 1
+  fi
   npm install --prefix "$(dirname "$manifest")"
   local_brv_command_path
 }
@@ -424,6 +540,11 @@ ensure_qmd_available() {
       return 0
     fi
 
+    if [[ "$ALLOW_GLOBAL_TOOL_INSTALL" -ne 1 ]]; then
+      QMD_SOURCE_RESULT="manual-required"
+      QMD_MANUAL_MESSAGE="pk-qmd global install is disabled. Install from $QMD_SOURCE manually or rerun with --allow-global-tool-install."
+      return 1
+    fi
     require_cmd npm
     npm install -g "$QMD_SOURCE"
     QMD_SOURCE_RESULT="$QMD_SOURCE"
@@ -434,6 +555,14 @@ ensure_qmd_available() {
     QMD_COMMAND="$local_cmd"
     QMD_SOURCE_RESULT="packet-local"
     return 0
+  fi
+
+  if [[ "$ALLOW_GLOBAL_TOOL_INSTALL" -ne 1 ]]; then
+    local git_source
+    git_source="$(resolve_git_source "$QMD_REPO_URL")"
+    QMD_SOURCE_RESULT="manual-required"
+    QMD_MANUAL_MESSAGE="pk-qmd is missing and packet-local install was unavailable. Install $git_source manually or rerun with --allow-global-tool-install."
+    return 1
   fi
 
   require_cmd npm
@@ -542,6 +671,11 @@ get_brv_providers() {
 
 SUMMARY=()
 FAILURES=()
+if [[ "$ALLOW_GLOBAL_TOOL_INSTALL" -eq 1 ]]; then
+  SUMMARY+=("Global tool install fallback enabled")
+else
+  SUMMARY+=("Global tool install fallback disabled; packet-local installs only")
+fi
 
 if [[ "$SKIP_QMD" -eq 0 ]]; then
   if ensure_qmd_available; then
@@ -574,14 +708,37 @@ if [[ "$SKIP_QMD" -eq 0 ]]; then
       SUMMARY+=("Updated ~/.codex/config.toml")
       patch_json_config "$HOME/.factory/mcp.json" factory "$QMD_COMMAND"
       SUMMARY+=("Updated ~/.factory/mcp.json")
+
+      skill_script_path="$WORKSPACE_ROOT/$SKILL_SCRIPT_RELATIVE_PATH"
+      if [[ -f "$skill_script_path" ]]; then
+        skill_args_json="$("$PYTHON_BIN" - "$skill_script_path" "$WORKSPACE_ROOT" <<'PY'
+import json
+import sys
+print(json.dumps([sys.argv[1], "mcp", "--workspace", sys.argv[2]]))
+PY
+)"
+        patch_json_server_config "$HOME/.claude/settings.json" claude "$SKILL_SERVER_KEY" "$PYTHON_BIN" "$skill_args_json"
+        SUMMARY+=("Updated ~/.claude/settings.json for $SKILL_SERVER_KEY")
+        patch_codex_server_toml "$HOME/.codex/config.toml" "$SKILL_SERVER_KEY" "$PYTHON_BIN" "$skill_args_json"
+        SUMMARY+=("Updated ~/.codex/config.toml for $SKILL_SERVER_KEY")
+        patch_json_server_config "$HOME/.factory/mcp.json" factory "$SKILL_SERVER_KEY" "$PYTHON_BIN" "$skill_args_json"
+        SUMMARY+=("Updated ~/.factory/mcp.json for $SKILL_SERVER_KEY")
+      else
+        SUMMARY+=("Skill MCP script not found, skipping $SKILL_SERVER_KEY MCP wiring")
+      fi
     fi
 
     if [[ "$SKIP_QMD_BOOTSTRAP" -eq 0 && ${#FAILURES[@]} -eq 0 ]]; then
       qmd_collection_bootstrap
     fi
   else
-    FAILURES+=("Missing pk-qmd command: $QMD_COMMAND")
-    SUMMARY+=("Install pk-qmd from the packet dependency manifest, $QMD_REPO_URL, or provide --qmd-source")
+    if [[ "${QMD_SOURCE_RESULT:-missing}" == "manual-required" && -n "${QMD_MANUAL_MESSAGE:-}" ]]; then
+      FAILURES+=("$QMD_MANUAL_MESSAGE")
+      SUMMARY+=("$QMD_MANUAL_MESSAGE")
+    else
+      FAILURES+=("Missing pk-qmd command: $QMD_COMMAND")
+      SUMMARY+=("Install pk-qmd from the packet dependency manifest, $QMD_REPO_URL, or provide --qmd-source")
+    fi
   fi
 fi
 
@@ -597,6 +754,9 @@ if [[ "$SKIP_BRV" -eq 0 ]]; then
     if local_cmd="$(install_packet_local_brv_dependency 2>/dev/null)"; then
       BRV_COMMAND="$local_cmd"
       SUMMARY+=("Installed packet-local brv dependency into .llm-wiki")
+    elif [[ "$ALLOW_GLOBAL_TOOL_INSTALL" -ne 1 ]]; then
+      FAILURES+=("Missing Byterover command: $BRV_COMMAND")
+      SUMMARY+=("Global brv install is disabled. Install byterover-cli manually or rerun with --allow-global-tool-install.")
     else
       require_cmd npm
       npm install -g byterover-cli
@@ -655,16 +815,29 @@ fi
 if [[ "$SKIP_GITVIZZ" -eq 1 ]]; then
   SUMMARY+=("GitVizz checks skipped")
 else
+  gitvizz_managed=0
+  if [[ -n "$GITVIZZ_REPO_PATH" ]]; then
+    gitvizz_managed=1
+  fi
+
   if check_tcp_url "$GITVIZZ_FRONTEND_URL"; then
     SUMMARY+=("GitVizz frontend reachable: $GITVIZZ_FRONTEND_URL")
   else
-    FAILURES+=("GitVizz frontend unreachable: $GITVIZZ_FRONTEND_URL")
+    if [[ "$gitvizz_managed" -eq 1 ]]; then
+      FAILURES+=("GitVizz frontend unreachable: $GITVIZZ_FRONTEND_URL")
+    else
+      SUMMARY+=("GitVizz frontend unreachable but repo_path is not configured; skipping reachability enforcement during setup")
+    fi
   fi
 
   if check_tcp_url "$GITVIZZ_BACKEND_URL"; then
     SUMMARY+=("GitVizz backend reachable: $GITVIZZ_BACKEND_URL")
   else
-    FAILURES+=("GitVizz backend unreachable: $GITVIZZ_BACKEND_URL")
+    if [[ "$gitvizz_managed" -eq 1 ]]; then
+      FAILURES+=("GitVizz backend unreachable: $GITVIZZ_BACKEND_URL")
+    else
+      SUMMARY+=("GitVizz backend unreachable but repo_path is not configured; skipping reachability enforcement during setup")
+    fi
   fi
 fi
 

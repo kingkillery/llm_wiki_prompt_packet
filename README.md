@@ -5,8 +5,17 @@ This repo is the prompt packet and vault installer for the `llm-wiki-memory` sta
 - `pk-qmd` is the source-evidence retrieval plane
 - `Byterover` (`brv`) is the curated durable-memory plane
 - `GitVizz` is the repo graph and web surface
+- `llm-wiki-skills` is the local-first reusable skill lifecycle plane
 
 The packet installs concise guidance files, tool-specific command/workflow files, a stack config, and health-check scripts into an Obsidian vault. It does not hide these components from maintainers, but the installed prompts tell agents to present one coherent intelligence surface to end users.
+
+The installer can also seed packet-owned `gstack` and `g-kade` wrapper skills into the user's home skill roots when you explicitly opt in with `--install-home-skills` or `LLM_WIKI_INSTALL_HOME_SKILLS=1`:
+
+- `~/.agents/skills/`
+- `~/.codex/skills/`
+- `~/.claude/skills/`
+
+Those wrappers live in this repo under `skills/home/` and are intentionally light. They are the packet-owned bridge layer, not a vendored copy of the full upstream `gstack` runtime bundle.
 
 ## Architecture
 
@@ -14,6 +23,7 @@ The stack contract baked into this packet is:
 
 - use `pk-qmd` first for repo-specific evidence, docs, prompts, notes, and exact local behavior
 - use `brv` for durable preferences, workflow quirks, and reused project decisions
+- use `llm-wiki-skills` for reusable task shortcuts, feedback, and retirement
 - prefer direct source evidence over memory when they conflict
 - treat `GitVizz` as the local graph surface, with frontend and backend URLs configured explicitly
 - do not expect end users to manage raw tool choices
@@ -25,12 +35,14 @@ The stack contract baked into this packet is:
 - `AGENTS.md`
 - `CLAUDE.md`
 - `LLM_WIKI_MEMORY.md`
+- `SKILL_CREATION_AT_EXPERT_LEVEL.md`
 
 ### Claude Code
 
 - `.claude/commands/wiki-ingest.md`
 - `.claude/commands/wiki-query.md`
 - `.claude/commands/wiki-lint.md`
+- `.claude/commands/wiki-skill.md`
 
 ### Codex
 
@@ -44,15 +56,18 @@ The stack contract baked into this packet is:
 - `.agent/workflows/wiki-ingest.md`
 - `.agent/workflows/wiki-query.md`
 - `.agent/workflows/wiki-lint.md`
+- `.agent/workflows/wiki-skill.md`
 
 ### Stack config and health checks
 
 - `.llm-wiki/config.json`
 - `.llm-wiki/package.json`
 - `.llm-wiki/qmd-embed-state.json`
+- `.llm-wiki/skills-registry.json`
 - `.brv/context-tree/.gitkeep`
 - `scripts/check_llm_wiki_memory.ps1`
 - `scripts/check_llm_wiki_memory.sh`
+- `scripts/llm_wiki_skill_mcp.py`
 - `scripts/setup_llm_wiki_memory.ps1`
 - `scripts/setup_llm_wiki_memory.sh`
 - `scripts/qmd_embed_runner.mjs`
@@ -64,6 +79,15 @@ The stack contract baked into this packet is:
 - `scripts/gitvizz_api.sh`
 - `scripts/launch_gitvizz.ps1`
 - `scripts/launch_gitvizz.sh`
+
+### Home skill roots
+
+- `~/.agents/skills/gstack/SKILL.md`
+- `~/.agents/skills/g-kade/SKILL.md`
+- `~/.codex/skills/gstack/SKILL.md`
+- `~/.codex/skills/g-kade/SKILL.md`
+- `~/.claude/skills/gstack/SKILL.md`
+- `~/.claude/skills/g-kade/SKILL.md`
 
 ### Bootstrapped vault directories
 
@@ -79,6 +103,10 @@ The stack contract baked into this packet is:
 - `wiki/comparisons/`
 - `wiki/timelines/`
 - `wiki/questions/`
+- `wiki/skills/index.md`
+- `wiki/skills/active/`
+- `wiki/skills/feedback/`
+- `wiki/skills/retired/`
 - `templates/`
 - `scripts/`
 
@@ -93,6 +121,38 @@ Use the installed helpers from the vault root when you want machine-level setup,
 - `scripts/check_llm_wiki_memory.ps1`
 - `scripts/check_llm_wiki_memory.sh`
 - `scripts/qmd_embed_runner.mjs`
+- `scripts/llm_wiki_skill_mcp.py`
+
+The setup helper now also wires a second local MCP server:
+
+- server key: `llm-wiki-skills`
+- command shape: `python scripts/llm_wiki_skill_mcp.py mcp --workspace <vault>`
+
+That server exposes local-first skill lifecycle tools:
+
+- `skill_lookup`
+- `skill_reflect`
+- `skill_validate`
+- `skill_pipeline_run`
+- `skill_propose`
+- `skill_feedback`
+- `skill_get`
+- `skill_retire`
+
+The pipeline now keeps internal skill-learning artifacts under:
+
+- `.llm-wiki/skill-pipeline/briefs/`
+- `.llm-wiki/skill-pipeline/deltas/`
+- `.llm-wiki/skill-pipeline/validations/`
+
+The intended loop is:
+
+1. finish the task or trajectory
+2. capture a strong executive brief of the important context
+3. validate the candidate for privacy, evidence quality, and duplicate overlap
+4. merge into an existing skill or save a new one
+
+For long tasks, the brief is mandatory. Think middle managers organizing the signal for executives, not a vague recap.
 
 ### 1. Install the custom `pk-qmd` fork
 
@@ -202,7 +262,7 @@ What the setup helper now does:
 
 - installs or verifies `pk-qmd`
 - prefers the packet-local dependency manifest at `.llm-wiki/package.json`
-- falls back to `kingkillery/pk-qmd` only if the local dependency path is unavailable
+- falls back to `kingkillery/pk-qmd` only when packet-local install is unavailable and `LLM_WIKI_ALLOW_GLOBAL_TOOL_INSTALL=1` is set
 - wires Claude/Codex/Factory MCP configs
 - adds a QMD collection for the current vault
 - adds default collection context
@@ -230,6 +290,8 @@ bash ./scripts/check_llm_wiki_memory.sh
 Run these from inside the target vault if you want the current directory used automatically. If you omit the vault path, the installers now prompt for it and then run the full setup helper.
 
 Set `LLM_WIKI_SKIP_SETUP=1` if you only want the packet files and plan to run the helper later.
+Home skill install is now opt-in: pass `--install-home-skills` or set `LLM_WIKI_INSTALL_HOME_SKILLS=1` if you want packet-owned wrappers in `~/.agents`, `~/.codex`, or `~/.claude`.
+Set `LLM_WIKI_ALLOW_GLOBAL_TOOL_INSTALL=1` if you want setup to fall back to global npm installs after packet-local install paths fail.
 
 PowerShell:
 
@@ -324,6 +386,22 @@ Useful overrides:
 - `LLM_WIKI_SKIP_GITVIZZ=0`
 - `LLM_WIKI_MCP_SERVER_CMD="pk-qmd mcp"`
 
+If the `pk-qmd` repo is private in your environment and you already have a local checkout, use the local-checkout override so `serve` keeps that checkout mounted:
+
+PowerShell:
+
+```powershell
+$env:LLM_WIKI_QMD_SOURCE_HOST_PATH = "C:\path\to\pk-qmd-main"
+docker compose -f docker-compose.yml -f docker-compose.local-qmd.yml up --build
+```
+
+Shell:
+
+```bash
+export LLM_WIKI_QMD_SOURCE_HOST_PATH=/absolute/path/to/pk-qmd-main
+docker compose -f docker-compose.yml -f docker-compose.local-qmd.yml up --build
+```
+
 If the `kingkillery/pk-qmd` repo is not anonymously installable in your environment, mount a local checkout and point the container at it:
 
 ```bash
@@ -349,6 +427,87 @@ Notes:
 - the container health check uses `scripts/check_llm_wiki_memory.sh --skip-gitvizz`
 - if you want GitVizz included in the health path, set `LLM_WIKI_SKIP_GITVIZZ=0` and point the stack URLs at a reachable GitVizz frontend/backend
 - the MCP config written by the setup helper lives inside the container home volume, not your host home directory
+
+### Google Cloud VM
+
+For hosted use, prefer a Google Compute Engine VM over Cloud Run for the current container shape.
+This image writes packet state, MCP config, and vault data to a persistent writable filesystem, so a long-lived VM with Docker bind mounts is the simpler fit.
+
+What the GCE deployment path does:
+
+- builds the existing container with Cloud Build
+- pushes the image to Artifact Registry
+- creates or reuses a Compute Engine VM
+- installs Docker and the Compose plugin on first boot
+- runs the packet container with persistent bind mounts for `/workspace` and `/home/llmwiki`
+
+Files added for this path:
+
+- `deploy/gcp/compose.yaml`
+- `deploy/gcp/compose.local-qmd.yml`
+- `deploy/gcp/llm-wiki.env.example`
+- `deploy/gcp/startup.sh`
+- `deploy/gcp/deploy_compute_engine.sh`
+- `deploy/gcp/deploy_compute_engine.ps1`
+
+Quick start from Git Bash or WSL:
+
+```bash
+bash ./deploy/gcp/deploy_compute_engine.sh
+```
+
+Quick start from PowerShell:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\gcp\deploy_compute_engine.ps1
+```
+
+Common overrides:
+
+- `PROJECT_ID=<gcp-project-id>`
+- `REGION=us-central1`
+- `ZONE=us-central1-a`
+- `INSTANCE_NAME=llm-wiki-packet`
+- `MACHINE_TYPE=e2-standard-2`
+- `OPEN_PUBLIC_MCP=1`
+- `PUBLIC_MCP_SOURCE_RANGES=203.0.113.0/24`
+- `LLM_WIKI_MCP_PORT=8181`
+- `LLM_WIKI_TARGETS=claude,codex,droid`
+- `LLM_WIKI_SKIP_GITVIZZ=1`
+- `LLM_WIKI_QMD_SOURCE=/absolute/path/to/local/pk-qmd-main`
+- `LLM_WIKI_QMD_MCP_URL=https://mcp.example.com/mcp`
+- `BYTEROVER_API_KEY=<key>`
+- `GEMINI_API_KEY=<key>`
+- `GH_TOKEN=<token>` or `GITHUB_TOKEN=<token>` for authenticated `pk-qmd` fetches
+
+Notes:
+
+- the deploy script grants the VM service account `roles/artifactregistry.reader`
+- the deploy script does not open the MCP port publicly unless you set `OPEN_PUBLIC_MCP=1` or provide `PUBLIC_MCP_SOURCE_RANGES`
+- if `LLM_WIKI_QMD_MCP_URL` is left blank, the packet config stays on `http://127.0.0.1:8181/mcp` inside the VM and expects an edge URL to be provided separately for remote clients
+- if `LLM_WIKI_QMD_SOURCE` points at a local `pk-qmd` checkout, the deploy script uploads that checkout to the VM and mounts it into the container
+- local Docker remains the fastest fallback path when you only need the service on one machine
+
+### Cloudflare edge in front of GCP
+
+For remote MCP or app clients, the clean hosted split is:
+
+- use a `Worker` as the public API edge on a hostname like `mcp.example.com`
+- point that Worker at a Cloudflare `Tunnel` hostname such as `mcp-origin.example.com`
+- protect the tunnel hostname with `Access` and let the Worker send an Access service token to the origin
+- keep GitVizz on its own hostname, usually `gitvizz.example.com`, behind interactive Access instead of routing it through the packet Worker
+
+The repo includes a minimal scaffold for this path:
+
+- `deploy/cloudflare/README.md`
+- `deploy/cloudflare/mcp-edge-worker.js`
+- `deploy/cloudflare/wrangler.jsonc.example`
+
+Operational notes:
+
+- the packet VM in this repo only hosts the MCP-facing packet service by default
+- GitVizz is still a separate runtime with its own `docker-compose.yaml`, so it should be deployed from the GitVizz repo and exposed separately
+- `brv` remains a private memory plane; expose curated app-level routes, not raw BRV provider credentials or direct provider calls
 
 ### GitVizz command-line wrapper
 
@@ -518,6 +677,14 @@ python3 installers/install_obsidian_agent_memory.py \
   --vault "/path/to/Your Vault" \
   --targets claude,antigravity,codex,droid \
   --force
+```
+
+Install into a test home directory instead of your real user profile:
+
+```bash
+python3 installers/install_obsidian_agent_memory.py \
+  --vault "/path/to/Your Vault" \
+  --home-root "/tmp/llm-wiki-home"
 ```
 
 Dry run:
