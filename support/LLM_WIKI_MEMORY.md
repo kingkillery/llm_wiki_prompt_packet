@@ -23,6 +23,50 @@ Typical flow:
 The canonical stack settings live in `.llm-wiki/config.json`.
 The local dependency manifest for packet-managed installs lives in `.llm-wiki/package.json`.
 
+## Skill creation at expert level
+
+This vault can also act as a reusable skill library.
+
+Use the wiki to store operational shortcuts that future agents can exploit instead of rediscovering:
+
+- `wiki/skills/index.md`
+- `wiki/skills/active/`
+- `wiki/skills/feedback/`
+- `wiki/skills/retired/`
+
+Internal pipeline artifacts live under:
+
+- `.llm-wiki/skill-pipeline/briefs/`
+- `.llm-wiki/skill-pipeline/deltas/`
+- `.llm-wiki/skill-pipeline/validations/`
+- `.llm-wiki/skill-pipeline/packets/`
+
+When creating or updating a skill:
+
+- emit a strong reducer packet plus artifact refs when the task had meaningful exploration cost
+- capture the repeated trigger
+- write the shortest reliable fast path
+- include preconditions and failure modes
+- record a reasoned review trail
+- run a privacy gate before saving
+- validate the candidate before promoting it to the active library
+- merge deltas into an existing skill when overlap is high instead of creating a duplicate
+
+Prefer the pipeline tools when the local MCP server is installed:
+
+- `skill_lookup`
+- `skill_reflect`
+- `skill_validate`
+- `skill_pipeline_run`
+- `skill_propose`
+- `skill_feedback`
+- `skill_get`
+- `skill_retire`
+
+The implementation guide for this lives in `SKILL_CREATION_AT_EXPERT_LEVEL.md`.
+
+For long tasks, the parent path should consume the reducer packet by default and only pull raw detail from referenced artifacts when escalation is necessary.
+
 ## Defaults
 
 - QMD command: `pk-qmd`
@@ -165,6 +209,7 @@ These vault-local helpers are installed with the packet:
 - `scripts/check_llm_wiki_memory.ps1`
 - `scripts/check_llm_wiki_memory.sh`
 - `scripts/qmd_embed_runner.mjs`
+- `scripts/llm_wiki_skill_mcp.py`
 - `scripts/invoke_bash_helper.ps1`
 - `scripts/brv_query.ps1`
 - `scripts/brv_query.sh`
@@ -187,6 +232,7 @@ Use the setup helper to:
 - run `pk-qmd update`
 - run `pk-qmd embed`
 - run `pk-qmd membed` when `GEMINI_API_KEY` is present
+- wire the local skill MCP server
 - validate `brv status --format json`
 - let `brv status` initialize `.brv/config.json` and `.brv/context-tree` when needed
 - auto-launch GitVizz when `gitvizz.repo_path` is configured

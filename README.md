@@ -144,15 +144,16 @@ The pipeline now keeps internal skill-learning artifacts under:
 - `.llm-wiki/skill-pipeline/briefs/`
 - `.llm-wiki/skill-pipeline/deltas/`
 - `.llm-wiki/skill-pipeline/validations/`
+- `.llm-wiki/skill-pipeline/packets/`
 
 The intended loop is:
 
 1. finish the task or trajectory
-2. capture a strong executive brief of the important context
-3. validate the candidate for privacy, evidence quality, and duplicate overlap
-4. merge into an existing skill or save a new one
+2. emit a reducer packet plus artifact refs for the important context
+3. validate the candidate and route semantics for privacy, evidence quality, and duplicate overlap
+4. merge into an existing skill or save a new one only when the route decision is `complete`
 
-For long tasks, the brief is mandatory. Think middle managers organizing the signal for executives, not a vague recap.
+For long tasks, the reducer packet is mandatory. Think middle managers organizing the signal for executives, not a vague recap.
 
 ### 1. Install the custom `pk-qmd` fork
 

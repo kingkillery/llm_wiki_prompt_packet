@@ -49,6 +49,19 @@ foreach ($candidate in $qmdCommandCandidates) {
 $collectionName = if ($config.pk_qmd.collection_name) { $config.pk_qmd.collection_name } else { [IO.Path]::GetFileName($workspaceRoot.TrimEnd('\', '/')).ToLowerInvariant().Replace(' ', '-') }
 $frontendUrl = $config.gitvizz.frontend_url
 $backendUrl = $config.gitvizz.backend_url
+$skillScriptRelative = if ($config.skills -and $config.skills.script_path) { [string]$config.skills.script_path } else { "scripts/llm_wiki_skill_mcp.py" }
+$skillRegistryRelative = if ($config.skills -and $config.skills.registry_path) { [string]$config.skills.registry_path } else { ".llm-wiki/skills-registry.json" }
+$pipelineConfig = $config.skills.pipeline
+$briefDirRelative = if ($pipelineConfig -and $pipelineConfig.brief_dir) { [string]$pipelineConfig.brief_dir } else { ".llm-wiki/skill-pipeline/briefs" }
+$deltaDirRelative = if ($pipelineConfig -and $pipelineConfig.delta_dir) { [string]$pipelineConfig.delta_dir } else { ".llm-wiki/skill-pipeline/deltas" }
+$validationDirRelative = if ($pipelineConfig -and $pipelineConfig.validation_dir) { [string]$pipelineConfig.validation_dir } else { ".llm-wiki/skill-pipeline/validations" }
+$packetDirRelative = if ($pipelineConfig -and $pipelineConfig.packet_dir) { [string]$pipelineConfig.packet_dir } else { ".llm-wiki/skill-pipeline/packets" }
+$skillScriptPath = Join-Path $workspaceRoot $skillScriptRelative
+$skillRegistryPath = Join-Path $workspaceRoot $skillRegistryRelative
+$briefDir = Join-Path $workspaceRoot $briefDirRelative
+$deltaDir = Join-Path $workspaceRoot $deltaDirRelative
+$validationDir = Join-Path $workspaceRoot $validationDirRelative
+$packetDir = Join-Path $workspaceRoot $packetDirRelative
 $failures = New-Object System.Collections.Generic.List[string]
 
 Write-Output "=== llm-wiki-memory health check ==="
@@ -66,7 +79,7 @@ if (-not (Get-Command $qmdCommand -ErrorAction SilentlyContinue)) {
 
     try {
         $helpText = & $qmdCommand 2>&1 | Out-String
-        if ($helpText -match "pk-qmd collection add") {
+        if ($helpText -match "collection add") {
             $collections = & $qmdCommand collection list 2>&1 | Out-String
             if ($collections -notmatch "(?m)^$([regex]::Escape($collectionName))\s+\(qmd://") {
                 $failures.Add("Missing qmd collection: $collectionName")
@@ -96,6 +109,35 @@ if (-not (Get-Command $brvCommand -ErrorAction SilentlyContinue)) {
     if (-not (Test-Path (Join-Path $workspaceRoot ".brv\config.json"))) {
         $failures.Add("Missing BRV workspace config: $(Join-Path $workspaceRoot '.brv\config.json')")
     }
+}
+
+Write-Output "`n=== Skill Pipeline ==="
+if (-not (Test-Path $skillScriptPath)) {
+    $failures.Add("Missing skill MCP script: $skillScriptPath")
+}
+if (-not (Test-Path $skillRegistryPath)) {
+    $failures.Add("Missing skill registry: $skillRegistryPath")
+} else {
+    try {
+        $skillRegistry = Get-Content -Raw -Path $skillRegistryPath | ConvertFrom-Json
+        if (-not $skillRegistry.PSObject.Properties.Name.Contains("packets")) {
+            $failures.Add("Skill registry missing packets collection: $skillRegistryPath")
+        }
+    } catch {
+        $failures.Add("Skill registry is not valid JSON: $skillRegistryPath")
+    }
+}
+if (-not (Test-Path $briefDir)) {
+    $failures.Add("Missing skill brief directory: $briefDir")
+}
+if (-not (Test-Path $deltaDir)) {
+    $failures.Add("Missing skill delta directory: $deltaDir")
+}
+if (-not (Test-Path $validationDir)) {
+    $failures.Add("Missing skill validation directory: $validationDir")
+}
+if (-not (Test-Path $packetDir)) {
+    $failures.Add("Missing skill packet directory: $packetDir")
 }
 
 Write-Output "`n=== GitVizz ==="

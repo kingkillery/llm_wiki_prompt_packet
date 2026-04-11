@@ -81,7 +81,7 @@ Before making edits, do this in order:
 5. Read `wiki/index.md`.
 6. Read recent relevant entries from `wiki/log.md`.
 7. Search the wiki for existing pages related to the current task.
-8. Determine the task type: `ingest`, `query`, `lint`, `schema`, or `other`.
+8. Determine the task type: `ingest`, `query`, `lint`, `skill`, `schema`, or `other`.
 
 ## Retrieval and memory policy
 
@@ -135,6 +135,41 @@ Do not write:
 - speculative conclusions
 - facts already explicit in current docs or code
 
+## Workflow: skill
+
+When the user asks to create, update, review, merge, or retire a reusable skill:
+
+1. Read `SKILL_CREATION_AT_EXPERT_LEVEL.md` if present.
+2. Search `wiki/skills/index.md` and existing skill pages before creating anything new.
+3. Identify the repeated task shape, trigger, and the exploration cost the skill removes.
+4. For long tasks or costly exploration, emit a strong reducer packet plus artifact refs before saving the skill.
+5. Prefer `skill_reflect` or `skill_pipeline_run` when the local MCP server is available.
+6. Run validation before save, especially for duplicates, weak evidence, or non-trivial candidates.
+7. Write or update the skill page in `wiki/skills/active/`.
+8. Add or update reasoned review notes in `wiki/skills/feedback/` when the task includes validation or critique.
+9. Apply the privacy gate. Reject or redact anything containing private user data.
+10. If the score should drop below the retirement threshold, move the skill to `wiki/skills/retired/` and reflect that in the index.
+11. Update `wiki/skills/index.md`.
+12. Append a `skill` entry to `wiki/log.md`.
+
+Every skill should aim to let a future agent solve the same task in 1-3 high-signal calls.
+Prefer:
+
+- stable trigger conditions
+- short fast paths
+- explicit preconditions
+- crisp failure modes
+- validation-aware merges over duplicate saves
+- strong reducer packets with artifact refs for long tasks
+- evidence-backed HTTP upgrade candidates
+
+Avoid:
+
+- user-specific selectors or values
+- credentials or tokens
+- one-off narratives with no execution shortcut
+- duplicate skills for the same trigger unless the old one is being retired or merged
+
 ## Workflow: ingest
 
 When the user asks to process a new source:
@@ -177,7 +212,7 @@ Fix safe issues directly. Separate higher-judgment recommendations from direct f
 
 ## Response contract for operational turns
 
-For ingest, query-with-filing, lint, or maintenance work, return:
+For ingest, query-with-filing, lint, skill, or maintenance work, return:
 
 - `Task type`
 - `Stack/config used`

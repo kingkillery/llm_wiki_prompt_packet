@@ -28,6 +28,14 @@ print(cfg["byterover"]["command"])
 print(cfg["gitvizz"]["frontend_url"])
 print(cfg["gitvizz"]["backend_url"])
 print(cfg["pk_qmd"].get("collection_name", ""))
+skills = cfg.get("skills", {})
+pipeline = skills.get("pipeline", {})
+print(skills.get("script_path", "scripts/llm_wiki_skill_mcp.py"))
+print(skills.get("registry_path", ".llm-wiki/skills-registry.json"))
+print(pipeline.get("brief_dir", ".llm-wiki/skill-pipeline/briefs"))
+print(pipeline.get("delta_dir", ".llm-wiki/skill-pipeline/deltas"))
+print(pipeline.get("validation_dir", ".llm-wiki/skill-pipeline/validations"))
+print(pipeline.get("packet_dir", ".llm-wiki/skill-pipeline/packets"))
 for value in cfg["pk_qmd"].get("local_command_candidates", []):
     print(value)
 PY
@@ -39,10 +47,22 @@ FRONTEND_URL="${CFG[2]}"
 BACKEND_URL="${CFG[3]}"
 WORKSPACE_ROOT="$(cd "$(dirname "$CONFIG_PATH")/.." && pwd)"
 COLLECTION_NAME="${CFG[4]}"
-LOCAL_QMD_COMMAND_CANDIDATES=("${CFG[@]:5}")
+SKILL_SCRIPT_REL="${CFG[5]}"
+SKILL_REGISTRY_REL="${CFG[6]}"
+BRIEF_DIR_REL="${CFG[7]}"
+DELTA_DIR_REL="${CFG[8]}"
+VALIDATION_DIR_REL="${CFG[9]}"
+PACKET_DIR_REL="${CFG[10]}"
+LOCAL_QMD_COMMAND_CANDIDATES=("${CFG[@]:11}")
 if [[ -z "$COLLECTION_NAME" ]]; then
   COLLECTION_NAME="$(basename "$WORKSPACE_ROOT" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')"
 fi
+SKILL_SCRIPT_PATH="$WORKSPACE_ROOT/$SKILL_SCRIPT_REL"
+SKILL_REGISTRY_PATH="$WORKSPACE_ROOT/$SKILL_REGISTRY_REL"
+BRIEF_DIR_PATH="$WORKSPACE_ROOT/$BRIEF_DIR_REL"
+DELTA_DIR_PATH="$WORKSPACE_ROOT/$DELTA_DIR_REL"
+VALIDATION_DIR_PATH="$WORKSPACE_ROOT/$VALIDATION_DIR_REL"
+PACKET_DIR_PATH="$WORKSPACE_ROOT/$PACKET_DIR_REL"
 
 resolve_qmd_command() {
   local configured="$1"
@@ -97,7 +117,7 @@ else
   echo "=== pk-qmd ==="
   "$QMD_COMMAND" status || true
 
-  if "$QMD_COMMAND" 2>&1 | grep -q "pk-qmd collection add"; then
+  if "$QMD_COMMAND" 2>&1 | grep -q "collection add"; then
     collection_output="$("$QMD_COMMAND" collection list 2>&1 || true)"
     if [[ "$collection_output" != *"$COLLECTION_NAME (qmd://"* ]]; then
       FAILURES+=("Missing qmd collection: $COLLECTION_NAME")
@@ -121,6 +141,39 @@ else
   if [[ ! -f "$WORKSPACE_ROOT/.brv/config.json" ]]; then
     FAILURES+=("Missing BRV workspace config: $WORKSPACE_ROOT/.brv/config.json")
   fi
+fi
+
+echo
+echo "=== Skill Pipeline ==="
+if [[ ! -f "$SKILL_SCRIPT_PATH" ]]; then
+  FAILURES+=("Missing skill MCP script: $SKILL_SCRIPT_PATH")
+fi
+if [[ ! -f "$SKILL_REGISTRY_PATH" ]]; then
+  FAILURES+=("Missing skill registry: $SKILL_REGISTRY_PATH")
+else
+  if ! python - "$SKILL_REGISTRY_PATH" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+raise SystemExit(0 if "packets" in data else 1)
+PY
+  then
+    FAILURES+=("Skill registry missing packets collection: $SKILL_REGISTRY_PATH")
+  fi
+fi
+if [[ ! -d "$BRIEF_DIR_PATH" ]]; then
+  FAILURES+=("Missing skill brief directory: $BRIEF_DIR_PATH")
+fi
+if [[ ! -d "$DELTA_DIR_PATH" ]]; then
+  FAILURES+=("Missing skill delta directory: $DELTA_DIR_PATH")
+fi
+if [[ ! -d "$VALIDATION_DIR_PATH" ]]; then
+  FAILURES+=("Missing skill validation directory: $VALIDATION_DIR_PATH")
+fi
+if [[ ! -d "$PACKET_DIR_PATH" ]]; then
+  FAILURES+=("Missing skill packet directory: $PACKET_DIR_PATH")
 fi
 
 echo

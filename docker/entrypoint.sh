@@ -86,6 +86,79 @@ bootstrap_packet() {
   bash "$VAULT_PATH/scripts/setup_llm_wiki_memory.sh" "${setup_args[@]}"
 }
 
+run_mcp_server() {
+  local default_cmd="pk-qmd mcp"
+  if [[ "$MCP_SERVER_CMD" != "$default_cmd" ]]; then
+    exec bash -lc "$MCP_SERVER_CMD"
+  fi
+
+  local qmd_command=""
+  if command -v pk-qmd >/dev/null 2>&1; then
+    qmd_command="pk-qmd"
+  fi
+
+  local candidates=(
+    "$VAULT_PATH/.llm-wiki/pk-qmd-source"
+    "$VAULT_PATH/.llm-wiki/node_modules/.bin/pk-qmd"
+    "$VAULT_PATH/.llm-wiki/node_modules/.bin/pk-qmd.cmd"
+    "$VAULT_PATH/.llm-wiki/node_modules/.bin/pk-qmd.ps1"
+  )
+
+  local candidate
+  if [[ -z "$qmd_command" ]]; then
+    for candidate in "${candidates[@]}"; do
+      if [[ -x "$candidate" || -f "$candidate" ]]; then
+        qmd_command="$candidate"
+        break
+      fi
+    done
+  fi
+
+  if [[ -z "$qmd_command" ]]; then
+    echo "Unable to resolve a pk-qmd MCP command after bootstrap." >&2
+    exit 1
+  fi
+
+  local public_port="${LLM_WIKI_MCP_PUBLIC_PORT:-8181}"
+  local upstream_port="${LLM_WIKI_MCP_UPSTREAM_PORT:-18181}"
+
+  "$qmd_command" mcp --http --port "$upstream_port" &
+  local qmd_pid=$!
+
+  node /opt/llm-wiki/docker/mcp_http_proxy.mjs "$public_port" "$upstream_port" &
+  local proxy_pid=$!
+
+  trap 'kill "$qmd_pid" "$proxy_pid" 2>/dev/null || true' EXIT INT TERM
+
+  while kill -0 "$qmd_pid" >/dev/null 2>&1; do
+    if python3 - "$upstream_port" <<'PY'
+import socket
+import sys
+
+port = int(sys.argv[1])
+sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+sock.settimeout(0.5)
+try:
+    sock.connect(("::1", port))
+except OSError:
+    raise SystemExit(1)
+finally:
+    sock.close()
+PY
+    then
+      break
+    fi
+    sleep 1
+  done
+
+  wait -n "$qmd_pid" "$proxy_pid"
+  local exit_code=$?
+  kill "$qmd_pid" "$proxy_pid" 2>/dev/null || true
+  wait "$qmd_pid" 2>/dev/null || true
+  wait "$proxy_pid" 2>/dev/null || true
+  return "$exit_code"
+}
+
 health_check() {
   local health_args=()
 
@@ -123,7 +196,7 @@ case "$MODE" in
     stage_qmd_source
     install_packet
     bootstrap_packet
-    exec bash -lc "$MCP_SERVER_CMD"
+    run_mcp_server
     ;;
   *)
     echo "Unknown entrypoint mode: $MODE" >&2

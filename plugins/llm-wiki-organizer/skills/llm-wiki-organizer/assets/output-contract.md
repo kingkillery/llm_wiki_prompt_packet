@@ -23,3 +23,11 @@ Unresolved questions / conflicts:
 
 Next best actions:
 - <1-3 concrete next steps>
+
+Reducer packet (required for long-running or multi-step tasks):
+- Route decision: <complete|retry_same_worker|reroute_to_sibling|escalate_to_parent|stop_insufficient_evidence>
+- Route reason: <short reason>
+- Artifact refs:
+  - <brief/validation/delta/packet refs>
+- Unresolved questions:
+  - <if any>
