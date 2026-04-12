@@ -198,6 +198,31 @@ class GKadeInstallerTests(unittest.TestCase):
         self.assertIn("How to Work with Kade", upgraded_text)
         self.assertNotEqual(upgraded_text, self.module.LEGACY_HUMAN_MD_TEXT)
 
+    def test_scaffold_kade_overlays_fails_when_packaged_profile_is_missing(self) -> None:
+        gkade_runtime = self.module.repo_runtime_dependency(
+            self.workspace_root,
+            "g-kade",
+            self.module.PACKET.REPO_RUNTIME_DEFAULT_PATHS["g-kade"],
+        )
+        gstack_runtime = self.module.repo_runtime_dependency(
+            self.workspace_root,
+            "gstack",
+            self.module.PACKET.REPO_RUNTIME_DEFAULT_PATHS["gstack"],
+        )
+
+        with mock.patch.object(self.module, "HUMAN_MD_SOURCE_CANDIDATES", ()):
+            with self.assertRaises(FileNotFoundError):
+                self.module.scaffold_kade_overlays(
+                    self.workspace_root,
+                    self.home_root,
+                    layer_result_label="packet wrappers only (repo runtimes missing)",
+                    gkade_runtime=gkade_runtime,
+                    gstack_runtime=gstack_runtime,
+                    install_home_profile=True,
+                    force=False,
+                    dry_run=False,
+                )
+
     def test_scaffold_kade_overlays_skips_home_profile_when_not_requested(self) -> None:
         gkade_runtime = self.module.repo_runtime_dependency(
             self.workspace_root,

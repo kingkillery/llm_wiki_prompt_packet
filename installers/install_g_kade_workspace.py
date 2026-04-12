@@ -434,7 +434,11 @@ def human_md_text() -> str:
         normalized = text.replace("\r\n", "\n").strip()
         if normalized:
             return normalized + "\n"
-    return LEGACY_HUMAN_MD_TEXT
+    candidate_list = ", ".join(str(path) for path in HUMAN_MD_SOURCE_CANDIDATES)
+    raise FileNotFoundError(
+        "Unable to locate the packaged Kade-HQ HUMAN.md profile. "
+        f"Checked: {candidate_list}. Initialize deps/pk-skills1 or vendor the Kade-HQ profile before installing."
+    )
 
 
 def has_legacy_human_stub(path: Path) -> bool:
@@ -449,10 +453,11 @@ def write_home_human_profile(human_md: Path, *, dry_run: bool) -> str:
     if human_md.exists():
         if not has_legacy_human_stub(human_md):
             return f"skip   {human_md} (exists)"
+        profile_text = human_md_text()
         if dry_run:
             return f"write  {human_md} (replace legacy stub)"
         human_md.parent.mkdir(parents=True, exist_ok=True)
-        human_md.write_text(human_md_text(), encoding="utf-8")
+        human_md.write_text(profile_text, encoding="utf-8")
         return f"write  {human_md} (replaced legacy stub)"
     return PACKET.write_text(human_md, human_md_text(), force=False, dry_run=dry_run)
 
