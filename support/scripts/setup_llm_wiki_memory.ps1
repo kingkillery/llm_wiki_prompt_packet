@@ -1,4 +1,5 @@
 param(
+    [string]$WorkspaceRoot,
     [string]$ConfigPath,
     [string]$QmdSource = $env:LLM_WIKI_QMD_SOURCE,
     [string]$QmdRepoUrl = $env:LLM_WIKI_QMD_REPO_URL,
@@ -24,6 +25,52 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+function Test-IsWindows {
+    if ($PSVersionTable.PSVersion.Major -lt 6) {
+        return $true
+    }
+    if ($null -ne $IsWindows) {
+        return [bool]$IsWindows
+    }
+    return $env:OS -eq "Windows_NT"
+}
+
+if (-not (Test-IsWindows)) {
+    $bash = Get-Command bash -ErrorAction SilentlyContinue
+    if ($bash) {
+        $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+        $bashScript = Join-Path $scriptDir "setup_llm_wiki_memory.sh"
+        if (Test-Path $bashScript) {
+            $bashArgs = @()
+            if ($WorkspaceRoot) { $bashArgs += @("--workspace", $WorkspaceRoot) }
+            if ($ConfigPath) { $bashArgs += @("--config-path", $ConfigPath) }
+            if ($QmdSource) { $bashArgs += @("--qmd-source", $QmdSource) }
+            if ($QmdRepoUrl) { $bashArgs += @("--qmd-repo-url", $QmdRepoUrl) }
+            if ($QmdCommand) { $bashArgs += @("--qmd-command", $QmdCommand) }
+            if ($QmdCollection) { $bashArgs += @("--qmd-collection", $QmdCollection) }
+            if ($QmdContext) { $bashArgs += @("--qmd-context", $QmdContext) }
+            if ($BrvCommand) { $bashArgs += @("--brv-command", $BrvCommand) }
+            if ($GitvizzFrontendUrl) { $bashArgs += @("--gitvizz-frontend-url", $GitvizzFrontendUrl) }
+            if ($GitvizzBackendUrl) { $bashArgs += @("--gitvizz-backend-url", $GitvizzBackendUrl) }
+            if ($GitvizzRepoUrl) { $bashArgs += @("--gitvizz-repo-url", $GitvizzRepoUrl) }
+            if ($GitvizzCheckoutPath) { $bashArgs += @("--gitvizz-checkout-path", $GitvizzCheckoutPath) }
+            if ($GitvizzRepoPath) { $bashArgs += @("--gitvizz-repo-path", $GitvizzRepoPath) }
+            if ($SkipQmd) { $bashArgs += "--skip-qmd" }
+            if ($SkipMcp) { $bashArgs += "--skip-mcp" }
+            if ($SkipQmdBootstrap) { $bashArgs += "--skip-qmd-bootstrap" }
+            if ($SkipQmdEmbed) { $bashArgs += "--skip-qmd-embed" }
+            if ($SkipBrvInit) { $bashArgs += "--skip-brv-init" }
+            if ($SkipBrv) { $bashArgs += "--skip-brv" }
+            if ($SkipGitvizz) { $bashArgs += "--skip-gitvizz" }
+            if ($SkipGitvizzStart) { $bashArgs += "--skip-gitvizz-start" }
+            if ($AllowGlobalToolInstall) { $bashArgs += "--allow-global-tool-install" }
+            if ($VerifyOnly) { $bashArgs += "--verify-only" }
+            & $bash $bashScript @bashArgs
+            exit $LASTEXITCODE
+        }
+    }
+}
 
 function Resolve-ScriptWorkspaceRoot {
     $scriptParent = Split-Path -Parent $PSScriptRoot
@@ -51,6 +98,9 @@ function Test-EnvFlag {
 }
 
 function Get-WorkspaceRoot {
+    if ($script:WorkspaceRoot) {
+        return $script:WorkspaceRoot
+    }
     $resolvedRoot = Resolve-ScriptWorkspaceRoot
     if (Test-Path (Join-Path $resolvedRoot ".llm-wiki\config.json")) {
         return $resolvedRoot
@@ -59,8 +109,13 @@ function Get-WorkspaceRoot {
 }
 
 if (-not $PSBoundParameters.ContainsKey("ConfigPath") -or [string]::IsNullOrWhiteSpace($ConfigPath)) {
-    $ConfigPath = Join-Path (Resolve-ScriptWorkspaceRoot) ".llm-wiki\config.json"
+    if ($WorkspaceRoot) {
+        $ConfigPath = Join-Path $WorkspaceRoot ".llm-wiki\config.json"
+    } else {
+        $ConfigPath = Join-Path (Resolve-ScriptWorkspaceRoot) ".llm-wiki\config.json"
+    }
 }
+$script:WorkspaceRoot = $WorkspaceRoot
 
 function Get-ConfigValue {
     param(
@@ -231,19 +286,8 @@ function Resolve-InstalledQmdCommand {
         return $localCommand
     }
 
-    if ($RequestedCommand) {
-        $requested = Get-Command $RequestedCommand -ErrorAction SilentlyContinue
-        if ($requested) {
-            return $RequestedCommand
-        }
-        if (Test-Path $RequestedCommand) {
-            return $RequestedCommand
-        }
-    }
-
-    $defaultQmd = Get-Command "pk-qmd" -ErrorAction SilentlyContinue
-    if ($defaultQmd) {
-        return "pk-qmd"
+    if ($RequestedCommand -and (Test-Path $RequestedCommand)) {
+        return $RequestedCommand
     }
 
     return $null
@@ -258,6 +302,148 @@ function Get-LocalBrvCommandPath {
     )
     foreach ($candidate in $candidates) {
         if (Test-Path $candidate) {
+            return $candidate
+        }
+    }
+    return $null
+}
+
+function Normalize-InstallScope {
+    param([string]$Scope)
+
+    $value = if ([string]::IsNullOrWhiteSpace($Scope)) { "local" } else { $Scope.Trim().ToLowerInvariant() }
+    switch ($value) {
+        "g" { return "global" }
+        "global" { return "global" }
+        "l" { return "local" }
+        "local" { return "local" }
+        "project" { return "local" }
+        default { throw "Unknown install scope: $Scope" }
+    }
+}
+
+function Get-ManagedToolRoot {
+    param([string]$WorkspaceRoot)
+
+    if ($script:ManagedToolRoot) {
+        return $script:ManagedToolRoot
+    }
+
+    $scope = Normalize-InstallScope $script:InstallScope
+    if ($scope -eq "global") {
+        return (Join-Path $script:HomeRoot ".llm-wiki\tools")
+    }
+    return (Join-Path $WorkspaceRoot ".llm-wiki\tools")
+}
+
+function Get-ManagedQmdCheckoutPath {
+    param([string]$WorkspaceRoot)
+
+    if ($script:QmdCheckoutPath) {
+        return $script:QmdCheckoutPath
+    }
+    return (Join-Path (Get-ManagedToolRoot -WorkspaceRoot $WorkspaceRoot) "pk-qmd")
+}
+
+function Get-ManagedBrvInstallRoot {
+    param([string]$WorkspaceRoot)
+
+    if ($script:BrvInstallRoot) {
+        return $script:BrvInstallRoot
+    }
+    return (Join-Path (Get-ManagedToolRoot -WorkspaceRoot $WorkspaceRoot) "brv")
+}
+
+function Write-QmdWrapperFiles {
+    param(
+        [string]$WorkspaceRoot,
+        [string]$CheckoutPath
+    )
+
+    $toolRoot = Get-ManagedToolRoot -WorkspaceRoot $WorkspaceRoot
+    $binRoot = Join-Path $toolRoot "bin"
+    $distPath = Join-Path $CheckoutPath "dist\cli\qmd.js"
+    if (-not (Test-Path $distPath)) {
+        throw "pk-qmd dist entrypoint missing: $distPath"
+    }
+
+    if (-not (Test-Path $binRoot)) {
+        New-Item -ItemType Directory -Force -Path $binRoot | Out-Null
+    }
+
+    $cmdPath = Join-Path $binRoot "pk-qmd.cmd"
+    $ps1Path = Join-Path $binRoot "pk-qmd.ps1"
+    $shPath = Join-Path $binRoot "pk-qmd"
+
+    Set-Content -Path $cmdPath -Value ("@ECHO off`r`nnode `"$distPath`" %*`r`n") -Encoding ascii
+    Set-Content -Path $ps1Path -Value (
+        "#!/usr/bin/env pwsh`n" +
+        "& node `"$distPath`" @args`n" +
+        "exit `$LASTEXITCODE`n"
+    ) -Encoding utf8
+    Set-Content -Path $shPath -Value (
+        "#!/usr/bin/env bash`n" +
+        "exec node `"$distPath`" ""`$@""`n"
+    ) -Encoding utf8
+
+    $script:QmdLocalCommandCandidates = @($cmdPath, $ps1Path, $shPath, $distPath)
+    return $cmdPath
+}
+
+function Get-LocalQmdCommandPath {
+    param([string]$WorkspaceRoot)
+
+    $candidates = New-Object System.Collections.Generic.List[string]
+    foreach ($candidate in @($script:QmdLocalCommandCandidates)) {
+        if (-not [string]::IsNullOrWhiteSpace($candidate)) {
+            $candidates.Add((Resolve-OptionalPath -PathValue $candidate -WorkspaceRoot $WorkspaceRoot))
+        }
+    }
+
+    if ($candidates.Count -eq 0) {
+        $toolRoot = Get-ManagedToolRoot -WorkspaceRoot $WorkspaceRoot
+        $checkoutPath = Get-ManagedQmdCheckoutPath -WorkspaceRoot $WorkspaceRoot
+        foreach ($candidate in @(
+            (Join-Path $toolRoot "bin\pk-qmd.cmd"),
+            (Join-Path $toolRoot "bin\pk-qmd.ps1"),
+            (Join-Path $toolRoot "bin\pk-qmd"),
+            (Join-Path $checkoutPath "dist\cli\qmd.js")
+        )) {
+            $candidates.Add($candidate)
+        }
+    }
+
+    foreach ($candidate in $candidates) {
+        if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path $candidate)) {
+            return $candidate
+        }
+    }
+    return $null
+}
+
+function Get-LocalBrvCommandPath {
+    param([string]$WorkspaceRoot)
+
+    $candidates = New-Object System.Collections.Generic.List[string]
+    foreach ($candidate in @($script:BrvLocalCommandCandidates)) {
+        if (-not [string]::IsNullOrWhiteSpace($candidate)) {
+            $candidates.Add((Resolve-OptionalPath -PathValue $candidate -WorkspaceRoot $WorkspaceRoot))
+        }
+    }
+
+    if ($candidates.Count -eq 0) {
+        $installRoot = Get-ManagedBrvInstallRoot -WorkspaceRoot $WorkspaceRoot
+        foreach ($candidate in @(
+            (Join-Path $installRoot "node_modules\.bin\brv.cmd"),
+            (Join-Path $installRoot "node_modules\.bin\brv.ps1"),
+            (Join-Path $installRoot "node_modules\.bin\brv")
+        )) {
+            $candidates.Add($candidate)
+        }
+    }
+
+    foreach ($candidate in $candidates) {
+        if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path $candidate)) {
             return $candidate
         }
     }
@@ -338,11 +524,10 @@ function Invoke-JsonMergeServer {
         [string]$TargetPath,
         [string]$ServerKey,
         [string]$CommandName,
-        [string[]]$Args,
+        [string[]]$InvocationArgs,
         [switch]$FactoryStyle
     )
 
-    $argsJson = if ($Args) { $Args | ConvertTo-Json -Compress } else { "[]" }
     $script = @'
 from pathlib import Path
 import json
@@ -351,8 +536,8 @@ import sys
 path = Path(sys.argv[1]).expanduser()
 server_key = sys.argv[2]
 command_name = sys.argv[3]
-args = json.loads(sys.argv[4])
-factory_style = sys.argv[5] == "1"
+args = sys.argv[4:-1]
+factory_style = sys.argv[-1] == "1"
 
 data = {}
 if path.exists():
@@ -378,7 +563,7 @@ path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     $tempScript = [System.IO.Path]::GetTempFileName()
     try {
         Set-Content -Path $tempScript -Value $script -Encoding utf8
-        & $PythonCommand $tempScript $TargetPath $ServerKey $CommandName $argsJson $(if ($FactoryStyle) { "1" } else { "0" }) | Out-Null
+        & $PythonCommand $tempScript $TargetPath $ServerKey $CommandName @($InvocationArgs) $(if ($FactoryStyle) { "1" } else { "0" }) | Out-Null
         if ($LASTEXITCODE -ne 0) {
             throw "Failed to update MCP config at $TargetPath"
         }
@@ -432,10 +617,9 @@ function Set-CodexMcpServer {
         [string]$Path,
         [string]$ServerKey,
         [string]$CommandName,
-        [string[]]$Args
+        [string[]]$InvocationArgs
     )
 
-    $argsJson = if ($Args) { $Args | ConvertTo-Json -Compress } else { "[]" }
     $script = @'
 from pathlib import Path
 import json
@@ -445,7 +629,7 @@ import sys
 path = Path(sys.argv[1]).expanduser()
 server_key = sys.argv[2]
 command_name = sys.argv[3]
-args = json.loads(sys.argv[4])
+args = sys.argv[4:]
 content = path.read_text(encoding="utf-8") if path.exists() else ""
 args_literal = "[" + ", ".join(json.dumps(value) for value in args) + "]"
 block = f"[mcp_servers.{server_key}]\ncommand = {json.dumps(command_name)}\nargs = {args_literal}\n"
@@ -469,7 +653,7 @@ path.write_text(content, encoding="utf-8")
     $tempScript = [System.IO.Path]::GetTempFileName()
     try {
         Set-Content -Path $tempScript -Value $script -Encoding utf8
-        & $PythonCommand $tempScript $Path $ServerKey $CommandName $argsJson | Out-Null
+        & $PythonCommand $tempScript $Path $ServerKey $CommandName @($InvocationArgs) | Out-Null
         if ($LASTEXITCODE -ne 0) {
             throw "Failed to update Codex MCP config at $Path"
         }
@@ -784,37 +968,106 @@ function Invoke-CommandChecked {
     return $output
 }
 
-function Install-PacketLocalQmdDependency {
+function Ensure-ManagedQmdCheckout {
     param(
         [string]$WorkspaceRoot,
-        [string]$RepoUrl
+        [string]$RepoUrl,
+        [string]$SourcePath,
+        [switch]$Verify
     )
 
-    $manifestPath = Ensure-LocalQmdManifest -WorkspaceRoot $WorkspaceRoot -RepoUrl $RepoUrl
+    $checkoutPath = if ($SourcePath) {
+        Resolve-OptionalPath -PathValue $SourcePath -WorkspaceRoot $WorkspaceRoot
+    } else {
+        Get-ManagedQmdCheckoutPath -WorkspaceRoot $WorkspaceRoot
+    }
 
+    if ([string]::IsNullOrWhiteSpace($checkoutPath)) {
+        return $null
+    }
+
+    $distPath = Join-Path $checkoutPath "dist\cli\qmd.js"
+    if ((Test-Path $distPath) -and (-not $Verify)) {
+        return (Write-QmdWrapperFiles -WorkspaceRoot $WorkspaceRoot -CheckoutPath $checkoutPath)
+    }
+    if ((Test-Path $distPath) -and $Verify) {
+        return $distPath
+    }
+
+    if ($Verify) {
+        return $null
+    }
+
+    $git = Get-GitCommand
     $npm = Get-NpmCommand
     if (-not $npm) {
         return $null
     }
 
-    & $npm install --prefix (Split-Path -Parent $manifestPath) | Out-Null
-    return (Get-LocalQmdCommandPath -WorkspaceRoot $WorkspaceRoot)
+    if (-not (Test-Path $checkoutPath)) {
+        if ($SourcePath -or -not $RepoUrl -or -not $git) {
+            return $null
+        }
+        $parent = Split-Path -Parent $checkoutPath
+        if (-not (Test-Path $parent)) {
+            New-Item -ItemType Directory -Force -Path $parent | Out-Null
+        }
+        & $git clone $RepoUrl $checkoutPath | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "git clone failed for pk-qmd checkout: $RepoUrl -> $checkoutPath"
+        }
+    } elseif ((Test-Path (Join-Path $checkoutPath ".git")) -and $git) {
+        & $git -C $checkoutPath pull --ff-only | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "git pull --ff-only failed for pk-qmd checkout at $checkoutPath"
+        }
+    }
+
+    & $npm install --prefix $checkoutPath --ignore-scripts | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "npm install failed for pk-qmd checkout at $checkoutPath"
+    }
+
+    & $npm exec --prefix $checkoutPath -- tsc -p tsconfig.build.json | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "TypeScript build failed for pk-qmd checkout at $checkoutPath"
+    }
+
+    if (-not (Test-Path $distPath)) {
+        throw "pk-qmd build completed but dist entrypoint is still missing: $distPath"
+    }
+
+    return (Write-QmdWrapperFiles -WorkspaceRoot $WorkspaceRoot -CheckoutPath $checkoutPath)
+}
+
+function Install-PacketLocalQmdDependency {
+    param(
+        [string]$WorkspaceRoot,
+        [string]$RepoUrl,
+        [string]$SourcePath
+    )
+
+    return (Ensure-ManagedQmdCheckout -WorkspaceRoot $WorkspaceRoot -RepoUrl $RepoUrl -SourcePath $SourcePath)
 }
 
 function Install-PacketLocalBrvDependency {
     param([string]$WorkspaceRoot)
 
-    $manifestPath = Get-LocalQmdManifestPath -WorkspaceRoot $WorkspaceRoot
-    if (-not (Test-Path $manifestPath)) {
-        return $null
-    }
-
+    $installRoot = Get-ManagedBrvInstallRoot -WorkspaceRoot $WorkspaceRoot
     $npm = Get-NpmCommand
     if (-not $npm) {
         return $null
     }
 
-    & $npm install --prefix (Split-Path -Parent $manifestPath) | Out-Null
+    if (-not (Test-Path $installRoot)) {
+        New-Item -ItemType Directory -Force -Path $installRoot | Out-Null
+    }
+
+    $packageName = if ($script:BrvPackageName) { $script:BrvPackageName } else { "byterover-cli" }
+    & $npm install --prefix $installRoot $packageName | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "npm install failed for BRV package $packageName in $installRoot"
+    }
     return (Get-LocalBrvCommandPath -WorkspaceRoot $WorkspaceRoot)
 }
 
@@ -833,6 +1086,26 @@ function Resolve-QmdCommand {
         return [pscustomobject]@{ Command = $localCommand; Installed = $false; Source = "existing" }
     }
 
+    if ($Verify) {
+        $verifiedCommand = Resolve-InstalledQmdCommand -RequestedCommand $RequestedCommand -WorkspaceRoot $WorkspaceRoot
+        return [pscustomobject]@{ Command = $verifiedCommand; Installed = $false; Source = $(if ($verifiedCommand) { "existing" } else { "missing" }) }
+    }
+
+    $sourceCommand = Get-LocalQmdSourceCommandPath -SourcePath $SourcePath
+    if ($sourceCommand) {
+        return [pscustomobject]@{
+            Command = $sourceCommand
+            Installed = $false
+            Source = "source-checkout"
+            Message = "Using pk-qmd from local checkout: $SourcePath"
+        }
+    }
+
+    $localInstalled = Install-PacketLocalQmdDependency -WorkspaceRoot $WorkspaceRoot -RepoUrl $RepoUrl -SourcePath $SourcePath
+    if ($localInstalled) {
+        return [pscustomobject]@{ Command = $localInstalled; Installed = $true; Source = "managed-checkout" }
+    }
+
     if ($RequestedCommand) {
         $cmd = Get-Command $RequestedCommand -ErrorAction SilentlyContinue
         if ($cmd) {
@@ -843,57 +1116,13 @@ function Resolve-QmdCommand {
         }
     }
 
-    if ($Verify) {
-        return [pscustomobject]@{ Command = $RequestedCommand; Installed = $false; Source = "missing" }
-    }
-
-    if ($SourcePath) {
-        $sourceCommand = Get-LocalQmdSourceCommandPath -SourcePath $SourcePath
-        if ($sourceCommand) {
-            return [pscustomobject]@{
-                Command = $sourceCommand
-                Installed = $false
-                Source = "source-checkout"
-                Message = "Using pk-qmd from local checkout: $SourcePath"
-            }
-        }
-        if (-not $AllowGlobalToolInstall) {
-            return [pscustomobject]@{
-                Command = $(if ($RequestedCommand) { $RequestedCommand } else { "pk-qmd" })
-                Installed = $false
-                Source = "manual-required"
-                Message = "pk-qmd global install is disabled. Install from $SourcePath manually or rerun with -AllowGlobalToolInstall."
-            }
-        }
-        $npm = Get-NpmCommand
-        if (-not $npm) {
-            return [pscustomobject]@{
-                Command = $(if ($RequestedCommand) { $RequestedCommand } else { "pk-qmd" })
-                Installed = $false
-                Source = "manual-required"
-                Message = "npm is required to install pk-qmd from $SourcePath."
-            }
-        }
-        & $npm install -g $SourcePath | Out-Null
-        $installedCommand = Resolve-InstalledQmdCommand -RequestedCommand $RequestedCommand -WorkspaceRoot $WorkspaceRoot
-        if (-not $installedCommand) {
-            throw "pk-qmd install completed from $SourcePath but no runnable command was found."
-        }
-        return [pscustomobject]@{ Command = $installedCommand; Installed = $true; Source = $SourcePath }
-    }
-
-    $localInstalled = Install-PacketLocalQmdDependency -WorkspaceRoot $WorkspaceRoot -RepoUrl $RepoUrl
-    if ($localInstalled) {
-        return [pscustomobject]@{ Command = $localInstalled; Installed = $true; Source = "packet-local" }
-    }
-
     $gitSource = Resolve-GitSource -RepoUrl $RepoUrl
     if (-not $AllowGlobalToolInstall) {
         return [pscustomobject]@{
             Command = $(if ($RequestedCommand) { $RequestedCommand } else { "pk-qmd" })
             Installed = $false
             Source = "manual-required"
-            Message = "pk-qmd is missing and packet-local install was unavailable. Install $gitSource manually or rerun with -AllowGlobalToolInstall."
+            Message = "pk-qmd is missing and the managed checkout install was unavailable. Install $gitSource manually or rerun with -AllowGlobalToolInstall."
         }
     }
 
@@ -932,6 +1161,7 @@ function Invoke-QmdCollectionBootstrap {
     param(
         [string]$CommandName,
         [string]$WorkspaceRoot,
+        [string]$SourcePath,
         [string]$CollectionName,
         [string]$ContextText,
         [switch]$SkipEmbed,
@@ -961,7 +1191,8 @@ function Invoke-QmdCollectionBootstrap {
             $results.Add("Missing qmd collection: $CollectionName")
             return $results
         }
-        Invoke-CommandChecked -CommandName $CommandName -Arguments @("collection", "add", $WorkspaceRoot, "--name", $CollectionName) | Out-Null
+        $collectionSource = if ([string]::IsNullOrWhiteSpace($SourcePath)) { $WorkspaceRoot } else { $SourcePath }
+        Invoke-CommandChecked -CommandName $CommandName -Arguments @("collection", "add", $collectionSource, "--name", $CollectionName) | Out-Null
         $results.Add("Added qmd collection: $CollectionName")
     } else {
         $results.Add("qmd collection already present: $CollectionName")
@@ -1069,16 +1300,38 @@ function Get-BrvProviders {
 }
 
 $WorkspaceRoot = Get-WorkspaceRoot
+$script:HomeRoot = [Environment]::GetFolderPath("UserProfile")
 $config = $null
 if (Test-Path $ConfigPath) {
     $config = Get-Content -Path $ConfigPath -Raw | ConvertFrom-Json
 }
 
+$script:InstallScope = Normalize-InstallScope (Get-ConfigValue -Preferred $env:LLM_WIKI_INSTALL_SCOPE -Fallback $(if ($config -and $config.tooling.install_scope) { $config.tooling.install_scope } else { "local" }))
+$script:ManagedToolRoot = Resolve-OptionalPath -PathValue $(if ($config -and $config.tooling.managed_tool_root) { $config.tooling.managed_tool_root } else { $null }) -WorkspaceRoot $WorkspaceRoot
 $QmdRepoUrl = Get-ConfigValue -Preferred $QmdRepoUrl -Fallback $(if ($config) { $config.pk_qmd.repo_url } else { "https://github.com/kingkillery/pk-qmd" })
 $QmdCommand = Get-ConfigValue -Preferred $QmdCommand -Fallback $(if ($config) { $config.pk_qmd.command } else { "pk-qmd" })
-$QmdCollection = Get-ConfigValue -Preferred $QmdCollection -Fallback $(if ($config -and $config.pk_qmd.collection_name) { $config.pk_qmd.collection_name } else { [IO.Path]::GetFileName($WorkspaceRoot.TrimEnd('\', '/')).ToLowerInvariant().Replace(' ', '-') })
-$QmdContext = Get-ConfigValue -Preferred $QmdContext -Fallback $(if ($config -and $config.pk_qmd.context) { $config.pk_qmd.context } else { "Primary llm-wiki-memory vault for $WorkspaceRoot" })
+$script:QmdCheckoutPath = Resolve-OptionalPath -PathValue $(if ($config -and $config.pk_qmd.checkout_path) { $config.pk_qmd.checkout_path } else { $null }) -WorkspaceRoot $WorkspaceRoot
+$script:QmdLocalCommandCandidates = @()
+if ($config -and $config.pk_qmd.local_command_candidates) {
+    foreach ($candidate in $config.pk_qmd.local_command_candidates) {
+        $script:QmdLocalCommandCandidates += [string]$candidate
+    }
+}
+$MemoryBasePath = Resolve-OptionalPath -PathValue (Get-ConfigValue -Preferred $env:LLM_WIKI_MEMORY_VAULT_PATH -Fallback $(if ($config -and $config.memory_base.vault_path) { $config.memory_base.vault_path } else { $WorkspaceRoot })) -WorkspaceRoot $WorkspaceRoot
+$MemoryBaseName = if (-not [string]::IsNullOrWhiteSpace($env:LLM_WIKI_MEMORY_VAULT_NAME)) { $env:LLM_WIKI_MEMORY_VAULT_NAME } elseif ($config -and $config.memory_base.name) { [string]$config.memory_base.name } else { [IO.Path]::GetFileName($MemoryBasePath.TrimEnd('\', '/')).ToLowerInvariant().Replace(' ', '-') }
+$MemoryBaseId = if (-not [string]::IsNullOrWhiteSpace($env:LLM_WIKI_MEMORY_VAULT_ID)) { $env:LLM_WIKI_MEMORY_VAULT_ID } elseif ($config -and $config.memory_base.vault_id) { [string]$config.memory_base.vault_id } else { "" }
+$QmdCollection = Get-ConfigValue -Preferred $QmdCollection -Fallback $(if ($config -and $config.pk_qmd.collection_name) { $config.pk_qmd.collection_name } else { $MemoryBaseName })
+$MemoryBaseContextSuffix = if ($MemoryBaseId) { " (vault id: $MemoryBaseId)" } else { "" }
+$QmdContext = Get-ConfigValue -Preferred $QmdContext -Fallback $(if ($config -and $config.pk_qmd.context) { $config.pk_qmd.context } else { "Official $MemoryBaseName memory base at $MemoryBasePath$MemoryBaseContextSuffix" })
 $BrvCommand = Get-ConfigValue -Preferred $BrvCommand -Fallback $(if ($config) { $config.byterover.command } else { "brv" })
+$script:BrvInstallRoot = Resolve-OptionalPath -PathValue $(if ($config -and $config.byterover.install_root) { $config.byterover.install_root } else { $null }) -WorkspaceRoot $WorkspaceRoot
+$script:BrvLocalCommandCandidates = @()
+if ($config -and $config.byterover.local_command_candidates) {
+    foreach ($candidate in $config.byterover.local_command_candidates) {
+        $script:BrvLocalCommandCandidates += [string]$candidate
+    }
+}
+$script:BrvPackageName = if ($config -and $config.byterover.package_name) { [string]$config.byterover.package_name } else { "byterover-cli" }
 $GitvizzFrontendUrl = Get-ConfigValue -Preferred $GitvizzFrontendUrl -Fallback $(if ($config) { $config.gitvizz.frontend_url } else { "http://localhost:3000" })
 $GitvizzBackendUrl = Get-ConfigValue -Preferred $GitvizzBackendUrl -Fallback $(if ($config) { $config.gitvizz.backend_url } else { "http://localhost:8003" })
 $GitvizzRepoUrl = Get-ConfigValue -Preferred $GitvizzRepoUrl -Fallback $(if ($config) { $config.gitvizz.repo_url } else { $null })
@@ -1096,7 +1349,13 @@ $failures = New-Object System.Collections.Generic.List[string]
 if ($AllowGlobalToolInstall) {
     $summary.Add("Global tool install fallback enabled")
 } else {
-    $summary.Add("Global tool install fallback disabled; packet-local installs only")
+    $summary.Add("Global tool install fallback disabled; managed $script:InstallScope installs only")
+}
+$summary.Add("Managed install scope: $script:InstallScope")
+$summary.Add("Managed tool root: $(Get-ManagedToolRoot -WorkspaceRoot $WorkspaceRoot)")
+$summary.Add("Official memory base: $MemoryBasePath")
+if ($MemoryBaseId) {
+    $summary.Add("Official memory base id: $MemoryBaseId")
 }
 $summary.Add("pk-qmd configured command: $QmdCommand")
 $summary.Add("brv configured command: $BrvCommand")
@@ -1120,7 +1379,7 @@ if (-not $SkipQmd) {
 
     switch ($qmd.Source) {
         "existing" { $summary.Add("pk-qmd install state: resolved existing command") }
-        "packet-local" { $summary.Add("pk-qmd install state: installed packet-local dependency") }
+        "managed-checkout" { $summary.Add("pk-qmd install state: installed managed checkout") }
         "source-checkout" {
             $summary.Add("pk-qmd install state: resolved source checkout")
             $summary.Add($qmd.Message)
@@ -1133,7 +1392,7 @@ if (-not $SkipQmd) {
         "missing" {
             $failures.Add("Missing pk-qmd command: $QmdCommand")
             $summary.Add("pk-qmd install state: missing")
-            $summary.Add("Install pk-qmd from the packet dependency manifest, $QmdRepoUrl, or provide -QmdSource")
+            $summary.Add("Install pk-qmd from a managed checkout at $QmdRepoUrl or provide -QmdSource")
         }
         default { $summary.Add("pk-qmd install state: installed from $($qmd.Source)") }
     }
@@ -1155,25 +1414,31 @@ if (-not $SkipQmd) {
 
             $qmdServerInvocation = Get-CommandInvocation -CommandName $QmdCommand -Arguments @("mcp")
 
-            Invoke-JsonMergeServer -PythonCommand $python -TargetPath (Join-Path $userHome ".claude\settings.json") -ServerKey "pk-qmd" -CommandName $qmdServerInvocation.Command -Args $qmdServerInvocation.Arguments
+            Invoke-JsonMergeServer -PythonCommand $python -TargetPath (Join-Path $userHome ".claude\settings.json") -ServerKey "pk-qmd" -CommandName $qmdServerInvocation.Command -InvocationArgs $qmdServerInvocation.Arguments
             $summary.Add("Updated ~/.claude/settings.json")
 
-            Set-CodexMcpServer -PythonCommand $python -Path (Join-Path $userHome ".codex\config.toml") -ServerKey "pk-qmd" -CommandName $qmdServerInvocation.Command -Args $qmdServerInvocation.Arguments
+            Set-CodexMcpServer -PythonCommand $python -Path (Join-Path $userHome ".codex\config.toml") -ServerKey "pk-qmd" -CommandName $qmdServerInvocation.Command -InvocationArgs $qmdServerInvocation.Arguments
             $summary.Add("Updated ~/.codex/config.toml")
 
-            Invoke-JsonMergeServer -PythonCommand $python -TargetPath (Join-Path $userHome ".factory\mcp.json") -ServerKey "pk-qmd" -CommandName $qmdServerInvocation.Command -Args $qmdServerInvocation.Arguments -FactoryStyle
+            Invoke-JsonMergeServer -PythonCommand $python -TargetPath (Join-Path $userHome ".factory\mcp.json") -ServerKey "pk-qmd" -CommandName $qmdServerInvocation.Command -InvocationArgs $qmdServerInvocation.Arguments -FactoryStyle
             $summary.Add("Updated ~/.factory/mcp.json")
 
-            $skillScriptPath = Join-Path $WorkspaceRoot $SkillScriptRelativePath
+            $skillScriptPath = Resolve-OptionalPath -PathValue $SkillScriptRelativePath -WorkspaceRoot $WorkspaceRoot
+            if ((-not $skillScriptPath -or -not (Test-Path $skillScriptPath)) -and ($SkillScriptRelativePath -eq "scripts\llm_wiki_skill_mcp.py")) {
+                $fallbackSkillScript = Join-Path $WorkspaceRoot "support\scripts\llm_wiki_skill_mcp.py"
+                if (Test-Path $fallbackSkillScript) {
+                    $skillScriptPath = $fallbackSkillScript
+                }
+            }
             if (Test-Path $skillScriptPath) {
-                $skillArgs = @($skillScriptPath, "mcp", "--workspace", $WorkspaceRoot)
-                Invoke-JsonMergeServer -PythonCommand $python -TargetPath (Join-Path $userHome ".claude\settings.json") -ServerKey $SkillServerKey -CommandName $python -Args $skillArgs
+                $skillArgs = @($skillScriptPath, "--workspace", $WorkspaceRoot, "mcp")
+                Invoke-JsonMergeServer -PythonCommand $python -TargetPath (Join-Path $userHome ".claude\settings.json") -ServerKey $SkillServerKey -CommandName $python -InvocationArgs $skillArgs
                 $summary.Add("Updated ~/.claude/settings.json for $SkillServerKey")
 
-                Set-CodexMcpServer -PythonCommand $python -Path (Join-Path $userHome ".codex\config.toml") -ServerKey $SkillServerKey -CommandName $python -Args $skillArgs
+                Set-CodexMcpServer -PythonCommand $python -Path (Join-Path $userHome ".codex\config.toml") -ServerKey $SkillServerKey -CommandName $python -InvocationArgs $skillArgs
                 $summary.Add("Updated ~/.codex/config.toml for $SkillServerKey")
 
-                Invoke-JsonMergeServer -PythonCommand $python -TargetPath (Join-Path $userHome ".factory\mcp.json") -ServerKey $SkillServerKey -CommandName $python -Args $skillArgs -FactoryStyle
+                Invoke-JsonMergeServer -PythonCommand $python -TargetPath (Join-Path $userHome ".factory\mcp.json") -ServerKey $SkillServerKey -CommandName $python -InvocationArgs $skillArgs -FactoryStyle
                 $summary.Add("Updated ~/.factory/mcp.json for $SkillServerKey")
             } else {
                 $summary.Add("Skill MCP script not found, skipping $SkillServerKey MCP wiring")
@@ -1181,7 +1446,7 @@ if (-not $SkipQmd) {
         }
 
         if (-not $SkipQmdBootstrap) {
-            foreach ($line in (Invoke-QmdCollectionBootstrap -CommandName $QmdCommand -WorkspaceRoot $WorkspaceRoot -CollectionName $QmdCollection -ContextText $QmdContext -SkipEmbed:$SkipQmdEmbed -Verify:$VerifyOnly)) {
+            foreach ($line in (Invoke-QmdCollectionBootstrap -CommandName $QmdCommand -WorkspaceRoot $WorkspaceRoot -SourcePath $MemoryBasePath -CollectionName $QmdCollection -ContextText $QmdContext -SkipEmbed:$SkipQmdEmbed -Verify:$VerifyOnly)) {
                 $summary.Add($line)
             }
         }
@@ -1193,7 +1458,7 @@ if (-not $SkipBrv) {
     if ($localBrv) {
         $BrvCommand = $localBrv
         $summary.Add("brv resolved command: $BrvCommand")
-        $summary.Add("brv install state: resolved packet-local dependency")
+        $summary.Add("brv install state: resolved managed dependency")
     } else {
         $brvExists = Get-Command $BrvCommand -ErrorAction SilentlyContinue
         if ($brvExists) {
@@ -1207,7 +1472,7 @@ if (-not $SkipBrv) {
             if ($localInstalledBrv) {
                 $BrvCommand = $localInstalledBrv
                 $summary.Add("brv resolved command: $BrvCommand")
-                $summary.Add("brv install state: installed packet-local dependency")
+                $summary.Add("brv install state: installed managed dependency")
             } elseif (-not $AllowGlobalToolInstall) {
                 $failures.Add("Missing Byterover command: $BrvCommand")
                 $summary.Add("brv install state: missing")

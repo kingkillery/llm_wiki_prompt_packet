@@ -7,6 +7,9 @@ description: Use when the user wants the KADE plus gstack bridge, including sess
 
 This is the packet-owned bridge skill for KADE plus gstack.
 
+Its only purpose is to unify `kade-hq` plus `gstack` and make routing easier for the agent.
+It is not the KADE System itself and it is not proof that the richer upstream runtime is installed.
+
 ## Startup
 
 1. Read repo-local instructions first.

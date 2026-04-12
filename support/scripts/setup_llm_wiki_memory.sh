@@ -2,6 +2,33 @@
 set -euo pipefail
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 
+is_windows_bash() {
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+is_wsl() {
+  if [[ -n "${WSL_INTEROP:-}" || -n "${WSL_DISTRO_NAME:-}" ]]; then
+    return 0
+  fi
+  grep -qi microsoft /proc/version 2>/dev/null
+}
+
+to_win_path() {
+  local path="$1"
+  if command -v cygpath >/dev/null 2>&1; then
+    cygpath -w "$path"
+    return 0
+  fi
+  if command -v wslpath >/dev/null 2>&1; then
+    wslpath -w "$path"
+    return 0
+  fi
+  printf '%s\n' "$path"
+}
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_PARENT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SCRIPT_GRANDPARENT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -149,6 +176,42 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if (is_windows_bash || is_wsl) && command -v powershell.exe >/dev/null 2>&1; then
+  PS1_PATH="$SCRIPT_DIR/setup_llm_wiki_memory.ps1"
+  if [[ -f "$PS1_PATH" ]]; then
+    PS1_WIN_PATH="$(to_win_path "$PS1_PATH")"
+    PS_ARGS=()
+    if [[ -n "${WORKSPACE_ROOT:-}" ]]; then
+      PS_ARGS+=("-WorkspaceRoot" "$(to_win_path "$WORKSPACE_ROOT")")
+    fi
+    if [[ -n "${CONFIG_PATH:-}" ]]; then
+      PS_ARGS+=("-ConfigPath" "$(to_win_path "$CONFIG_PATH")")
+    fi
+    if [[ -n "${QMD_SOURCE:-}" ]]; then PS_ARGS+=("-QmdSource" "$(to_win_path "$QMD_SOURCE")"); fi
+    if [[ -n "${QMD_REPO_URL:-}" ]]; then PS_ARGS+=("-QmdRepoUrl" "$QMD_REPO_URL"); fi
+    if [[ -n "${QMD_COMMAND:-}" ]]; then PS_ARGS+=("-QmdCommand" "$QMD_COMMAND"); fi
+    if [[ -n "${QMD_COLLECTION:-}" ]]; then PS_ARGS+=("-QmdCollection" "$QMD_COLLECTION"); fi
+    if [[ -n "${QMD_CONTEXT:-}" ]]; then PS_ARGS+=("-QmdContext" "$QMD_CONTEXT"); fi
+    if [[ -n "${BRV_COMMAND:-}" ]]; then PS_ARGS+=("-BrvCommand" "$BRV_COMMAND"); fi
+    if [[ -n "${GITVIZZ_FRONTEND_URL:-}" ]]; then PS_ARGS+=("-GitvizzFrontendUrl" "$GITVIZZ_FRONTEND_URL"); fi
+    if [[ -n "${GITVIZZ_BACKEND_URL:-}" ]]; then PS_ARGS+=("-GitvizzBackendUrl" "$GITVIZZ_BACKEND_URL"); fi
+    if [[ -n "${GITVIZZ_REPO_URL:-}" ]]; then PS_ARGS+=("-GitvizzRepoUrl" "$GITVIZZ_REPO_URL"); fi
+    if [[ -n "${GITVIZZ_CHECKOUT_PATH:-}" ]]; then PS_ARGS+=("-GitvizzCheckoutPath" "$(to_win_path "$GITVIZZ_CHECKOUT_PATH")"); fi
+    if [[ -n "${GITVIZZ_REPO_PATH:-}" ]]; then PS_ARGS+=("-GitvizzRepoPath" "$(to_win_path "$GITVIZZ_REPO_PATH")"); fi
+    if [[ "$SKIP_QMD" -eq 1 ]]; then PS_ARGS+=("-SkipQmd"); fi
+    if [[ "$SKIP_MCP" -eq 1 ]]; then PS_ARGS+=("-SkipMcp"); fi
+    if [[ "$SKIP_QMD_BOOTSTRAP" -eq 1 ]]; then PS_ARGS+=("-SkipQmdBootstrap"); fi
+    if [[ "$SKIP_QMD_EMBED" -eq 1 ]]; then PS_ARGS+=("-SkipQmdEmbed"); fi
+    if [[ "$SKIP_BRV" -eq 1 ]]; then PS_ARGS+=("-SkipBrv"); fi
+    if [[ "$SKIP_BRV_INIT" -eq 1 ]]; then PS_ARGS+=("-SkipBrvInit"); fi
+    if [[ "$SKIP_GITVIZZ_START" -eq 1 ]]; then PS_ARGS+=("-SkipGitvizzStart"); fi
+    if [[ "$SKIP_GITVIZZ" -eq 1 ]]; then PS_ARGS+=("-SkipGitvizz"); fi
+    if [[ "$ALLOW_GLOBAL_TOOL_INSTALL" -eq 1 ]]; then PS_ARGS+=("-AllowGlobalToolInstall"); fi
+    if [[ "$VERIFY_ONLY" -eq 1 ]]; then PS_ARGS+=("-VerifyOnly"); fi
+    exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$PS1_WIN_PATH" "${PS_ARGS[@]}"
+  fi
+fi
 
 mapfile -t CFG < <("$PYTHON_BIN" - "$CONFIG_PATH" "$WORKSPACE_ROOT" <<'PY'
 import json

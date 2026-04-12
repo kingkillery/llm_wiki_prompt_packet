@@ -3,3 +3,6 @@
 - [2026-04-11] Local Docker intentionally exposes one loopback-only host gateway at `127.0.0.1:8181`: `/mcp` for `pk-qmd`, `/graph/*` for GitVizz backend routes, and `/memory/*` for a narrow BRV adapter.
 - [2026-04-11] Local Docker gateway routes are intentionally auth-free only because they bind to loopback. Hosted or tunnelled access should add auth and must not expose raw BRV credentials, Mongo, or Phoenix directly.
 - [2026-04-11] `installers/install_g_kade_workspace.py` should create `~/.kade/HUMAN.md` from the packaged `deps/pk-skills1/kade-headquarters/HUMAN.md` profile when missing, upgrade only the exact legacy stub, and preserve any real existing Layer 1 profile.
+- [2026-04-12] The official durable Obsidian memory base is `C:\dev\Desktop-Projects\Helpful-Docs-Prompts\VAULTS-OBSIDIAN\Kade-HQ` with vault name `kade-hq`, vault id `fd8411f00d3a9d21`, and canonical system note `llm_wiki_prompt_packet System Map.md`.
+- [2026-04-12] Packet-owned launcher installs must include `kade-hq`, `g-kade`, and `gstack`; `g-kade` is only the unifier skill and must not be treated as the KADE System itself.
+- [2026-04-12] Install flows should preserve the explicit choice between local project bootstrap and global managed-tool bootstrap through `-g` or `--global-install`.

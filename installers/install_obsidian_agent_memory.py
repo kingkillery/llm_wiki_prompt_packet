@@ -30,6 +30,12 @@ PACKET_OWNER = "llm-wiki-prompt-packet"
 HOME_SKILL_OWNER_MARKER = ".llm-wiki-packet-owner.json"
 RICH_MARKERS = {"bin", "browse", "qa", "review", "kade"}
 RICH_SIBLING_HINTS = {"debug", "debugging", "deploy", "deployment", "design", "dogfood", "dx", "investigate", "ship", "workflows"}
+DEFAULT_INSTALL_SCOPE = "local"
+DEFAULT_BRV_PACKAGE = "byterover-cli"
+DEFAULT_GITVIZZ_REPO_URL = "https://github.com/kingkillery/GitVizz.git"
+OFFICIAL_MEMORY_VAULT_NAME = "kade-hq"
+OFFICIAL_MEMORY_VAULT_ID = "fd8411f00d3a9d21"
+OFFICIAL_MEMORY_VAULT_PATH = r"C:\dev\Desktop-Projects\Helpful-Docs-Prompts\VAULTS-OBSIDIAN\Kade-HQ"
 REPO_RUNTIME_DEFAULT_PATHS = {
     "g-kade": "deps/pk-skills1/gstack/g-kade",
     "gstack": "deps/pk-skills1/gstack",
@@ -119,7 +125,7 @@ BOOTSTRAP_FILES = {
     "templates/.gitkeep": "",
     "scripts/.gitkeep": "",
     ".llm-wiki/.gitkeep": "",
-    ".llm-wiki/.gitignore": "node_modules/\npackage-lock.json\n",
+    ".llm-wiki/.gitignore": "node_modules/\npackage-lock.json\ntools/\n",
     ".llm-wiki/skills-registry.json": "{\n  \"skills\": {},\n  \"feedback\": [],\n  \"briefs\": [],\n  \"deltas\": [],\n  \"validations\": [],\n  \"packets\": [],\n  \"events\": []\n}\n",
     ".llm-wiki/skill-pipeline/.gitkeep": "",
     ".llm-wiki/skill-pipeline/briefs/.gitkeep": "",
@@ -133,10 +139,13 @@ BOOTSTRAP_FILES = {
 
 HOME_SKILL_TARGETS = {
     ".agents/skills/gstack": HOME_SKILLS_ROOT / "gstack",
+    ".agents/skills/kade-hq": HOME_SKILLS_ROOT / "kade-hq",
     ".agents/skills/g-kade": HOME_SKILLS_ROOT / "g-kade",
     ".codex/skills/gstack": HOME_SKILLS_ROOT / "gstack",
+    ".codex/skills/kade-hq": HOME_SKILLS_ROOT / "kade-hq",
     ".codex/skills/g-kade": HOME_SKILLS_ROOT / "g-kade",
     ".claude/skills/gstack": HOME_SKILLS_ROOT / "gstack",
+    ".claude/skills/kade-hq": HOME_SKILLS_ROOT / "kade-hq",
     ".claude/skills/g-kade": HOME_SKILLS_ROOT / "g-kade",
 }
 
@@ -171,6 +180,85 @@ def env_flag(name: str) -> bool:
     if value is None:
         return False
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def normalize_install_scope(value: str | None) -> str:
+    normalized = (value or DEFAULT_INSTALL_SCOPE).strip().lower()
+    aliases = {
+        "g": "global",
+        "global": "global",
+        "l": "local",
+        "local": "local",
+        "project": "local",
+    }
+    try:
+        return aliases[normalized]
+    except KeyError as exc:
+        raise SystemExit(f"Unknown install scope: {value}. Use 'local' or 'global'.") from exc
+
+
+def default_install_scope() -> str:
+    return normalize_install_scope(env_or_default("LLM_WIKI_INSTALL_SCOPE", DEFAULT_INSTALL_SCOPE))
+
+
+def managed_tool_root(vault: Path, home_root: Path, install_scope: str) -> Path:
+    if normalize_install_scope(install_scope) == "global":
+        return (home_root / ".llm-wiki" / "tools").resolve()
+    return vault / ".llm-wiki" / "tools"
+
+
+def qmd_managed_candidates(vault: Path, home_root: Path, install_scope: str) -> list[Path]:
+    tool_root = managed_tool_root(vault, home_root, install_scope)
+    checkout_root = tool_root / "pk-qmd"
+    return [
+        tool_root / "bin" / "pk-qmd.cmd",
+        tool_root / "bin" / "pk-qmd.ps1",
+        tool_root / "bin" / "pk-qmd",
+        checkout_root / "dist" / "cli" / "qmd.js",
+    ]
+
+
+def brv_managed_candidates(vault: Path, home_root: Path, install_scope: str) -> list[Path]:
+    install_root = managed_tool_root(vault, home_root, install_scope) / "brv"
+    return [
+        install_root / "node_modules" / ".bin" / "brv.cmd",
+        install_root / "node_modules" / ".bin" / "brv.ps1",
+        install_root / "node_modules" / ".bin" / "brv",
+    ]
+
+
+def default_memory_vault_path(vault: Path) -> str:
+    override = os.getenv("LLM_WIKI_MEMORY_VAULT_PATH")
+    if override and override.strip():
+        return normalize_path_string(override)
+    official = Path(OFFICIAL_MEMORY_VAULT_PATH)
+    if official.exists():
+        return str(official)
+    return str(vault.resolve())
+
+
+def default_memory_vault_name(vault_path: Path) -> str:
+    override = os.getenv("LLM_WIKI_MEMORY_VAULT_NAME")
+    if override and override.strip():
+        return override.strip()
+    try:
+        if vault_path.resolve() == Path(OFFICIAL_MEMORY_VAULT_PATH).resolve():
+            return OFFICIAL_MEMORY_VAULT_NAME
+    except OSError:
+        pass
+    return vault_path.name.lower().replace(" ", "-")
+
+
+def default_memory_vault_id(vault_path: Path) -> str:
+    override = os.getenv("LLM_WIKI_MEMORY_VAULT_ID")
+    if override and override.strip():
+        return override.strip()
+    try:
+        if vault_path.resolve() == Path(OFFICIAL_MEMORY_VAULT_PATH).resolve():
+            return OFFICIAL_MEMORY_VAULT_ID
+    except OSError:
+        pass
+    return ""
 
 
 def resolve_home_skill_install(args: argparse.Namespace) -> bool:
@@ -236,6 +324,19 @@ def parse_args() -> argparse.Namespace:
         help="Override the home directory used for installing packet-owned skills",
     )
     parser.add_argument(
+        "--install-scope",
+        default=default_install_scope(),
+        help="Install tool dependencies into the local workspace or the user-level managed tool root: local|global",
+    )
+    parser.add_argument(
+        "-g",
+        "--global-install",
+        dest="install_scope",
+        action="store_const",
+        const="global",
+        help="Install managed tool dependencies into the user-level shared tool root instead of the workspace",
+    )
+    parser.add_argument(
         "--allow-global-tool-install",
         action="store_true",
         help="Allow setup helpers to fall back to global npm installs when packet-local installs are unavailable",
@@ -277,7 +378,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--gitvizz-repo-url",
-        default=env_or_default("LLM_WIKI_GITVIZZ_REPO_URL", ""),
+        default=env_or_default("LLM_WIKI_GITVIZZ_REPO_URL", DEFAULT_GITVIZZ_REPO_URL),
         help="Optional GitVizz repo URL for managed local acquisition",
     )
     parser.add_argument(
@@ -295,6 +396,21 @@ def parse_args() -> argparse.Namespace:
         default=env_or_default("LLM_WIKI_GSTACK_DEPENDENCY_PATH", REPO_RUNTIME_DEFAULT_PATHS["gstack"]),
         help="Repo-owned richer gstack dependency, submodule, or vendor path relative to the workspace",
     )
+    parser.add_argument(
+        "--memory-vault-path",
+        default=env_or_default("LLM_WIKI_MEMORY_VAULT_PATH", ""),
+        help="Official Obsidian memory-base vault path used for pk-qmd traversal and long-term system memory",
+    )
+    parser.add_argument(
+        "--memory-vault-name",
+        default=env_or_default("LLM_WIKI_MEMORY_VAULT_NAME", ""),
+        help="Stable name for the official memory-base vault",
+    )
+    parser.add_argument(
+        "--memory-vault-id",
+        default=env_or_default("LLM_WIKI_MEMORY_VAULT_ID", ""),
+        help="Stable vault identifier for the official memory-base vault",
+    )
     return parser.parse_args()
 
 
@@ -309,23 +425,6 @@ def ensure_safe_install_root(target_root: Path, home_root: Path, *, allow_home_r
             "Refusing to install into a shared home path: "
             f"{target_root}. Pass --allow-home-root only if you explicitly intend to manage that shared root."
         )
-
-
-def local_qmd_candidates(vault: Path) -> list[Path]:
-    return [
-        vault / ".llm-wiki" / "node_modules" / ".bin" / "pk-qmd",
-        vault / ".llm-wiki" / "node_modules" / ".bin" / "pk-qmd.cmd",
-        vault / ".llm-wiki" / "node_modules" / ".bin" / "pk-qmd.ps1",
-        vault / ".llm-wiki" / "node_modules" / "@kingkillery" / "pk-qmd" / "dist" / "cli" / "qmd.js",
-    ]
-
-
-def local_brv_candidates(vault: Path) -> list[Path]:
-    return [
-        vault / ".llm-wiki" / "node_modules" / ".bin" / "brv",
-        vault / ".llm-wiki" / "node_modules" / ".bin" / "brv.cmd",
-        vault / ".llm-wiki" / "node_modules" / ".bin" / "brv.ps1",
-    ]
 
 
 def first_existing(paths: list[Path]) -> Path | None:
@@ -471,6 +570,7 @@ def build_preflight_report(
     install_home_skills: bool,
     run_setup: bool,
     allow_global_tool_install: bool,
+    install_scope: str,
     g_kade_dependency_path: str,
     gstack_dependency_path: str,
 ) -> list[str]:
@@ -478,17 +578,20 @@ def build_preflight_report(
     npm = shutil.which("npm")
     git = shutil.which("git")
     docker = shutil.which("docker")
-    local_qmd = first_existing(local_qmd_candidates(vault))
-    local_brv = first_existing(local_brv_candidates(vault))
+    local_qmd = first_existing(qmd_managed_candidates(vault, home_root, install_scope))
+    local_brv = first_existing(brv_managed_candidates(vault, home_root, install_scope))
     global_qmd = shutil.which("pk-qmd")
     global_brv = shutil.which("brv")
     g_kade_runtime = repo_runtime_dependency_status(vault, "g-kade", g_kade_dependency_path)
     gstack_runtime = repo_runtime_dependency_status(vault, "gstack", gstack_dependency_path)
+    managed_root = managed_tool_root(vault, home_root, install_scope)
 
     lines = [
         "Preflight:",
         f"preflight target-root: {vault}",
         f"preflight home-root: {home_root}",
+        f"preflight install-scope: {install_scope}",
+        f"preflight managed-tool-root: {managed_root}",
         f"preflight home-skill-install: {'enabled' if install_home_skills else 'disabled (default)'}",
         f"preflight global-tool-install: {'enabled' if allow_global_tool_install else 'disabled (default)'}",
         f"preflight g-kade wrapper: {'enabled' if install_home_skills else 'available (home install opt-in)'}",
@@ -503,20 +606,20 @@ def build_preflight_report(
     ]
 
     if local_qmd:
-        lines.append(f"preflight pk-qmd: packet-local {local_qmd}")
+        lines.append(f"preflight pk-qmd: managed {local_qmd}")
     elif global_qmd:
         lines.append(f"preflight pk-qmd: global {global_qmd}")
-    elif run_setup and npm:
-        lines.append("preflight pk-qmd: missing (setup can install packet-local)")
+    elif run_setup and npm and git:
+        lines.append(f"preflight pk-qmd: missing (setup can clone/build a {install_scope} managed checkout)")
     else:
-        lines.append("preflight pk-qmd: missing (install npm before running setup)")
+        lines.append("preflight pk-qmd: missing (install npm and git before running setup)")
 
     if local_brv:
-        lines.append(f"preflight brv: packet-local {local_brv}")
+        lines.append(f"preflight brv: managed {local_brv}")
     elif global_brv:
         lines.append(f"preflight brv: global {global_brv}")
     elif run_setup and npm:
-        fallback = "packet-local preferred"
+        fallback = f"{install_scope} managed install preferred"
         if allow_global_tool_install:
             fallback += "; global npm fallback allowed"
         lines.append(f"preflight brv: missing ({fallback})")
@@ -661,14 +764,40 @@ def build_stack_config(args: argparse.Namespace) -> dict[str, object]:
     backend_url = normalize_url(args.gitvizz_backend_url)
     qmd_mcp_url = normalize_url(args.qmd_mcp_url)
     workspace_root = Path(args.vault).expanduser().resolve()
-    vault_name = workspace_root.name.lower().replace(" ", "-")
-    qmd_context = f"Primary llm-wiki-memory vault for {workspace_root}"
+    home_root = Path(args.home_root).expanduser().resolve()
+    install_scope = normalize_install_scope(getattr(args, "install_scope", DEFAULT_INSTALL_SCOPE))
+    managed_root = managed_tool_root(workspace_root, home_root, install_scope)
+    memory_vault_path_raw = normalize_path_string(getattr(args, "memory_vault_path", "")) or default_memory_vault_path(workspace_root)
+    memory_vault_path = workspace_relative_path(workspace_root, memory_vault_path_raw).resolve()
+    memory_vault_name = getattr(args, "memory_vault_name", "").strip() or default_memory_vault_name(memory_vault_path)
+    memory_vault_id = getattr(args, "memory_vault_id", "").strip() or default_memory_vault_id(memory_vault_path)
+    qmd_context = f"Official {memory_vault_name} memory base at {memory_vault_path}"
+    if memory_vault_id:
+        qmd_context += f" (vault id: {memory_vault_id})"
     install_home_skills = resolve_home_skill_install(args)
     g_kade_runtime = repo_runtime_dependency_status(workspace_root, "g-kade", args.g_kade_dependency_path)
     gstack_runtime = repo_runtime_dependency_status(workspace_root, "gstack", args.gstack_dependency_path)
+    qmd_local_candidates = [
+        relative_or_absolute_path(candidate, workspace_root)
+        for candidate in qmd_managed_candidates(workspace_root, home_root, install_scope)
+    ]
+    brv_local_candidates = [
+        relative_or_absolute_path(candidate, workspace_root)
+        for candidate in brv_managed_candidates(workspace_root, home_root, install_scope)
+    ]
+    gitvizz_checkout = args.gitvizz_checkout_path or relative_or_absolute_path(managed_root / "gitvizz", workspace_root)
 
     return {
         "version": 1,
+        "tooling": {
+            "install_scope": install_scope,
+            "managed_tool_root": relative_or_absolute_path(managed_root, workspace_root),
+        },
+        "memory_base": {
+            "name": memory_vault_name,
+            "vault_path": str(memory_vault_path),
+            "vault_id": memory_vault_id,
+        },
         "stack": {
             "retrieval": {
                 "primary": "pk-qmd",
@@ -705,21 +834,22 @@ def build_stack_config(args: argparse.Namespace) -> dict[str, object]:
         },
         "pk_qmd": {
             "command": args.qmd_command,
-            "local_command_candidates": [
-                ".llm-wiki/node_modules/.bin/pk-qmd",
-                ".llm-wiki/node_modules/.bin/pk-qmd.cmd",
-                ".llm-wiki/node_modules/.bin/pk-qmd.ps1",
-            ],
+            "local_command_candidates": qmd_local_candidates,
             "repo_url": args.qmd_repo_url,
+            "checkout_path": relative_or_absolute_path(managed_root / "pk-qmd", workspace_root),
             "manual_install_required": False,
             "global_install_allowed": global_tool_install_allowed(args),
             "mcp_url": qmd_mcp_url,
-            "collection_name": vault_name,
+            "collection_name": memory_vault_name,
             "context": qmd_context,
+            "source_path": str(memory_vault_path),
             "local_dependency_manifest": STACK_DEPENDENCY_MANIFEST_PATH,
         },
         "byterover": {
             "command": args.brv_command,
+            "install_root": relative_or_absolute_path(managed_root / "brv", workspace_root),
+            "local_command_candidates": brv_local_candidates,
+            "package_name": DEFAULT_BRV_PACKAGE,
             "global_install_allowed": global_tool_install_allowed(args),
             "api_key_env": "BYTEROVER_API_KEY",
             "working_dir": ".brv",
@@ -749,7 +879,7 @@ def build_stack_config(args: argparse.Namespace) -> dict[str, object]:
             "setup_url": f"{frontend_url}/",
             "github_callback_url": f"{frontend_url}/api/auth/callback/github",
             "repo_url": args.gitvizz_repo_url or None,
-            "checkout_path": args.gitvizz_checkout_path or args.gitvizz_repo_path or None,
+            "checkout_path": gitvizz_checkout,
             "repo_path": args.gitvizz_repo_path or None,
         },
         "skills": {
@@ -781,18 +911,13 @@ def build_stack_config(args: argparse.Namespace) -> dict[str, object]:
 
 
 def build_stack_dependency_manifest(args: argparse.Namespace) -> dict[str, object]:
-    repo_url = args.qmd_repo_url
-    dependency_spec = repo_url if repo_url.startswith("git+") else f"git+{repo_url}.git" if repo_url.startswith("https://github.com/") and not repo_url.endswith(".git") else f"git+{repo_url}" if repo_url.startswith("https://") else repo_url
-    if dependency_spec.endswith(".git.git"):
-        dependency_spec = dependency_spec[:-4]
-
     return {
-        "name": "llm-wiki-memory-local",
+        "name": "llm-wiki-memory-local-tools",
         "private": True,
         "version": "0.1.0",
-        "description": "Local dependency bundle for llm-wiki-memory",
+        "description": "Managed local dependency bundle for llm-wiki-memory",
         "dependencies": {
-            "@kingkillery/pk-qmd": dependency_spec,
+            DEFAULT_BRV_PACKAGE: "^3.3.0",
         },
     }
 
@@ -875,6 +1000,7 @@ def main() -> int:
         install_home_skills=install_home_skills,
         run_setup=False,
         allow_global_tool_install=global_tool_install_allowed(args),
+        install_scope=normalize_install_scope(getattr(args, "install_scope", DEFAULT_INSTALL_SCOPE)),
         g_kade_dependency_path=args.g_kade_dependency_path,
         gstack_dependency_path=args.gstack_dependency_path,
     )

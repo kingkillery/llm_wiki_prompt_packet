@@ -93,6 +93,19 @@ def parse_args() -> argparse.Namespace:
         help="Home directory used for optional home skill installs and ~/.kade overlays",
     )
     parser.add_argument(
+        "--install-scope",
+        default=PACKET.default_install_scope(),
+        help="Install tool dependencies into the local workspace or the user-level managed tool root: local|global",
+    )
+    parser.add_argument(
+        "-g",
+        "--global-install",
+        dest="install_scope",
+        action="store_const",
+        const="global",
+        help="Install managed tool dependencies into the user-level shared tool root instead of the workspace",
+    )
+    parser.add_argument(
         "--allow-global-tool-install",
         action="store_true",
         help="Allow setup helpers to fall back to global npm installs when packet-local installs are unavailable",
@@ -139,7 +152,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--gitvizz-repo-url",
-        default=os.getenv("LLM_WIKI_GITVIZZ_REPO_URL", ""),
+        default=os.getenv("LLM_WIKI_GITVIZZ_REPO_URL", PACKET.DEFAULT_GITVIZZ_REPO_URL),
         help="Optional GitVizz repo URL for managed local acquisition",
     )
     parser.add_argument(
@@ -156,6 +169,21 @@ def parse_args() -> argparse.Namespace:
         "--gstack-dependency-path",
         default=os.getenv("LLM_WIKI_GSTACK_DEPENDENCY_PATH", PACKET.REPO_RUNTIME_DEFAULT_PATHS["gstack"]),
         help="Repo-owned richer gstack dependency, submodule, or vendor path relative to the workspace",
+    )
+    parser.add_argument(
+        "--memory-vault-path",
+        default=os.getenv("LLM_WIKI_MEMORY_VAULT_PATH", ""),
+        help="Official Obsidian memory-base vault path used for pk-qmd traversal and long-term system memory",
+    )
+    parser.add_argument(
+        "--memory-vault-name",
+        default=os.getenv("LLM_WIKI_MEMORY_VAULT_NAME", ""),
+        help="Stable name for the official memory-base vault",
+    )
+    parser.add_argument(
+        "--memory-vault-id",
+        default=os.getenv("LLM_WIKI_MEMORY_VAULT_ID", ""),
+        help="Stable vault identifier for the official memory-base vault",
     )
     return parser.parse_args()
 
@@ -267,10 +295,29 @@ def runtime_guidance_lines(runtime: dict[str, object]) -> list[str]:
 
 
 def repo_skill_text(name: str, workspace_root: Path, runtime: dict[str, object]) -> str:
-    if name == "g-kade":
+    if name == "kade-hq":
+        description = "Repo-local KADE System surface layered on top of the llm-wiki-memory packet."
+        workflow_lines = [
+            "- load Layer 1 from ~/.kade/HUMAN.md when present",
+            "- load Layer 2 from kade/AGENTS.md and kade/KADE.md",
+            "- preserve the packet root files as the workspace contract",
+            "- use g-kade only as the bridge and router across kade-hq plus gstack",
+            "- use gstack for execution workflows such as review, QA, debugging, and ship",
+        ]
+        runtime_block = "\n".join(
+            [
+                "- contract: `KADE System launcher surface for this repo workspace`",
+                "- configured path: `kade/ + ~/.kade + packet root files`",
+                "- status: `managed by the workspace installer`",
+                "- note: `g-kade is only the unifier skill; install and preserve kade-hq separately from gstack`",
+            ]
+        )
+        install_notes = []
+    elif name == "g-kade":
         description = "Repo-local KADE bridge layered on top of the llm-wiki-memory packet."
         workflow_lines = [
             "- treat this repo root as the workspace root",
+            "- treat g-kade as the unifier surface only; install and preserve kade-hq plus gstack separately",
             "- prefer packet helpers for search, memory, and MCP wiring",
             "- use `kade/AGENTS.md` and `kade/KADE.md` as the project overlay",
             "- if the richer repo-owned runtime is present, read it before routing work",
@@ -311,7 +358,8 @@ def repo_skill_text(name: str, workspace_root: Path, runtime: dict[str, object])
         install_notes = []
 
     workflow_block = "\n".join(workflow_lines)
-    runtime_block = "\n".join(runtime_guidance_lines(runtime))
+    if name != "kade-hq":
+        runtime_block = "\n".join(runtime_guidance_lines(runtime))
 
     return (
         f"---\n"
@@ -342,6 +390,18 @@ def scaffold_repo_local_skills(
         skill_root = workspace_root / layout / "skills"
         actions.extend(
             [
+                PACKET.write_text(
+                    skill_root / "kade-hq" / "SKILL.md",
+                    repo_skill_text("kade-hq", workspace_root, gkade_runtime),
+                    force=force,
+                    dry_run=dry_run,
+                ),
+                PACKET.copy_file(
+                    PACKET.HOME_SKILLS_ROOT / "kade-hq" / "agents" / "openai.yaml",
+                    skill_root / "kade-hq" / "agents" / "openai.yaml",
+                    force=force,
+                    dry_run=dry_run,
+                ),
                 PACKET.write_text(
                     skill_root / "g-kade" / "SKILL.md",
                     repo_skill_text("g-kade", workspace_root, gkade_runtime),
@@ -502,10 +562,13 @@ def required_paths(workspace_root: Path) -> list[Path]:
         workspace_root / ".llm-wiki" / "config.json",
         workspace_root / "scripts" / "setup_llm_wiki_memory.ps1",
         workspace_root / "scripts" / "setup_llm_wiki_memory.sh",
+        workspace_root / ".agents" / "skills" / "kade-hq" / "SKILL.md",
         workspace_root / ".agents" / "skills" / "g-kade" / "SKILL.md",
         workspace_root / ".agents" / "skills" / "gstack" / "SKILL.md",
+        workspace_root / ".codex" / "skills" / "kade-hq" / "SKILL.md",
         workspace_root / ".codex" / "skills" / "g-kade" / "SKILL.md",
         workspace_root / ".codex" / "skills" / "gstack" / "SKILL.md",
+        workspace_root / ".claude" / "skills" / "kade-hq" / "SKILL.md",
         workspace_root / ".claude" / "skills" / "g-kade" / "SKILL.md",
         workspace_root / ".claude" / "skills" / "gstack" / "SKILL.md",
         workspace_root / "kade" / "AGENTS.md",
@@ -577,6 +640,7 @@ def main() -> int:
         install_home_skills=install_home_skills,
         run_setup=not args.skip_setup,
         allow_global_tool_install=PACKET.global_tool_install_allowed(args),
+        install_scope=PACKET.normalize_install_scope(getattr(args, "install_scope", PACKET.DEFAULT_INSTALL_SCOPE)),
         g_kade_dependency_path=args.g_kade_dependency_path,
         gstack_dependency_path=args.gstack_dependency_path,
     )
@@ -614,6 +678,7 @@ def main() -> int:
         qmd_repo_url=args.qmd_repo_url,
         qmd_mcp_url=args.qmd_mcp_url,
         brv_command=args.brv_command,
+        install_scope=args.install_scope,
         allow_global_tool_install=args.allow_global_tool_install,
         gitvizz_frontend_url=args.gitvizz_frontend_url,
         gitvizz_backend_url=args.gitvizz_backend_url,
@@ -622,6 +687,9 @@ def main() -> int:
         gitvizz_repo_path=args.gitvizz_repo_path,
         g_kade_dependency_path=args.g_kade_dependency_path,
         gstack_dependency_path=args.gstack_dependency_path,
+        memory_vault_path=args.memory_vault_path,
+        memory_vault_name=args.memory_vault_name,
+        memory_vault_id=args.memory_vault_id,
     )
 
     actions = PACKET.install_packet_workspace(

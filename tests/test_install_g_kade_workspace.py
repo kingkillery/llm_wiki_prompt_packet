@@ -113,10 +113,13 @@ class GKadeInstallerTests(unittest.TestCase):
 
         self.assertTrue(actions)
         expected_paths = [
+            self.workspace_root / ".agents" / "skills" / "kade-hq" / "SKILL.md",
             self.workspace_root / ".agents" / "skills" / "g-kade" / "SKILL.md",
             self.workspace_root / ".agents" / "skills" / "gstack" / "SKILL.md",
+            self.workspace_root / ".codex" / "skills" / "kade-hq" / "SKILL.md",
             self.workspace_root / ".codex" / "skills" / "g-kade" / "SKILL.md",
             self.workspace_root / ".codex" / "skills" / "gstack" / "SKILL.md",
+            self.workspace_root / ".claude" / "skills" / "kade-hq" / "SKILL.md",
             self.workspace_root / ".claude" / "skills" / "g-kade" / "SKILL.md",
             self.workspace_root / ".claude" / "skills" / "gstack" / "SKILL.md",
             self.workspace_root / "kade" / "AGENTS.md",
@@ -128,7 +131,9 @@ class GKadeInstallerTests(unittest.TestCase):
             self.assertTrue(path.exists(), path)
 
         gkade_text = (self.workspace_root / ".agents" / "skills" / "g-kade" / "SKILL.md").read_text(encoding="utf-8")
+        kadehq_text = (self.workspace_root / ".agents" / "skills" / "kade-hq" / "SKILL.md").read_text(encoding="utf-8")
         human_text = (self.home_root / ".kade" / "HUMAN.md").read_text(encoding="utf-8")
+        self.assertIn("g-kade is only the unifier skill", kadehq_text)
         self.assertIn("Fastest Successful Install", gkade_text)
         self.assertIn("Roadblocks And Corrections", gkade_text)
         self.assertIn("Wish I Knew Before Install", gkade_text)

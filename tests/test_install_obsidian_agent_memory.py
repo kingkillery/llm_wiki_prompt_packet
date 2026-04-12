@@ -37,12 +37,16 @@ class InstallerHomeSkillTests(unittest.TestCase):
 
         expected_paths = [
             self.home_root / ".agents" / "skills" / "gstack" / "SKILL.md",
+            self.home_root / ".agents" / "skills" / "kade-hq" / "SKILL.md",
             self.home_root / ".agents" / "skills" / "g-kade" / "SKILL.md",
             self.home_root / ".codex" / "skills" / "gstack" / "SKILL.md",
+            self.home_root / ".codex" / "skills" / "kade-hq" / "SKILL.md",
             self.home_root / ".codex" / "skills" / "g-kade" / "SKILL.md",
             self.home_root / ".claude" / "skills" / "gstack" / "SKILL.md",
+            self.home_root / ".claude" / "skills" / "kade-hq" / "SKILL.md",
             self.home_root / ".claude" / "skills" / "g-kade" / "SKILL.md",
             self.home_root / ".agents" / "skills" / "gstack" / "agents" / "openai.yaml",
+            self.home_root / ".agents" / "skills" / "kade-hq" / "agents" / "openai.yaml",
             self.home_root / ".agents" / "skills" / "g-kade" / "agents" / "openai.yaml",
         ]
 
@@ -57,6 +61,8 @@ class InstallerHomeSkillTests(unittest.TestCase):
 
         gkade_text = (self.home_root / ".claude" / "skills" / "g-kade" / "SKILL.md").read_text(encoding="utf-8")
         self.assertIn("packet-owned bridge skill", gkade_text)
+        kadehq_text = (self.home_root / ".agents" / "skills" / "kade-hq" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("bridge skill that coordinates", kadehq_text)
 
     def test_install_home_skills_preserves_richer_existing_skill(self) -> None:
         rich_root = self.home_root / ".claude" / "skills" / "gstack"
@@ -135,8 +141,10 @@ class InstallerHomeSkillTests(unittest.TestCase):
 
         args = argparse.Namespace(
             vault=str(self.home_root),
+            home_root=str(self.home_root / "home"),
             install_home_skills=True,
             skip_home_skills=False,
+            install_scope="global",
             gitvizz_frontend_url="http://localhost:3000",
             gitvizz_backend_url="http://localhost:8003",
             qmd_mcp_url="http://localhost:8181/mcp",
@@ -149,14 +157,23 @@ class InstallerHomeSkillTests(unittest.TestCase):
             gitvizz_repo_path="",
             g_kade_dependency_path=self.module.REPO_RUNTIME_DEFAULT_PATHS["g-kade"],
             gstack_dependency_path=self.module.REPO_RUNTIME_DEFAULT_PATHS["gstack"],
+            memory_vault_path=str(self.home_root / "memory-vault"),
+            memory_vault_name="kade-hq",
+            memory_vault_id="fd8411f00d3a9d21",
         )
 
         config = self.module.build_stack_config(args)
 
+        self.assertEqual(config["tooling"]["install_scope"], "global")
+        self.assertEqual(config["memory_base"]["name"], "kade-hq")
+        self.assertEqual(config["memory_base"]["vault_id"], "fd8411f00d3a9d21")
         self.assertEqual(config["agent_runtimes"]["packet_wrappers"]["g-kade"]["status"], "home-install-enabled")
         self.assertEqual(config["agent_runtimes"]["repo_dependencies"]["g-kade"]["status"], "detected")
         self.assertEqual(config["agent_runtimes"]["repo_dependencies"]["gstack"]["status"], "present-but-thin")
         self.assertEqual(config["agent_runtimes"]["repo_dependencies"]["gstack"]["detected_path"], "deps/pk-skills1/gstack")
+        self.assertEqual(config["pk_qmd"]["collection_name"], "kade-hq")
+        self.assertIn("pk-qmd", "\n".join(config["pk_qmd"]["local_command_candidates"]))
+        self.assertIn("brv", "\n".join(config["byterover"]["local_command_candidates"]))
         self.assertEqual(config["gitvizz"]["repo_url"], "https://github.com/example/gitvizz.git")
         self.assertEqual(config["gitvizz"]["checkout_path"], "deps/gitvizz")
 
@@ -167,14 +184,22 @@ class InstallerHomeSkillTests(unittest.TestCase):
             install_home_skills=False,
             run_setup=False,
             allow_global_tool_install=False,
+            install_scope="local",
             g_kade_dependency_path=self.module.REPO_RUNTIME_DEFAULT_PATHS["g-kade"],
             gstack_dependency_path=self.module.REPO_RUNTIME_DEFAULT_PATHS["gstack"],
         )
 
         report = "\n".join(lines)
+        self.assertIn("preflight install-scope: local", report)
         self.assertIn("preflight g-kade wrapper: available", report)
         self.assertIn("preflight g-kade runtime: missing", report)
         self.assertIn("deps/pk-skills1/gstack/g-kade", report)
+
+    def test_build_stack_dependency_manifest_tracks_brv_for_managed_local_installs(self) -> None:
+        manifest = self.module.build_stack_dependency_manifest(argparse.Namespace())
+
+        self.assertEqual(manifest["name"], "llm-wiki-memory-local-tools")
+        self.assertEqual(manifest["dependencies"]["byterover-cli"], "^3.3.0")
 
 
 if __name__ == "__main__":

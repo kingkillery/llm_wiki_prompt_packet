@@ -2,6 +2,33 @@
 set -euo pipefail
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 
+is_windows_bash() {
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+is_wsl() {
+  if [[ -n "${WSL_INTEROP:-}" || -n "${WSL_DISTRO_NAME:-}" ]]; then
+    return 0
+  fi
+  grep -qi microsoft /proc/version 2>/dev/null
+}
+
+to_win_path() {
+  local path="$1"
+  if command -v cygpath >/dev/null 2>&1; then
+    cygpath -w "$path"
+    return 0
+  fi
+  if command -v wslpath >/dev/null 2>&1; then
+    wslpath -w "$path"
+    return 0
+  fi
+  printf '%s\n' "$path"
+}
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_PATH="${1:-$(cd "$SCRIPT_DIR/.." && pwd)/.llm-wiki/config.json}"
 SKIP_GITVIZZ=0
@@ -9,6 +36,21 @@ SKIP_GITVIZZ=0
 if [[ "${1:-}" == "--skip-gitvizz" ]]; then
   SKIP_GITVIZZ=1
   CONFIG_PATH="${2:-$(cd "$SCRIPT_DIR/.." && pwd)/.llm-wiki/config.json}"
+fi
+
+if (is_windows_bash || is_wsl) && command -v powershell.exe >/dev/null 2>&1; then
+  PS1_PATH="$SCRIPT_DIR/check_llm_wiki_memory.ps1"
+  if [[ -f "$PS1_PATH" ]]; then
+    PS1_WIN_PATH="$(to_win_path "$PS1_PATH")"
+    PS_ARGS=()
+    if [[ -n "${CONFIG_PATH:-}" ]]; then
+      PS_ARGS+=("-ConfigPath" "$(to_win_path "$CONFIG_PATH")")
+    fi
+    if [[ "$SKIP_GITVIZZ" -eq 1 ]]; then
+      PS_ARGS+=("-SkipGitvizz")
+    fi
+    exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$PS1_WIN_PATH" "${PS_ARGS[@]}"
+  fi
 fi
 
 if [[ ! -f "$CONFIG_PATH" ]]; then

@@ -1537,7 +1537,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--workspace", default=".")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("mcp")
+    mcp_parser = sub.add_parser("mcp")
+    mcp_parser.add_argument("--workspace", dest="subcommand_workspace", default=None)
 
     lookup = sub.add_parser("lookup")
     lookup.add_argument("--url-pattern", default="")
@@ -1716,7 +1717,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "mcp":
-        return run_mcp(args.workspace)
+        return run_mcp(args.subcommand_workspace or args.workspace)
 
     store = SkillStore(args.workspace)
     payload = vars(args)

@@ -1,9 +1,43 @@
 param(
+    [string]$WorkspaceRoot,
     [string]$ConfigPath = $(Join-Path (Split-Path -Parent $PSScriptRoot) ".llm-wiki\config.json"),
     [switch]$SkipGitvizz
 )
 
 $ErrorActionPreference = "Stop"
+
+function Test-IsWindows {
+    if ($PSVersionTable.PSVersion.Major -lt 6) {
+        return $true
+    }
+    if ($null -ne $IsWindows) {
+        return [bool]$IsWindows
+    }
+    return $env:OS -eq "Windows_NT"
+}
+
+if (-not (Test-IsWindows)) {
+    $bash = Get-Command bash -ErrorAction SilentlyContinue
+    if ($bash) {
+        $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+        $bashScript = Join-Path $scriptDir "check_llm_wiki_memory.sh"
+        if (Test-Path $bashScript) {
+            $bashArgs = @()
+            if ($SkipGitvizz) { $bashArgs += "--skip-gitvizz" }
+            if ($WorkspaceRoot) {
+                $bashArgs += (Join-Path $WorkspaceRoot ".llm-wiki\config.json")
+            } elseif ($ConfigPath) {
+                $bashArgs += $ConfigPath
+            }
+            & $bash $bashScript @bashArgs
+            exit $LASTEXITCODE
+        }
+    }
+}
+
+if ($WorkspaceRoot -and (-not $PSBoundParameters.ContainsKey("ConfigPath") -or [string]::IsNullOrWhiteSpace($ConfigPath))) {
+    $ConfigPath = Join-Path $WorkspaceRoot ".llm-wiki\config.json"
+}
 
 function Test-TcpUrl {
     param([string]$Url)
@@ -25,24 +59,80 @@ function Test-TcpUrl {
     }
 }
 
+function Get-CommandInvocation {
+    param(
+        [string]$CommandName,
+        [string[]]$Arguments
+    )
+
+    if ([string]::IsNullOrWhiteSpace($CommandName)) {
+        throw "Command name is required."
+    }
+
+    if ($CommandName.EndsWith(".js")) {
+        return [pscustomobject]@{
+            Command = "node"
+            Arguments = @($CommandName) + $Arguments
+        }
+    }
+
+    return [pscustomobject]@{
+        Command = $CommandName
+        Arguments = @($Arguments)
+    }
+}
+
+function Resolve-OptionalPath {
+    param(
+        [string]$PathValue,
+        [string]$WorkspaceRoot
+    )
+
+    if ([string]::IsNullOrWhiteSpace($PathValue)) {
+        return $null
+    }
+
+    try {
+        if ([System.IO.Path]::IsPathRooted($PathValue)) {
+            return [System.IO.Path]::GetFullPath($PathValue)
+        }
+    } catch {
+        return $PathValue
+    }
+
+    return [System.IO.Path]::GetFullPath((Join-Path $WorkspaceRoot $PathValue))
+}
+
 if (-not (Test-Path $ConfigPath)) {
     Write-Error "Stack config not found: $ConfigPath"
     exit 1
 }
 
 $config = Get-Content -Path $ConfigPath -Raw | ConvertFrom-Json
-$brvCommand = $config.byterover.command
 $workspaceRoot = Split-Path -Parent (Split-Path -Parent $ConfigPath)
 $qmdCommandCandidates = @()
 if ($config.pk_qmd.local_command_candidates) {
     foreach ($candidate in $config.pk_qmd.local_command_candidates) {
-        $qmdCommandCandidates += (Join-Path $workspaceRoot $candidate)
+        $qmdCommandCandidates += (Resolve-OptionalPath -PathValue ([string]$candidate) -WorkspaceRoot $workspaceRoot)
     }
 }
 $qmdCommand = $config.pk_qmd.command
 foreach ($candidate in $qmdCommandCandidates) {
     if (Test-Path $candidate) {
         $qmdCommand = $candidate
+        break
+    }
+}
+$brvCommandCandidates = @()
+if ($config.byterover.local_command_candidates) {
+    foreach ($candidate in $config.byterover.local_command_candidates) {
+        $brvCommandCandidates += (Resolve-OptionalPath -PathValue ([string]$candidate) -WorkspaceRoot $workspaceRoot)
+    }
+}
+$brvCommand = $config.byterover.command
+foreach ($candidate in $brvCommandCandidates) {
+    if (Test-Path $candidate) {
+        $brvCommand = $candidate
         break
     }
 }
@@ -66,21 +156,30 @@ $failures = New-Object System.Collections.Generic.List[string]
 
 Write-Output "=== llm-wiki-memory health check ==="
 Write-Output "Config: $ConfigPath"
+if ($config.memory_base) {
+    Write-Output "Memory base: $($config.memory_base.name) -> $($config.memory_base.vault_path)"
+    if ($config.memory_base.vault_id) {
+        Write-Output "Memory base id: $($config.memory_base.vault_id)"
+    }
+}
 
-if (-not (Get-Command $qmdCommand -ErrorAction SilentlyContinue)) {
+if (-not ((Get-Command $qmdCommand -ErrorAction SilentlyContinue) -or (Test-Path $qmdCommand))) {
     $failures.Add("Missing pk-qmd command: $qmdCommand")
 } else {
     Write-Output "`n=== pk-qmd ==="
     try {
-        & $qmdCommand status
+        $invocation = Get-CommandInvocation -CommandName $qmdCommand -Arguments @("status")
+        & $invocation.Command @($invocation.Arguments)
     } catch {
         Write-Warning "pk-qmd status failed: $($_.Exception.Message)"
     }
 
     try {
-        $helpText = & $qmdCommand 2>&1 | Out-String
+        $helpInvocation = Get-CommandInvocation -CommandName $qmdCommand -Arguments @()
+        $helpText = & $helpInvocation.Command @($helpInvocation.Arguments) 2>&1 | Out-String
         if ($helpText -match "collection add") {
-            $collections = & $qmdCommand collection list 2>&1 | Out-String
+            $collectionInvocation = Get-CommandInvocation -CommandName $qmdCommand -Arguments @("collection", "list")
+            $collections = & $collectionInvocation.Command @($collectionInvocation.Arguments) 2>&1 | Out-String
             if ($collections -notmatch "(?m)^$([regex]::Escape($collectionName))\s+\(qmd://") {
                 $failures.Add("Missing qmd collection: $collectionName")
             }
@@ -92,7 +191,7 @@ if (-not (Get-Command $qmdCommand -ErrorAction SilentlyContinue)) {
     }
 }
 
-if (-not (Get-Command $brvCommand -ErrorAction SilentlyContinue)) {
+if (-not ((Get-Command $brvCommand -ErrorAction SilentlyContinue) -or (Test-Path $brvCommand))) {
     $failures.Add("Missing Byterover command: $brvCommand")
 } else {
     Write-Output "`n=== Byterover ==="

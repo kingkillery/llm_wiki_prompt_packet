@@ -2,10 +2,46 @@ param(
     [string]$Vault = $env:LLM_WIKI_VAULT,
     [string]$Targets = $(if ($env:LLM_WIKI_TARGETS) { $env:LLM_WIKI_TARGETS } else { "claude,antigravity,codex,droid" }),
     [string]$Ref = $(if ($env:LLM_WIKI_REF) { $env:LLM_WIKI_REF } else { "main" }),
+    [ValidateSet("local", "global")]
+    [string]$InstallScope = $(if ($env:LLM_WIKI_INSTALL_SCOPE) { $env:LLM_WIKI_INSTALL_SCOPE } else { "local" }),
+    [switch]$GlobalInstall,
     [switch]$Force
 )
 
 $ErrorActionPreference = "Stop"
+
+function Test-IsWindows {
+    if ($PSVersionTable.PSVersion.Major -lt 6) {
+        return $true
+    }
+    if ($null -ne $IsWindows) {
+        return [bool]$IsWindows
+    }
+    return $env:OS -eq "Windows_NT"
+}
+
+if (-not (Test-IsWindows)) {
+    $bash = Get-Command bash -ErrorAction SilentlyContinue
+    if ($bash) {
+        $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+        $bashScript = Join-Path $scriptDir "install.sh"
+        if (Test-Path $bashScript) {
+            if ($Vault) { $env:LLM_WIKI_VAULT = $Vault }
+            if ($Targets) { $env:LLM_WIKI_TARGETS = $Targets }
+            if ($Ref) { $env:LLM_WIKI_REF = $Ref }
+            if ($InstallScope) { $env:LLM_WIKI_INSTALL_SCOPE = $InstallScope }
+            if ($env:LLM_WIKI_INSTALL_MODE) { $env:LLM_WIKI_INSTALL_MODE = $env:LLM_WIKI_INSTALL_MODE }
+            if ($Force -or $env:LLM_WIKI_FORCE -eq "1") { $env:LLM_WIKI_FORCE = "1" }
+            & $bash $bashScript
+            exit $LASTEXITCODE
+        }
+    }
+}
+
+if ($GlobalInstall) {
+    $InstallScope = "global"
+}
+$env:LLM_WIKI_INSTALL_SCOPE = $InstallScope
 
 if (-not $Vault) {
     $Vault = Read-Host "Vault folder to index [current directory]"

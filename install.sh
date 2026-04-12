@@ -1,12 +1,76 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+is_windows_bash() {
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+is_wsl() {
+  if [[ -n "${WSL_INTEROP:-}" || -n "${WSL_DISTRO_NAME:-}" ]]; then
+    return 0
+  fi
+  grep -qi microsoft /proc/version 2>/dev/null
+}
+
+to_win_path() {
+  local path="$1"
+  if command -v cygpath >/dev/null 2>&1; then
+    cygpath -w "$path"
+    return 0
+  fi
+  if command -v wslpath >/dev/null 2>&1; then
+    wslpath -w "$path"
+    return 0
+  fi
+  printf '%s\n' "$path"
+}
+
+INSTALL_SCOPE="${LLM_WIKI_INSTALL_SCOPE:-local}"
+POSITIONAL=()
+for arg in "$@"; do
+  case "$arg" in
+    -g|--global-install)
+      INSTALL_SCOPE="global"
+      ;;
+    --local-install)
+      INSTALL_SCOPE="local"
+      ;;
+    *)
+      POSITIONAL+=("$arg")
+      ;;
+  esac
+done
+set -- "${POSITIONAL[@]}"
+
 VAULT="${1:-${LLM_WIKI_VAULT:-}}"
 TARGETS="${2:-${LLM_WIKI_TARGETS:-claude,antigravity,codex,droid}}"
 FORCE_FLAG="${3:-}"
 REF="${4:-${LLM_WIKI_REF:-main}}"
 REPO="kingkillery/llm_wiki_prompt_packet"
 INSTALL_MODE="${LLM_WIKI_INSTALL_MODE:-packet}"
+export LLM_WIKI_INSTALL_SCOPE="$INSTALL_SCOPE"
+
+if (is_windows_bash || is_wsl) && command -v powershell.exe >/dev/null 2>&1; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  PS1_PATH="$SCRIPT_DIR/install.ps1"
+  if [[ -f "$PS1_PATH" ]]; then
+    export LLM_WIKI_VAULT="$(to_win_path "${VAULT:-$PWD}")"
+    export LLM_WIKI_TARGETS="$TARGETS"
+    export LLM_WIKI_REF="$REF"
+    export LLM_WIKI_INSTALL_MODE="$INSTALL_MODE"
+    if [[ "$FORCE_FLAG" == "--force" || "${LLM_WIKI_FORCE:-0}" == "1" ]]; then
+      export LLM_WIKI_FORCE=1
+    fi
+    PS1_WIN_PATH="$(to_win_path "$PS1_PATH")"
+    if [[ "$INSTALL_SCOPE" == "global" ]]; then
+      exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$PS1_WIN_PATH" -GlobalInstall
+    fi
+    exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$PS1_WIN_PATH"
+  fi
+fi
 
 if [[ -z "$VAULT" ]]; then
   if [[ -r /dev/tty ]]; then

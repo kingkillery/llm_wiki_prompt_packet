@@ -4,3 +4,4 @@ __pycache__/
 .docker/vault/
 node_modules/
 npm-debug.log*
+.llm-wiki/tools/
