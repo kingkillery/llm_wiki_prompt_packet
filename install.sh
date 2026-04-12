@@ -6,6 +6,7 @@ TARGETS="${2:-${LLM_WIKI_TARGETS:-claude,antigravity,codex,droid}}"
 FORCE_FLAG="${3:-}"
 REF="${4:-${LLM_WIKI_REF:-main}}"
 REPO="kingkillery/llm_wiki_prompt_packet"
+INSTALL_MODE="${LLM_WIKI_INSTALL_MODE:-packet}"
 
 if [[ -z "$VAULT" ]]; then
   if [[ -r /dev/tty ]]; then
@@ -48,19 +49,33 @@ if [[ -z "$PACKET_ROOT" ]]; then
 fi
 
 INSTALLER="$PACKET_ROOT/installers/install_obsidian_agent_memory.py"
+INSTALL_ARGS=()
+if [[ "$INSTALL_MODE" == "g-kade" ]]; then
+  INSTALLER="$PACKET_ROOT/installers/install_g_kade_workspace.py"
+  INSTALL_ARGS=("$INSTALLER" --workspace "$VAULT" --targets "$TARGETS")
+else
+  INSTALL_ARGS=("$INSTALLER" --vault "$VAULT" --targets "$TARGETS")
+fi
+
 if [[ ! -f "$INSTALLER" ]]; then
   echo "Installer not found in downloaded packet: $INSTALLER" >&2
   exit 1
 fi
 
-INSTALL_ARGS=("$INSTALLER" --vault "$VAULT" --targets "$TARGETS")
 if [[ "$FORCE_FLAG" == "--force" || "${LLM_WIKI_FORCE:-0}" == "1" ]]; then
   INSTALL_ARGS+=(--force)
 fi
 
+if [[ "${LLM_WIKI_SKIP_HOME_SKILLS:-0}" == "1" ]]; then
+  INSTALL_ARGS+=(--skip-home-skills)
+fi
+if [[ "$INSTALL_MODE" == "g-kade" && "${LLM_WIKI_SKIP_SETUP:-0}" == "1" ]]; then
+  INSTALL_ARGS+=(--skip-setup)
+fi
+
 python3 "${INSTALL_ARGS[@]}"
 
-if [[ "${LLM_WIKI_SKIP_SETUP:-0}" != "1" ]]; then
+if [[ "$INSTALL_MODE" != "g-kade" && "${LLM_WIKI_SKIP_SETUP:-0}" != "1" ]]; then
   SETUP_HELPER="$VAULT/scripts/setup_llm_wiki_memory.sh"
   if [[ ! -f "$SETUP_HELPER" ]]; then
     echo "Setup helper not found: $SETUP_HELPER" >&2

@@ -8,6 +8,8 @@ param(
     [string]$BrvCommand = $env:LLM_WIKI_BRV_COMMAND,
     [string]$GitvizzFrontendUrl = $env:LLM_WIKI_GITVIZZ_FRONTEND_URL,
     [string]$GitvizzBackendUrl = $env:LLM_WIKI_GITVIZZ_BACKEND_URL,
+    [string]$GitvizzRepoUrl = $env:LLM_WIKI_GITVIZZ_REPO_URL,
+    [string]$GitvizzCheckoutPath = $env:LLM_WIKI_GITVIZZ_CHECKOUT_PATH,
     [string]$GitvizzRepoPath = $env:LLM_WIKI_GITVIZZ_REPO_PATH,
     [switch]$SkipQmd,
     [switch]$SkipMcp,
@@ -17,6 +19,7 @@ param(
     [switch]$SkipBrv,
     [switch]$SkipGitvizz,
     [switch]$SkipGitvizzStart,
+    [switch]$AllowGlobalToolInstall,
     [switch]$VerifyOnly
 )
 
@@ -35,6 +38,16 @@ function Resolve-ScriptWorkspaceRoot {
     }
 
     return $scriptParent
+}
+
+function Test-EnvFlag {
+    param([string]$Name)
+
+    $value = [Environment]::GetEnvironmentVariable($Name)
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        return $false
+    }
+    return $value.Trim().ToLowerInvariant() -in @("1", "true", "yes", "on")
 }
 
 function Get-WorkspaceRoot {
@@ -77,18 +90,103 @@ function Get-NpmCommand {
     return $null
 }
 
+function Get-GitCommand {
+    $git = Get-Command git -ErrorAction SilentlyContinue
+    if ($git) { return $git.Name }
+    $gitCmd = Get-Command git.exe -ErrorAction SilentlyContinue
+    if ($gitCmd) { return $gitCmd.Name }
+    return $null
+}
+
+function Resolve-OptionalPath {
+    param(
+        [string]$PathValue,
+        [string]$WorkspaceRoot
+    )
+
+    if ([string]::IsNullOrWhiteSpace($PathValue)) {
+        return $null
+    }
+
+    try {
+        if ([System.IO.Path]::IsPathRooted($PathValue)) {
+            return [System.IO.Path]::GetFullPath($PathValue)
+        }
+    } catch {
+        return $PathValue
+    }
+
+    if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) {
+        return $PathValue
+    }
+
+    return [System.IO.Path]::GetFullPath((Join-Path $WorkspaceRoot $PathValue))
+}
+
 function Get-LocalQmdManifestPath {
     param([string]$WorkspaceRoot)
     return (Join-Path $WorkspaceRoot ".llm-wiki\package.json")
 }
 
+function Ensure-LocalQmdManifest {
+    param(
+        [string]$WorkspaceRoot,
+        [string]$RepoUrl
+    )
+
+    $manifestPath = Get-LocalQmdManifestPath -WorkspaceRoot $WorkspaceRoot
+    if (Test-Path $manifestPath) {
+        return $manifestPath
+    }
+
+    $dependencySpec = Resolve-GitSource -RepoUrl $(if ($RepoUrl) { $RepoUrl } else { "https://github.com/kingkillery/pk-qmd" })
+    $rootPackagePath = Join-Path $WorkspaceRoot "package.json"
+    if (Test-Path $rootPackagePath) {
+        try {
+            $rootPackage = Get-Content -Path $rootPackagePath -Raw | ConvertFrom-Json
+            $rootDependency = $rootPackage.dependencies.'@kingkillery/pk-qmd'
+            if (-not [string]::IsNullOrWhiteSpace($rootDependency)) {
+                $dependencySpec = [string]$rootDependency
+            }
+        } catch {
+        }
+    }
+
+    $manifestDir = Split-Path -Parent $manifestPath
+    if (-not (Test-Path $manifestDir)) {
+        New-Item -ItemType Directory -Force -Path $manifestDir | Out-Null
+    }
+
+    $manifest = [ordered]@{
+        name = "llm-wiki-memory-local"
+        private = $true
+        version = "0.1.0"
+        description = "Local dependency bundle for llm-wiki-memory"
+        dependencies = [ordered]@{
+            "@kingkillery/pk-qmd" = $dependencySpec
+        }
+    }
+
+    Set-Content -Path $manifestPath -Value (($manifest | ConvertTo-Json -Depth 5) + "`n") -Encoding utf8
+    return $manifestPath
+}
+
 function Get-LocalQmdCommandPath {
     param([string]$WorkspaceRoot)
-    $candidates = @(
-        (Join-Path $WorkspaceRoot ".llm-wiki\node_modules\.bin\pk-qmd.cmd"),
-        (Join-Path $WorkspaceRoot ".llm-wiki\node_modules\.bin\pk-qmd.ps1"),
-        (Join-Path $WorkspaceRoot ".llm-wiki\node_modules\.bin\pk-qmd")
-    )
+    $isWindows = $false
+    if ($PSVersionTable.PSVersion -lt "6.0" -or $IsWindows) {
+        $isWindows = $true
+    }
+
+    $candidates = @((Join-Path $WorkspaceRoot ".llm-wiki\node_modules\@kingkillery\pk-qmd\dist\cli\qmd.js"))
+    if (-not $isWindows) {
+        $candidates += @(
+            (Join-Path $WorkspaceRoot ".llm-wiki\node_modules\.bin\pk-qmd"),
+            (Join-Path $WorkspaceRoot ".llm-wiki\node_modules\.bin\pk-qmd.ps1"),
+            (Join-Path $WorkspaceRoot ".llm-wiki\node_modules\.bin\pk-qmd.cmd")
+        )
+    }
+
     foreach ($candidate in $candidates) {
         if (Test-Path $candidate) {
             return $candidate
@@ -97,11 +195,65 @@ function Get-LocalQmdCommandPath {
     return $null
 }
 
+function Get-LocalQmdSourceCommandPath {
+    param([string]$SourcePath)
+
+    if ([string]::IsNullOrWhiteSpace($SourcePath)) {
+        return $null
+    }
+
+    $candidates = @(
+        (Join-Path $SourcePath "dist\cli\qmd.js"),
+        (Join-Path $SourcePath "bin\qmd.ps1"),
+        (Join-Path $SourcePath "bin\qmd.cmd"),
+        (Join-Path $SourcePath "bin\qmd"),
+        (Join-Path $SourcePath "bin\pk-qmd.ps1"),
+        (Join-Path $SourcePath "bin\pk-qmd.cmd"),
+        (Join-Path $SourcePath "bin\pk-qmd")
+    )
+
+    foreach ($candidate in $candidates) {
+        if (Test-Path $candidate) {
+            return $candidate
+        }
+    }
+    return $null
+}
+
+function Resolve-InstalledQmdCommand {
+    param(
+        [string]$RequestedCommand,
+        [string]$WorkspaceRoot
+    )
+
+    $localCommand = Get-LocalQmdCommandPath -WorkspaceRoot $WorkspaceRoot
+    if ($localCommand) {
+        return $localCommand
+    }
+
+    if ($RequestedCommand) {
+        $requested = Get-Command $RequestedCommand -ErrorAction SilentlyContinue
+        if ($requested) {
+            return $RequestedCommand
+        }
+        if (Test-Path $RequestedCommand) {
+            return $RequestedCommand
+        }
+    }
+
+    $defaultQmd = Get-Command "pk-qmd" -ErrorAction SilentlyContinue
+    if ($defaultQmd) {
+        return "pk-qmd"
+    }
+
+    return $null
+}
+
 function Get-LocalBrvCommandPath {
     param([string]$WorkspaceRoot)
     $candidates = @(
-        (Join-Path $WorkspaceRoot ".llm-wiki\node_modules\.bin\brv.cmd"),
         (Join-Path $WorkspaceRoot ".llm-wiki\node_modules\.bin\brv.ps1"),
+        (Join-Path $WorkspaceRoot ".llm-wiki\node_modules\.bin\brv.cmd"),
         (Join-Path $WorkspaceRoot ".llm-wiki\node_modules\.bin\brv")
     )
     foreach ($candidate in $candidates) {
@@ -114,6 +266,9 @@ function Get-LocalBrvCommandPath {
 
 function Resolve-GitSource {
     param([string]$RepoUrl)
+    if ([string]::IsNullOrWhiteSpace($RepoUrl)) {
+        return $null
+    }
     if ($RepoUrl.StartsWith("git+")) {
         return $RepoUrl
     }
@@ -177,6 +332,63 @@ path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     }
 }
 
+function Invoke-JsonMergeServer {
+    param(
+        [string]$PythonCommand,
+        [string]$TargetPath,
+        [string]$ServerKey,
+        [string]$CommandName,
+        [string[]]$Args,
+        [switch]$FactoryStyle
+    )
+
+    $argsJson = if ($Args) { $Args | ConvertTo-Json -Compress } else { "[]" }
+    $script = @'
+from pathlib import Path
+import json
+import sys
+
+path = Path(sys.argv[1]).expanduser()
+server_key = sys.argv[2]
+command_name = sys.argv[3]
+args = json.loads(sys.argv[4])
+factory_style = sys.argv[5] == "1"
+
+data = {}
+if path.exists():
+    raw = path.read_text(encoding="utf-8").strip()
+    if raw:
+        data = json.loads(raw)
+
+mcp = data.get("mcpServers")
+if not isinstance(mcp, dict):
+    mcp = {}
+data["mcpServers"] = mcp
+
+payload = {"command": command_name, "args": args}
+if factory_style:
+    payload = {"type": "stdio", "command": command_name, "args": args, "disabled": False}
+
+mcp[server_key] = payload
+mcp.pop("qmd", None)
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+'@
+
+    $tempScript = [System.IO.Path]::GetTempFileName()
+    try {
+        Set-Content -Path $tempScript -Value $script -Encoding utf8
+        & $PythonCommand $tempScript $TargetPath $ServerKey $CommandName $argsJson $(if ($FactoryStyle) { "1" } else { "0" }) | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to update MCP config at $TargetPath"
+        }
+    } finally {
+        if (Test-Path $tempScript) {
+            Remove-Item -LiteralPath $tempScript -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 function Set-CodexMcp {
     param(
         [string]$Path,
@@ -214,6 +426,60 @@ args = ["mcp"]
     Set-Content -Path $Path -Value $content -Encoding utf8
 }
 
+function Set-CodexMcpServer {
+    param(
+        [string]$PythonCommand,
+        [string]$Path,
+        [string]$ServerKey,
+        [string]$CommandName,
+        [string[]]$Args
+    )
+
+    $argsJson = if ($Args) { $Args | ConvertTo-Json -Compress } else { "[]" }
+    $script = @'
+from pathlib import Path
+import json
+import re
+import sys
+
+path = Path(sys.argv[1]).expanduser()
+server_key = sys.argv[2]
+command_name = sys.argv[3]
+args = json.loads(sys.argv[4])
+content = path.read_text(encoding="utf-8") if path.exists() else ""
+args_literal = "[" + ", ".join(json.dumps(value) for value in args) + "]"
+block = f"[mcp_servers.{server_key}]\ncommand = {json.dumps(command_name)}\nargs = {args_literal}\n"
+section = re.compile(rf"(?ms)^\[mcp_servers\.{re.escape(server_key)}\]\r?\n(?:.*?)(?=^\[|\Z)")
+
+if section.search(content):
+    content = section.sub(block + "\n", content)
+else:
+    if content and not content.endswith("\n"):
+        content += "\n"
+    content += "\n" + block + "\n"
+
+if server_key != "qmd":
+    legacy = re.compile(r"(?ms)^\[mcp_servers\.qmd\]\r?\n(?:.*?)(?=^\[|\Z)")
+    content = legacy.sub("", content)
+
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(content, encoding="utf-8")
+'@
+
+    $tempScript = [System.IO.Path]::GetTempFileName()
+    try {
+        Set-Content -Path $tempScript -Value $script -Encoding utf8
+        & $PythonCommand $tempScript $Path $ServerKey $CommandName $argsJson | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to update Codex MCP config at $Path"
+        }
+    } finally {
+        if (Test-Path $tempScript) {
+            Remove-Item -LiteralPath $tempScript -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 function Test-TcpUrl {
     param([string]$Url)
 
@@ -234,42 +500,227 @@ function Test-TcpUrl {
     }
 }
 
+function Get-GitVizzComposeFilePath {
+    param([string]$RepoPath)
+
+    if ([string]::IsNullOrWhiteSpace($RepoPath)) {
+        return $null
+    }
+
+    $candidates = @(
+        "docker-compose.yaml",
+        "docker-compose.yml",
+        "compose.yaml",
+        "compose.yml"
+    )
+
+    foreach ($candidate in $candidates) {
+        $path = Join-Path $RepoPath $candidate
+        if (Test-Path $path) {
+            return $path
+        }
+    }
+
+    return $null
+}
+
+function Get-DockerComposeInvocation {
+    param([string]$ComposeFile)
+
+    $docker = Get-Command docker -ErrorAction SilentlyContinue
+    if ($docker) {
+        return [pscustomobject]@{
+            Command = $docker.Name
+            Arguments = @("compose", "-f", $ComposeFile)
+        }
+    }
+
+    $dockerCompose = Get-Command docker-compose -ErrorAction SilentlyContinue
+    if ($dockerCompose) {
+        return [pscustomobject]@{
+            Command = $dockerCompose.Name
+            Arguments = @("-f", $ComposeFile)
+        }
+    }
+
+    return $null
+}
+
+function Ensure-GitVizzCheckout {
+    param(
+        [string]$RepoUrl,
+        [string]$CheckoutPath,
+        [switch]$Verify
+    )
+
+    $summary = New-Object System.Collections.Generic.List[string]
+    $failures = New-Object System.Collections.Generic.List[string]
+    $result = [ordered]@{
+        Path = $CheckoutPath
+        Summary = $summary
+        Failures = $failures
+        State = "unmanaged"
+    }
+
+    if ([string]::IsNullOrWhiteSpace($CheckoutPath)) {
+        if ([string]::IsNullOrWhiteSpace($RepoUrl)) {
+            $summary.Add("GitVizz checkout resolved: missing")
+            return [pscustomobject]$result
+        }
+
+        $result.State = "configuration-missing"
+        $summary.Add("GitVizz checkout resolved: missing")
+        $failures.Add("GitVizz source is configured but no checkout path was provided. Set LLM_WIKI_GITVIZZ_CHECKOUT_PATH or gitvizz.checkout_path.")
+        return [pscustomobject]$result
+    }
+
+    if ([string]::IsNullOrWhiteSpace($RepoUrl)) {
+        if (Test-Path $CheckoutPath) {
+            $result.State = "resolved"
+            $summary.Add("GitVizz checkout resolved: $CheckoutPath")
+        } else {
+            $result.State = "missing"
+            $summary.Add("GitVizz checkout resolved: missing ($CheckoutPath)")
+        }
+        return [pscustomobject]$result
+    }
+
+    $git = Get-GitCommand
+    if (-not $git) {
+        $result.State = "missing-git"
+        $summary.Add("GitVizz checkout resolved: missing")
+        $failures.Add("git is required to acquire the configured GitVizz checkout.")
+        return [pscustomobject]$result
+    }
+
+    if (Test-Path $CheckoutPath) {
+        if (-not (Test-Path (Join-Path $CheckoutPath ".git"))) {
+            $result.State = "invalid"
+            $summary.Add("GitVizz checkout resolved: invalid ($CheckoutPath)")
+            $failures.Add("GitVizz checkout path exists but is not a git repository: $CheckoutPath")
+            return [pscustomobject]$result
+        }
+
+        if ($Verify) {
+            $result.State = "resolved"
+            $summary.Add("GitVizz checkout resolved: $CheckoutPath")
+            return [pscustomobject]$result
+        }
+
+        try {
+            & $git -C $CheckoutPath pull --ff-only | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                throw "git pull --ff-only failed"
+            }
+            $result.State = "updated"
+            $summary.Add("GitVizz checkout updated: $CheckoutPath")
+        } catch {
+            $result.State = "update-failed"
+            $summary.Add("GitVizz checkout resolved: $CheckoutPath")
+            $failures.Add("GitVizz checkout update failed at ${CheckoutPath}: $($_.Exception.Message)")
+        }
+
+        return [pscustomobject]$result
+    }
+
+    if ($Verify) {
+        $result.State = "missing"
+        $summary.Add("GitVizz checkout resolved: missing ($CheckoutPath)")
+        return [pscustomobject]$result
+    }
+
+    $parent = Split-Path -Parent $CheckoutPath
+    if (-not [string]::IsNullOrWhiteSpace($parent) -and -not (Test-Path $parent)) {
+        New-Item -ItemType Directory -Force -Path $parent | Out-Null
+    }
+
+    try {
+        & $git clone $RepoUrl $CheckoutPath | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "git clone failed"
+        }
+        $result.State = "installed"
+        $summary.Add("GitVizz checkout installed: $CheckoutPath")
+    } catch {
+        $result.State = "install-failed"
+        $summary.Add("GitVizz checkout resolved: missing ($CheckoutPath)")
+        $failures.Add("GitVizz checkout install failed from $RepoUrl to ${CheckoutPath}: $($_.Exception.Message)")
+    }
+
+    return [pscustomobject]$result
+}
+
 function Start-GitVizzIfNeeded {
     param(
+        [string]$RepoUrl,
         [string]$RepoPath,
         [string]$FrontendUrl,
         [string]$BackendUrl,
         [switch]$Verify
     )
 
+    $summary = New-Object System.Collections.Generic.List[string]
+    $failures = New-Object System.Collections.Generic.List[string]
+    $checkout = Ensure-GitVizzCheckout -RepoUrl $RepoUrl -CheckoutPath $RepoPath -Verify:$Verify
+    foreach ($line in $checkout.Summary) {
+        $summary.Add($line)
+    }
+    foreach ($line in $checkout.Failures) {
+        $failures.Add($line)
+    }
+
     if ((Test-TcpUrl -Url $FrontendUrl) -and (Test-TcpUrl -Url $BackendUrl)) {
-        return "GitVizz already reachable"
+        $summary.Add("GitVizz launch state: already reachable")
+        return [pscustomobject]@{ Summary = $summary; Failures = $failures }
     }
 
     if ($Verify) {
-        return "GitVizz is not reachable"
+        $summary.Add("GitVizz launch state: verify-only")
+        return [pscustomobject]@{ Summary = $summary; Failures = $failures }
     }
 
-    if (-not $RepoPath) {
-        return "GitVizz repo path not configured; set LLM_WIKI_GITVIZZ_REPO_PATH or gitvizz.repo_path to auto-launch"
+    if ($failures.Count -gt 0) {
+        $summary.Add("GitVizz launch state: blocked")
+        return [pscustomobject]@{ Summary = $summary; Failures = $failures }
     }
 
-    if (-not (Test-Path (Join-Path $RepoPath "docker-compose.yaml"))) {
-        return "GitVizz repo path missing docker-compose.yaml: $RepoPath"
+    if (-not $checkout.Path) {
+        $summary.Add("GitVizz launch state: unmanaged endpoint only")
+        return [pscustomobject]@{ Summary = $summary; Failures = $failures }
     }
 
-    Push-Location $RepoPath
+    $composeFile = Get-GitVizzComposeFilePath -RepoPath $checkout.Path
+    if (-not $composeFile) {
+        $summary.Add("GitVizz launch state: blocked")
+        $failures.Add("GitVizz checkout is missing a compose file: $($checkout.Path)")
+        return [pscustomobject]@{ Summary = $summary; Failures = $failures }
+    }
+
+    $composeInvocation = Get-DockerComposeInvocation -ComposeFile $composeFile
+    if (-not $composeInvocation) {
+        $summary.Add("GitVizz launch state: blocked")
+        $failures.Add("docker compose is required to launch the configured GitVizz checkout.")
+        return [pscustomobject]@{ Summary = $summary; Failures = $failures }
+    }
+
+    Push-Location $checkout.Path
     try {
-        & docker-compose up -d --build
+        & $composeInvocation.Command @($composeInvocation.Arguments + @("up", "-d", "--build")) | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "docker compose up -d --build failed"
+        }
     } finally {
         Pop-Location
     }
 
     if ((Test-TcpUrl -Url $FrontendUrl) -and (Test-TcpUrl -Url $BackendUrl)) {
-        return "Launched GitVizz via docker-compose"
+        $summary.Add("GitVizz launch state: launched")
+        return [pscustomobject]@{ Summary = $summary; Failures = $failures }
     }
 
-    return "GitVizz launch attempted but endpoints are still unreachable"
+    $summary.Add("GitVizz launch state: launched but unreachable")
+    $failures.Add("GitVizz launch completed but the configured endpoints are still unreachable.")
+    return [pscustomobject]@{ Summary = $summary; Failures = $failures }
 }
 
 function Test-QmdFeature {
@@ -279,27 +730,74 @@ function Test-QmdFeature {
     )
 
     try {
-        $output = & $CommandName 2>&1 | Out-String
+        $invocation = Get-CommandInvocation -CommandName $CommandName
+        $output = & $invocation.Command @($invocation.Arguments) 2>&1 | Out-String
         return $output -match [regex]::Escape($Pattern)
     } catch {
         return $false
     }
 }
 
-function Install-PacketLocalQmdDependency {
-    param([string]$WorkspaceRoot)
+function Get-CommandInvocation {
+    param(
+        [string]$CommandName,
+        [string[]]$Arguments
+    )
 
-    $manifestPath = Get-LocalQmdManifestPath -WorkspaceRoot $WorkspaceRoot
-    if (-not (Test-Path $manifestPath)) {
-        return $null
+    if ([string]::IsNullOrWhiteSpace($CommandName)) {
+        throw "Command name is required."
     }
+
+    if ($CommandName.EndsWith(".js")) {
+        $node = Get-Command node -ErrorAction SilentlyContinue
+        if (-not $node) {
+            throw "node is required to run $CommandName"
+        }
+        return [pscustomobject]@{
+            Command = $node.Name
+            Arguments = @($CommandName) + $Arguments
+        }
+    }
+
+    return [pscustomobject]@{
+        Command = $CommandName
+        Arguments = @($Arguments)
+    }
+}
+
+function Invoke-CommandChecked {
+    param(
+        [string]$CommandName,
+        [string[]]$Arguments
+    )
+
+    $invocation = Get-CommandInvocation -CommandName $CommandName -Arguments $Arguments
+    $output = & $invocation.Command @($invocation.Arguments) 2>&1 | Out-String
+    if ($LASTEXITCODE -ne 0) {
+        $argumentText = if ($invocation.Arguments) { $invocation.Arguments -join " " } else { "" }
+        $message = "$($invocation.Command) $argumentText failed"
+        if (-not [string]::IsNullOrWhiteSpace($output)) {
+            $message += ": $($output.Trim())"
+        }
+        throw $message
+    }
+    return $output
+}
+
+function Install-PacketLocalQmdDependency {
+    param(
+        [string]$WorkspaceRoot,
+        [string]$RepoUrl
+    )
+
+    $manifestPath = Ensure-LocalQmdManifest -WorkspaceRoot $WorkspaceRoot -RepoUrl $RepoUrl
 
     $npm = Get-NpmCommand
     if (-not $npm) {
-        throw "npm is required to install the packet-local pk-qmd dependency."
+        return $null
     }
 
-    & $npm install --prefix (Split-Path -Parent $manifestPath)
+    & $npm install --prefix (Split-Path -Parent $manifestPath) | Out-Null
     return (Get-LocalQmdCommandPath -WorkspaceRoot $WorkspaceRoot)
 }
 
@@ -313,35 +811,108 @@ function Install-PacketLocalBrvDependency {
 
     $npm = Get-NpmCommand
     if (-not $npm) {
-        throw "npm is required to install the packet-local brv dependency."
+        return $null
     }
 
-    & $npm install --prefix (Split-Path -Parent $manifestPath)
+    & $npm install --prefix (Split-Path -Parent $manifestPath) | Out-Null
     return (Get-LocalBrvCommandPath -WorkspaceRoot $WorkspaceRoot)
 }
 
 function Resolve-QmdCommand {
     param(
         [string]$RequestedCommand,
-        [string]$WorkspaceRoot
+        [string]$WorkspaceRoot,
+        [string]$SourcePath,
+        [string]$RepoUrl,
+        [switch]$AllowGlobalToolInstall,
+        [switch]$Verify
     )
 
     $localCommand = Get-LocalQmdCommandPath -WorkspaceRoot $WorkspaceRoot
     if ($localCommand) {
-        return $localCommand
+        return [pscustomobject]@{ Command = $localCommand; Installed = $false; Source = "existing" }
     }
 
     if ($RequestedCommand) {
         $cmd = Get-Command $RequestedCommand -ErrorAction SilentlyContinue
         if ($cmd) {
-            return $RequestedCommand
+            return [pscustomobject]@{ Command = $RequestedCommand; Installed = $false; Source = "existing" }
         }
         if (Test-Path $RequestedCommand) {
-            return $RequestedCommand
+            return [pscustomobject]@{ Command = $RequestedCommand; Installed = $false; Source = "existing" }
         }
     }
 
-    return $RequestedCommand
+    if ($Verify) {
+        return [pscustomobject]@{ Command = $RequestedCommand; Installed = $false; Source = "missing" }
+    }
+
+    if ($SourcePath) {
+        $sourceCommand = Get-LocalQmdSourceCommandPath -SourcePath $SourcePath
+        if ($sourceCommand) {
+            return [pscustomobject]@{
+                Command = $sourceCommand
+                Installed = $false
+                Source = "source-checkout"
+                Message = "Using pk-qmd from local checkout: $SourcePath"
+            }
+        }
+        if (-not $AllowGlobalToolInstall) {
+            return [pscustomobject]@{
+                Command = $(if ($RequestedCommand) { $RequestedCommand } else { "pk-qmd" })
+                Installed = $false
+                Source = "manual-required"
+                Message = "pk-qmd global install is disabled. Install from $SourcePath manually or rerun with -AllowGlobalToolInstall."
+            }
+        }
+        $npm = Get-NpmCommand
+        if (-not $npm) {
+            return [pscustomobject]@{
+                Command = $(if ($RequestedCommand) { $RequestedCommand } else { "pk-qmd" })
+                Installed = $false
+                Source = "manual-required"
+                Message = "npm is required to install pk-qmd from $SourcePath."
+            }
+        }
+        & $npm install -g $SourcePath | Out-Null
+        $installedCommand = Resolve-InstalledQmdCommand -RequestedCommand $RequestedCommand -WorkspaceRoot $WorkspaceRoot
+        if (-not $installedCommand) {
+            throw "pk-qmd install completed from $SourcePath but no runnable command was found."
+        }
+        return [pscustomobject]@{ Command = $installedCommand; Installed = $true; Source = $SourcePath }
+    }
+
+    $localInstalled = Install-PacketLocalQmdDependency -WorkspaceRoot $WorkspaceRoot -RepoUrl $RepoUrl
+    if ($localInstalled) {
+        return [pscustomobject]@{ Command = $localInstalled; Installed = $true; Source = "packet-local" }
+    }
+
+    $gitSource = Resolve-GitSource -RepoUrl $RepoUrl
+    if (-not $AllowGlobalToolInstall) {
+        return [pscustomobject]@{
+            Command = $(if ($RequestedCommand) { $RequestedCommand } else { "pk-qmd" })
+            Installed = $false
+            Source = "manual-required"
+            Message = "pk-qmd is missing and packet-local install was unavailable. Install $gitSource manually or rerun with -AllowGlobalToolInstall."
+        }
+    }
+
+    $npm = Get-NpmCommand
+    if (-not $npm) {
+        return [pscustomobject]@{
+            Command = $(if ($RequestedCommand) { $RequestedCommand } else { "pk-qmd" })
+            Installed = $false
+            Source = "manual-required"
+            Message = "npm is required to install pk-qmd from $gitSource."
+        }
+    }
+
+    & $npm install -g $gitSource | Out-Null
+    $installedCommand = Resolve-InstalledQmdCommand -RequestedCommand $RequestedCommand -WorkspaceRoot $WorkspaceRoot
+    if (-not $installedCommand) {
+        throw "pk-qmd install completed from $gitSource but no runnable command was found."
+    }
+    return [pscustomobject]@{ Command = $installedCommand; Installed = $true; Source = $gitSource }
 }
 
 function Ensure-QmdAvailable {
@@ -350,42 +921,11 @@ function Ensure-QmdAvailable {
         [string]$CurrentCommand,
         [string]$SourcePath,
         [string]$RepoUrl,
+        [switch]$AllowGlobalToolInstall,
         [switch]$Verify
     )
 
-    $resolved = Resolve-QmdCommand -RequestedCommand $CurrentCommand -WorkspaceRoot $WorkspaceRoot
-    if ($resolved) {
-        return [pscustomobject]@{ Command = $resolved; Installed = $false; Source = "existing" }
-    }
-
-    if ($Verify) {
-        return [pscustomobject]@{ Command = $CurrentCommand; Installed = $false; Source = "missing" }
-    }
-
-    if ($SourcePath) {
-        $npm = Get-NpmCommand
-        if (-not $npm) {
-            throw "npm is required to install pk-qmd from a local checkout."
-        }
-        & $npm install -g $SourcePath
-        $installedCommand = if ($CurrentCommand) { $CurrentCommand } else { "pk-qmd" }
-        return [pscustomobject]@{ Command = $installedCommand; Installed = $true; Source = $SourcePath }
-    }
-
-    $localInstalled = Install-PacketLocalQmdDependency -WorkspaceRoot $WorkspaceRoot
-    if ($localInstalled) {
-        return [pscustomobject]@{ Command = $localInstalled; Installed = $true; Source = "packet-local" }
-    }
-
-    $npm = Get-NpmCommand
-    if (-not $npm) {
-        throw "npm is required to install pk-qmd."
-    }
-
-    $gitSource = Resolve-GitSource -RepoUrl $RepoUrl
-    & $npm install -g $gitSource
-    $installedCommand = if ($CurrentCommand) { $CurrentCommand } else { "pk-qmd" }
-    return [pscustomobject]@{ Command = $installedCommand; Installed = $true; Source = $gitSource }
+    return (Resolve-QmdCommand -RequestedCommand $CurrentCommand -WorkspaceRoot $WorkspaceRoot -SourcePath $SourcePath -RepoUrl $RepoUrl -AllowGlobalToolInstall:$AllowGlobalToolInstall -Verify:$Verify)
 }
 
 function Invoke-QmdCollectionBootstrap {
@@ -407,12 +947,13 @@ function Invoke-QmdCollectionBootstrap {
 
     $collectionOutput = ""
     try {
-        $collectionOutput = & $CommandName collection list 2>&1 | Out-String
+        $collectionOutput = Invoke-CommandChecked -CommandName $CommandName -Arguments @("collection", "list")
     } catch {
         if ($Verify) {
             $results.Add("Unable to read qmd collections with '$CommandName collection list'")
             return $results
         }
+        throw
     }
 
     if ($collectionOutput -notmatch "(?m)^$([regex]::Escape($CollectionName))\s+\(qmd://") {
@@ -420,7 +961,7 @@ function Invoke-QmdCollectionBootstrap {
             $results.Add("Missing qmd collection: $CollectionName")
             return $results
         }
-        & $CommandName collection add $WorkspaceRoot --name $CollectionName
+        Invoke-CommandChecked -CommandName $CommandName -Arguments @("collection", "add", $WorkspaceRoot, "--name", $CollectionName) | Out-Null
         $results.Add("Added qmd collection: $CollectionName")
     } else {
         $results.Add("qmd collection already present: $CollectionName")
@@ -430,7 +971,7 @@ function Invoke-QmdCollectionBootstrap {
         $contextPath = "qmd://$CollectionName/"
         $contextOutput = ""
         try {
-            $contextOutput = & $CommandName context list 2>&1 | Out-String
+            $contextOutput = Invoke-CommandChecked -CommandName $CommandName -Arguments @("context", "list")
         } catch {
             $contextOutput = ""
         }
@@ -439,7 +980,7 @@ function Invoke-QmdCollectionBootstrap {
             if ($Verify) {
                 $results.Add("Missing qmd context: $contextPath")
             } else {
-                & $CommandName context add $contextPath $ContextText
+                Invoke-CommandChecked -CommandName $CommandName -Arguments @("context", "add", $contextPath, $ContextText) | Out-Null
                 $results.Add("Added qmd context: $contextPath")
             }
         } else {
@@ -458,13 +999,13 @@ function Invoke-QmdCollectionBootstrap {
             } elseif ($env:GEMINI_API_KEY) {
                 $runnerArgs += "--include-images"
             }
-            & node @runnerArgs
+            Invoke-CommandChecked -CommandName "node" -Arguments $runnerArgs | Out-Null
             $results.Add("Ran qmd embed runner")
         } elseif (-not $SkipEmbed) {
-            & $CommandName update
-            & $CommandName embed
+            Invoke-CommandChecked -CommandName $CommandName -Arguments @("update") | Out-Null
+            Invoke-CommandChecked -CommandName $CommandName -Arguments @("embed") | Out-Null
             if ($env:GEMINI_API_KEY -and (Test-QmdFeature -CommandName $CommandName -Pattern "membed")) {
-                & $CommandName membed
+                Invoke-CommandChecked -CommandName $CommandName -Arguments @("membed") | Out-Null
                 $results.Add("Ran qmd text + image embeddings")
             } else {
                 $results.Add("Ran qmd text embeddings")
@@ -540,29 +1081,67 @@ $QmdContext = Get-ConfigValue -Preferred $QmdContext -Fallback $(if ($config -an
 $BrvCommand = Get-ConfigValue -Preferred $BrvCommand -Fallback $(if ($config) { $config.byterover.command } else { "brv" })
 $GitvizzFrontendUrl = Get-ConfigValue -Preferred $GitvizzFrontendUrl -Fallback $(if ($config) { $config.gitvizz.frontend_url } else { "http://localhost:3000" })
 $GitvizzBackendUrl = Get-ConfigValue -Preferred $GitvizzBackendUrl -Fallback $(if ($config) { $config.gitvizz.backend_url } else { "http://localhost:8003" })
+$GitvizzRepoUrl = Get-ConfigValue -Preferred $GitvizzRepoUrl -Fallback $(if ($config) { $config.gitvizz.repo_url } else { $null })
+$GitvizzCheckoutPath = Get-ConfigValue -Preferred $GitvizzCheckoutPath -Fallback $(if ($config) { $config.gitvizz.checkout_path } else { $null })
 $GitvizzRepoPath = Get-ConfigValue -Preferred $GitvizzRepoPath -Fallback $(if ($config) { $config.gitvizz.repo_path } else { $null })
+$GitvizzManagedPath = Resolve-OptionalPath -PathValue $(if ($GitvizzCheckoutPath) { $GitvizzCheckoutPath } else { $GitvizzRepoPath }) -WorkspaceRoot $WorkspaceRoot
+$SkillServerKey = if ($config -and $config.skills.mcp_server_key) { [string]$config.skills.mcp_server_key } else { "llm-wiki-skills" }
+$SkillScriptRelativePath = if ($config -and $config.skills.script_path) { [string]$config.skills.script_path } else { "scripts\llm_wiki_skill_mcp.py" }
+if (-not $AllowGlobalToolInstall -and (Test-EnvFlag -Name "LLM_WIKI_ALLOW_GLOBAL_TOOL_INSTALL")) {
+    $AllowGlobalToolInstall = $true
+}
 
 $summary = New-Object System.Collections.Generic.List[string]
 $failures = New-Object System.Collections.Generic.List[string]
+if ($AllowGlobalToolInstall) {
+    $summary.Add("Global tool install fallback enabled")
+} else {
+    $summary.Add("Global tool install fallback disabled; packet-local installs only")
+}
+$summary.Add("pk-qmd configured command: $QmdCommand")
+$summary.Add("brv configured command: $BrvCommand")
+$summary.Add("GitVizz configured frontend: $GitvizzFrontendUrl")
+$summary.Add("GitVizz configured backend: $GitvizzBackendUrl")
+if ($GitvizzRepoUrl) {
+    $summary.Add("GitVizz source configured: $GitvizzRepoUrl")
+} else {
+    $summary.Add("GitVizz source configured: no")
+}
+if ($GitvizzManagedPath) {
+    $summary.Add("GitVizz managed checkout path: $GitvizzManagedPath")
+} else {
+    $summary.Add("GitVizz managed checkout path: no")
+}
 
 if (-not $SkipQmd) {
-    $qmd = Ensure-QmdAvailable -WorkspaceRoot $WorkspaceRoot -CurrentCommand $QmdCommand -SourcePath $QmdSource -RepoUrl $QmdRepoUrl -Verify:$VerifyOnly
+    $qmd = Ensure-QmdAvailable -WorkspaceRoot $WorkspaceRoot -CurrentCommand $QmdCommand -SourcePath $QmdSource -RepoUrl $QmdRepoUrl -AllowGlobalToolInstall:$AllowGlobalToolInstall -Verify:$VerifyOnly
     $QmdCommand = $qmd.Command
+    $summary.Add("pk-qmd resolved command: $QmdCommand")
 
     switch ($qmd.Source) {
-        "existing" { $summary.Add("$QmdCommand already installed") }
-        "packet-local" { $summary.Add("Installed packet-local pk-qmd dependency into .llm-wiki") }
+        "existing" { $summary.Add("pk-qmd install state: resolved existing command") }
+        "packet-local" { $summary.Add("pk-qmd install state: installed packet-local dependency") }
+        "source-checkout" {
+            $summary.Add("pk-qmd install state: resolved source checkout")
+            $summary.Add($qmd.Message)
+        }
+        "manual-required" {
+            $failures.Add($qmd.Message)
+            $summary.Add("pk-qmd install state: missing")
+            $summary.Add($qmd.Message)
+        }
         "missing" {
             $failures.Add("Missing pk-qmd command: $QmdCommand")
+            $summary.Add("pk-qmd install state: missing")
             $summary.Add("Install pk-qmd from the packet dependency manifest, $QmdRepoUrl, or provide -QmdSource")
         }
-        default { $summary.Add("Installed pk-qmd from $($qmd.Source)") }
+        default { $summary.Add("pk-qmd install state: installed from $($qmd.Source)") }
     }
 
-    if ($qmd.Source -ne "missing") {
+    if ($qmd.Source -notin @("missing", "manual-required")) {
         try {
-            & $QmdCommand status
-            $summary.Add("pk-qmd verify: ok")
+            Invoke-CommandChecked -CommandName $QmdCommand -Arguments @("status") | Out-Null
+            $summary.Add("pk-qmd reachable: status ok")
         } catch {
             $failures.Add("pk-qmd status failed: $($_.Exception.Message)")
         }
@@ -574,14 +1153,31 @@ if (-not $SkipQmd) {
             }
             $userHome = [Environment]::GetFolderPath("UserProfile")
 
-            Invoke-JsonMerge -PythonCommand $python -TargetPath (Join-Path $userHome ".claude\settings.json") -ServerKey "pk-qmd" -CommandName $QmdCommand
+            $qmdServerInvocation = Get-CommandInvocation -CommandName $QmdCommand -Arguments @("mcp")
+
+            Invoke-JsonMergeServer -PythonCommand $python -TargetPath (Join-Path $userHome ".claude\settings.json") -ServerKey "pk-qmd" -CommandName $qmdServerInvocation.Command -Args $qmdServerInvocation.Arguments
             $summary.Add("Updated ~/.claude/settings.json")
 
-            Set-CodexMcp -Path (Join-Path $userHome ".codex\config.toml") -CommandName $QmdCommand
+            Set-CodexMcpServer -PythonCommand $python -Path (Join-Path $userHome ".codex\config.toml") -ServerKey "pk-qmd" -CommandName $qmdServerInvocation.Command -Args $qmdServerInvocation.Arguments
             $summary.Add("Updated ~/.codex/config.toml")
 
-            Invoke-JsonMerge -PythonCommand $python -TargetPath (Join-Path $userHome ".factory\mcp.json") -ServerKey "pk-qmd" -CommandName $QmdCommand -FactoryStyle
+            Invoke-JsonMergeServer -PythonCommand $python -TargetPath (Join-Path $userHome ".factory\mcp.json") -ServerKey "pk-qmd" -CommandName $qmdServerInvocation.Command -Args $qmdServerInvocation.Arguments -FactoryStyle
             $summary.Add("Updated ~/.factory/mcp.json")
+
+            $skillScriptPath = Join-Path $WorkspaceRoot $SkillScriptRelativePath
+            if (Test-Path $skillScriptPath) {
+                $skillArgs = @($skillScriptPath, "mcp", "--workspace", $WorkspaceRoot)
+                Invoke-JsonMergeServer -PythonCommand $python -TargetPath (Join-Path $userHome ".claude\settings.json") -ServerKey $SkillServerKey -CommandName $python -Args $skillArgs
+                $summary.Add("Updated ~/.claude/settings.json for $SkillServerKey")
+
+                Set-CodexMcpServer -PythonCommand $python -Path (Join-Path $userHome ".codex\config.toml") -ServerKey $SkillServerKey -CommandName $python -Args $skillArgs
+                $summary.Add("Updated ~/.codex/config.toml for $SkillServerKey")
+
+                Invoke-JsonMergeServer -PythonCommand $python -TargetPath (Join-Path $userHome ".factory\mcp.json") -ServerKey $SkillServerKey -CommandName $python -Args $skillArgs -FactoryStyle
+                $summary.Add("Updated ~/.factory/mcp.json for $SkillServerKey")
+            } else {
+                $summary.Add("Skill MCP script not found, skipping $SkillServerKey MCP wiring")
+            }
         }
 
         if (-not $SkipQmdBootstrap) {
@@ -596,25 +1192,37 @@ if (-not $SkipBrv) {
     $localBrv = Get-LocalBrvCommandPath -WorkspaceRoot $WorkspaceRoot
     if ($localBrv) {
         $BrvCommand = $localBrv
-        $summary.Add("Using packet-local brv dependency at $BrvCommand")
+        $summary.Add("brv resolved command: $BrvCommand")
+        $summary.Add("brv install state: resolved packet-local dependency")
     } else {
         $brvExists = Get-Command $BrvCommand -ErrorAction SilentlyContinue
         if ($brvExists) {
-            $summary.Add("$BrvCommand already installed")
+            $summary.Add("brv resolved command: $BrvCommand")
+            $summary.Add("brv install state: resolved existing command")
         } elseif ($VerifyOnly) {
             $failures.Add("Missing Byterover command: $BrvCommand")
+            $summary.Add("brv install state: missing")
         } else {
             $localInstalledBrv = Install-PacketLocalBrvDependency -WorkspaceRoot $WorkspaceRoot
             if ($localInstalledBrv) {
                 $BrvCommand = $localInstalledBrv
-                $summary.Add("Installed packet-local brv dependency into .llm-wiki")
+                $summary.Add("brv resolved command: $BrvCommand")
+                $summary.Add("brv install state: installed packet-local dependency")
+            } elseif (-not $AllowGlobalToolInstall) {
+                $failures.Add("Missing Byterover command: $BrvCommand")
+                $summary.Add("brv install state: missing")
+                $summary.Add("Global brv install is disabled. Install byterover-cli manually or rerun with -AllowGlobalToolInstall.")
             } else {
                 $npm = Get-NpmCommand
                 if (-not $npm) {
-                    throw "npm is required to install brv."
+                    $failures.Add("Missing Byterover command: $BrvCommand")
+                    $summary.Add("brv install state: missing")
+                    $summary.Add("npm is required to install brv.")
+                } else {
+                    & $npm install -g byterover-cli
+                    $summary.Add("brv resolved command: $BrvCommand")
+                    $summary.Add("brv install state: installed from npm")
                 }
-                & $npm install -g byterover-cli
-                $summary.Add("Installed brv from npm")
             }
         }
     }
@@ -622,7 +1230,7 @@ if (-not $SkipBrv) {
     if ((Get-Command $BrvCommand -ErrorAction SilentlyContinue) -or (Test-Path $BrvCommand)) {
         $brvStatus = Test-BrvStatus -CommandName $BrvCommand
         if ($brvStatus.Ok) {
-            $summary.Add("brv verify: ok")
+            $summary.Add("brv reachable: status ok")
         } else {
             $failures.Add("brv status failed: $($brvStatus.Output)")
         }
@@ -652,22 +1260,42 @@ if ($SkipGitvizz) {
 }
 
 if (-not $SkipGitvizzStart) {
-    $summary.Add((Start-GitVizzIfNeeded -RepoPath $GitvizzRepoPath -FrontendUrl $GitvizzFrontendUrl -BackendUrl $GitvizzBackendUrl -Verify:$VerifyOnly))
+    $gitvizzLaunch = Start-GitVizzIfNeeded -RepoUrl $GitvizzRepoUrl -RepoPath $GitvizzManagedPath -FrontendUrl $GitvizzFrontendUrl -BackendUrl $GitvizzBackendUrl -Verify:$VerifyOnly
+    foreach ($line in $gitvizzLaunch.Summary) {
+        $summary.Add($line)
+    }
+    foreach ($line in $gitvizzLaunch.Failures) {
+        $failures.Add($line)
+    }
+} else {
+    $summary.Add("GitVizz launch state: skipped")
 }
 
 if ($SkipGitvizz) {
     $summary.Add("GitVizz checks skipped")
 } else {
-    if (Test-TcpUrl -Url $GitvizzFrontendUrl) {
+    $gitvizzManaged = -not [string]::IsNullOrWhiteSpace([string]$GitvizzManagedPath)
+    $frontendReachable = Test-TcpUrl -Url $GitvizzFrontendUrl
+    $backendReachable = Test-TcpUrl -Url $GitvizzBackendUrl
+
+    if ($frontendReachable) {
         $summary.Add("GitVizz frontend reachable: $GitvizzFrontendUrl")
     } else {
-        $failures.Add("GitVizz frontend unreachable: $GitvizzFrontendUrl")
+        if ($gitvizzManaged) {
+            $failures.Add("GitVizz frontend unreachable: $GitvizzFrontendUrl")
+        } else {
+            $summary.Add("GitVizz frontend reachable: missing ($GitvizzFrontendUrl); no managed checkout configured, so endpoint-only/container mode remains allowed")
+        }
     }
 
-    if (Test-TcpUrl -Url $GitvizzBackendUrl) {
+    if ($backendReachable) {
         $summary.Add("GitVizz backend reachable: $GitvizzBackendUrl")
     } else {
-        $failures.Add("GitVizz backend unreachable: $GitvizzBackendUrl")
+        if ($gitvizzManaged) {
+            $failures.Add("GitVizz backend unreachable: $GitvizzBackendUrl")
+        } else {
+            $summary.Add("GitVizz backend reachable: missing ($GitvizzBackendUrl); no managed checkout configured, so endpoint-only/container mode remains allowed")
+        }
     }
 }
 

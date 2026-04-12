@@ -19,6 +19,8 @@ QMD_CONTEXT="${LLM_WIKI_QMD_CONTEXT:-}"
 BRV_COMMAND="${LLM_WIKI_BRV_COMMAND:-}"
 GITVIZZ_FRONTEND_URL="${LLM_WIKI_GITVIZZ_FRONTEND_URL:-}"
 GITVIZZ_BACKEND_URL="${LLM_WIKI_GITVIZZ_BACKEND_URL:-}"
+GITVIZZ_REPO_URL="${LLM_WIKI_GITVIZZ_REPO_URL:-}"
+GITVIZZ_CHECKOUT_PATH="${LLM_WIKI_GITVIZZ_CHECKOUT_PATH:-}"
 GITVIZZ_REPO_PATH="${LLM_WIKI_GITVIZZ_REPO_PATH:-}"
 SKIP_QMD=0
 SKIP_MCP=0
@@ -28,7 +30,23 @@ SKIP_BRV=0
 SKIP_BRV_INIT=0
 SKIP_GITVIZZ_START=0
 SKIP_GITVIZZ=0
+ALLOW_GLOBAL_TOOL_INSTALL=0
 VERIFY_ONLY=0
+
+truthy_flag() {
+  case "${1:-}" in
+    1|true|TRUE|yes|YES|on|ON)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+if truthy_flag "${LLM_WIKI_ALLOW_GLOBAL_TOOL_INSTALL:-0}"; then
+  ALLOW_GLOBAL_TOOL_INSTALL=1
+fi
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -72,6 +90,14 @@ while [[ $# -gt 0 ]]; do
       GITVIZZ_BACKEND_URL="$2"
       shift 2
       ;;
+    --gitvizz-repo-url)
+      GITVIZZ_REPO_URL="$2"
+      shift 2
+      ;;
+    --gitvizz-checkout-path)
+      GITVIZZ_CHECKOUT_PATH="$2"
+      shift 2
+      ;;
     --gitvizz-repo-path)
       GITVIZZ_REPO_PATH="$2"
       shift 2
@@ -109,6 +135,10 @@ while [[ $# -gt 0 ]]; do
       SKIP_GITVIZZ_START=1
       shift
       ;;
+    --allow-global-tool-install)
+      ALLOW_GLOBAL_TOOL_INSTALL=1
+      shift
+      ;;
     --verify-only)
       VERIFY_ONLY=1
       shift
@@ -136,6 +166,9 @@ defaults = [
     "https://github.com/kingkillery/pk-qmd",
     workspace.name.lower().replace(" ", "-"),
     f"Primary llm-wiki-memory vault for {workspace}",
+    "",
+    "",
+    "",
 ]
 
 if not config_path.exists():
@@ -153,6 +186,8 @@ print(cfg["gitvizz"]["backend_url"])
 print(cfg["pk_qmd"]["repo_url"])
 print(cfg["pk_qmd"].get("collection_name", workspace.name.lower().replace(" ", "-")))
 print(cfg["pk_qmd"].get("context", f"Primary llm-wiki-memory vault for {workspace}"))
+print(cfg["gitvizz"].get("repo_url", "") or "")
+print(cfg["gitvizz"].get("checkout_path", "") or "")
 print(cfg["gitvizz"].get("repo_path", "") or "")
 for value in cfg["pk_qmd"].get("local_command_candidates", []):
     print(value)
@@ -166,14 +201,54 @@ GITVIZZ_BACKEND_URL="${GITVIZZ_BACKEND_URL:-${CFG[3]}}"
 QMD_REPO_URL="${QMD_REPO_URL:-${CFG[4]}}"
 QMD_COLLECTION="${QMD_COLLECTION:-${CFG[5]}}"
 QMD_CONTEXT="${QMD_CONTEXT:-${CFG[6]}}"
-GITVIZZ_REPO_PATH="${GITVIZZ_REPO_PATH:-${CFG[7]}}"
-LOCAL_QMD_COMMAND_CANDIDATES=("${CFG[@]:8}")
+GITVIZZ_REPO_URL="${GITVIZZ_REPO_URL:-${CFG[7]}}"
+GITVIZZ_CHECKOUT_PATH="${GITVIZZ_CHECKOUT_PATH:-${CFG[8]}}"
+GITVIZZ_REPO_PATH="${GITVIZZ_REPO_PATH:-${CFG[9]}}"
+LOCAL_QMD_COMMAND_CANDIDATES=("${CFG[@]:10}")
+mapfile -t SKILL_CFG < <("$PYTHON_BIN" - "$CONFIG_PATH" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+config_path = Path(sys.argv[1])
+if not config_path.exists():
+    print("llm-wiki-skills")
+    print("scripts/llm_wiki_skill_mcp.py")
+    raise SystemExit
+
+with config_path.open("r", encoding="utf-8") as handle:
+    cfg = json.load(handle)
+
+skills = cfg.get("skills", {})
+print(skills.get("mcp_server_key", "llm-wiki-skills"))
+print(skills.get("script_path", "scripts/llm_wiki_skill_mcp.py"))
+PY
+)
+SKILL_SERVER_KEY="${SKILL_CFG[0]:-llm-wiki-skills}"
+SKILL_SCRIPT_RELATIVE_PATH="${SKILL_CFG[1]:-scripts/llm_wiki_skill_mcp.py}"
 
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
     echo "Missing required command: $1" >&2
     exit 1
   fi
+}
+
+resolve_optional_path() {
+  local path_value="${1:-}"
+  if [[ -z "$path_value" ]]; then
+    return 1
+  fi
+
+  "$PYTHON_BIN" - "$WORKSPACE_ROOT" "$path_value" <<'PY'
+from pathlib import Path
+import sys
+
+workspace = Path(sys.argv[1])
+value = Path(sys.argv[2]).expanduser()
+resolved = value if value.is_absolute() else workspace / value
+print(resolved.resolve(strict=False))
+PY
 }
 
 local_qmd_manifest_path() {
@@ -252,6 +327,9 @@ local_brv_command_path() {
 
 resolve_git_source() {
   local repo_url="$1"
+  if [[ -z "$repo_url" ]]; then
+    return 1
+  fi
   if [[ "$repo_url" == git+* ]]; then
     printf '%s\n' "$repo_url"
   elif [[ "$repo_url" == *.git ]]; then
@@ -304,6 +382,44 @@ path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 PY
 }
 
+patch_json_server_config() {
+  local target="$1"
+  local mode="$2"
+  local server_key="$3"
+  local command_name="$4"
+  local args_json="$5"
+  "$PYTHON_BIN" - "$target" "$mode" "$server_key" "$command_name" "$args_json" <<'PY'
+from pathlib import Path
+import json
+import sys
+
+path = Path(sys.argv[1]).expanduser()
+mode = sys.argv[2]
+server_key = sys.argv[3]
+command_name = sys.argv[4]
+args = json.loads(sys.argv[5])
+
+data = {}
+if path.exists():
+    raw = path.read_text(encoding="utf-8").strip()
+    if raw:
+        data = json.loads(raw)
+
+mcp = data.get("mcpServers")
+if not isinstance(mcp, dict):
+    mcp = {}
+data["mcpServers"] = mcp
+
+payload = {"command": command_name, "args": args}
+if mode == "factory":
+    payload = {"type": "stdio", "command": command_name, "args": args, "disabled": False}
+
+mcp[server_key] = payload
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+PY
+}
+
 patch_codex_toml() {
   local target="$1"
   local command_name="$2"
@@ -332,49 +448,200 @@ path.write_text(content, encoding="utf-8")
 PY
 }
 
+patch_codex_server_toml() {
+  local target="$1"
+  local server_key="$2"
+  local command_name="$3"
+  local args_json="$4"
+  "$PYTHON_BIN" - "$target" "$server_key" "$command_name" "$args_json" <<'PY'
+from pathlib import Path
+import json
+import re
+import sys
+
+path = Path(sys.argv[1]).expanduser()
+server_key = sys.argv[2]
+command_name = sys.argv[3]
+args = json.loads(sys.argv[4])
+content = path.read_text(encoding="utf-8") if path.exists() else ""
+args_literal = "[" + ", ".join(json.dumps(value) for value in args) + "]"
+block = f"[mcp_servers.{server_key}]\ncommand = {json.dumps(command_name)}\nargs = {args_literal}\n"
+section = re.compile(rf"(?ms)^\[mcp_servers\.{re.escape(server_key)}\]\n(?:.*?)(?=^\[|\Z)")
+
+if section.search(content):
+    content = section.sub(block + "\n", content)
+else:
+    if content and not content.endswith("\n"):
+        content += "\n"
+    content += "\n" + block + "\n"
+
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(content, encoding="utf-8")
+PY
+}
+
 check_tcp_url() {
   "$PYTHON_BIN" - "$1" <<'PY'
 import socket
 import sys
 from urllib.parse import urlparse
 
-url = urlparse(sys.argv[1])
-port = url.port or (443 if url.scheme == "https" else 80)
-sock = socket.create_connection((url.hostname, port), timeout=3)
-sock.close()
+try:
+    url = urlparse(sys.argv[1])
+    port = url.port or (443 if url.scheme == "https" else 80)
+    sock = socket.create_connection((url.hostname, port), timeout=3)
+    sock.close()
+except Exception:
+    raise SystemExit(1)
 PY
 }
 
+get_gitvizz_compose_file() {
+  local repo_path="${1:-}"
+  local candidates=(
+    "docker-compose.yaml"
+    "docker-compose.yml"
+    "compose.yaml"
+    "compose.yml"
+  )
+
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    if [[ -f "$repo_path/$candidate" ]]; then
+      printf '%s\n' "$repo_path/$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+run_gitvizz_compose_up() {
+  local compose_file="$1"
+
+  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+    docker compose -f "$compose_file" up -d --build
+    return $?
+  fi
+
+  if command -v docker-compose >/dev/null 2>&1; then
+    docker-compose -f "$compose_file" up -d --build
+    return $?
+  fi
+
+  return 127
+}
+
+GITVIZZ_MANAGED_PATH=""
+
+ensure_gitvizz_checkout() {
+  local repo_url="${1:-}"
+  local checkout_path="${2:-}"
+  GITVIZZ_MANAGED_PATH="$checkout_path"
+
+  if [[ -z "$checkout_path" ]]; then
+    SUMMARY+=("GitVizz checkout resolved: missing")
+    if [[ -n "$repo_url" ]]; then
+      FAILURES+=("GitVizz source is configured but no checkout path was provided. Set LLM_WIKI_GITVIZZ_CHECKOUT_PATH or gitvizz.checkout_path.")
+      return 1
+    fi
+    return 0
+  fi
+
+  if [[ -z "$repo_url" ]]; then
+    if [[ -e "$checkout_path" ]]; then
+      SUMMARY+=("GitVizz checkout resolved: $checkout_path")
+    else
+      SUMMARY+=("GitVizz checkout resolved: missing ($checkout_path)")
+    fi
+    return 0
+  fi
+
+  if ! command -v git >/dev/null 2>&1; then
+    SUMMARY+=("GitVizz checkout resolved: missing")
+    FAILURES+=("git is required to acquire the configured GitVizz checkout.")
+    return 1
+  fi
+
+  if [[ -e "$checkout_path" ]]; then
+    if [[ ! -d "$checkout_path/.git" ]]; then
+      SUMMARY+=("GitVizz checkout resolved: invalid ($checkout_path)")
+      FAILURES+=("GitVizz checkout path exists but is not a git repository: $checkout_path")
+      return 1
+    fi
+
+    if [[ "$VERIFY_ONLY" -eq 1 ]]; then
+      SUMMARY+=("GitVizz checkout resolved: $checkout_path")
+      return 0
+    fi
+
+    if git -C "$checkout_path" pull --ff-only >/dev/null; then
+      SUMMARY+=("GitVizz checkout updated: $checkout_path")
+      return 0
+    fi
+
+    SUMMARY+=("GitVizz checkout resolved: $checkout_path")
+    FAILURES+=("GitVizz checkout update failed at $checkout_path")
+    return 1
+  fi
+
+  if [[ "$VERIFY_ONLY" -eq 1 ]]; then
+    SUMMARY+=("GitVizz checkout resolved: missing ($checkout_path)")
+    return 0
+  fi
+
+  mkdir -p "$(dirname "$checkout_path")"
+  if git clone "$repo_url" "$checkout_path" >/dev/null; then
+    SUMMARY+=("GitVizz checkout installed: $checkout_path")
+    return 0
+  fi
+
+  SUMMARY+=("GitVizz checkout resolved: missing ($checkout_path)")
+  FAILURES+=("GitVizz checkout install failed from $repo_url to $checkout_path")
+  return 1
+}
+
 start_gitvizz_if_needed() {
+  ensure_gitvizz_checkout "$GITVIZZ_REPO_URL" "$GITVIZZ_MANAGED_PATH" || true
+
   if check_tcp_url "$GITVIZZ_FRONTEND_URL" && check_tcp_url "$GITVIZZ_BACKEND_URL"; then
-    SUMMARY+=("GitVizz already reachable")
+    SUMMARY+=("GitVizz launch state: already reachable")
     return 0
   fi
 
   if [[ "$VERIFY_ONLY" -eq 1 ]]; then
-    SUMMARY+=("GitVizz is not reachable")
+    SUMMARY+=("GitVizz launch state: verify-only")
     return 0
   fi
 
-  if [[ -z "$GITVIZZ_REPO_PATH" ]]; then
-    SUMMARY+=("GitVizz repo path not configured; set LLM_WIKI_GITVIZZ_REPO_PATH or gitvizz.repo_path to auto-launch")
+  if [[ ${#FAILURES[@]} -gt 0 ]]; then
+    SUMMARY+=("GitVizz launch state: blocked")
     return 0
   fi
 
-  if [[ ! -f "$GITVIZZ_REPO_PATH/docker-compose.yaml" ]]; then
-    SUMMARY+=("GitVizz repo path missing docker-compose.yaml: $GITVIZZ_REPO_PATH")
+  if [[ -z "$GITVIZZ_MANAGED_PATH" ]]; then
+    SUMMARY+=("GitVizz launch state: unmanaged endpoint only")
     return 0
   fi
 
-  (
-    cd "$GITVIZZ_REPO_PATH"
-    docker-compose up -d --build
-  )
+  local compose_file
+  if ! compose_file="$(get_gitvizz_compose_file "$GITVIZZ_MANAGED_PATH")"; then
+    SUMMARY+=("GitVizz launch state: blocked")
+    FAILURES+=("GitVizz checkout is missing a compose file: $GITVIZZ_MANAGED_PATH")
+    return 0
+  fi
+
+  if ! run_gitvizz_compose_up "$compose_file" >/dev/null; then
+    SUMMARY+=("GitVizz launch state: blocked")
+    FAILURES+=("docker compose is required to launch the configured GitVizz checkout.")
+    return 0
+  fi
 
   if check_tcp_url "$GITVIZZ_FRONTEND_URL" && check_tcp_url "$GITVIZZ_BACKEND_URL"; then
-    SUMMARY+=("Launched GitVizz via docker-compose")
+    SUMMARY+=("GitVizz launch state: launched")
   else
-    SUMMARY+=("GitVizz launch attempted but endpoints are still unreachable")
+    SUMMARY+=("GitVizz launch state: launched but unreachable")
+    FAILURES+=("GitVizz launch completed but the configured endpoints are still unreachable.")
   fi
 }
 
@@ -384,7 +651,9 @@ install_packet_local_qmd_dependency() {
   if [[ ! -f "$manifest" ]]; then
     return 1
   fi
-  require_cmd npm
+  if ! command -v npm >/dev/null 2>&1; then
+    return 1
+  fi
   npm install --prefix "$(dirname "$manifest")"
   local_qmd_command_path
 }
@@ -395,7 +664,9 @@ install_packet_local_brv_dependency() {
   if [[ ! -f "$manifest" ]]; then
     return 1
   fi
-  require_cmd npm
+  if ! command -v npm >/dev/null 2>&1; then
+    return 1
+  fi
   npm install --prefix "$(dirname "$manifest")"
   local_brv_command_path
 }
@@ -424,6 +695,11 @@ ensure_qmd_available() {
       return 0
     fi
 
+    if [[ "$ALLOW_GLOBAL_TOOL_INSTALL" -ne 1 ]]; then
+      QMD_SOURCE_RESULT="manual-required"
+      QMD_MANUAL_MESSAGE="pk-qmd global install is disabled. Install from $QMD_SOURCE manually or rerun with --allow-global-tool-install."
+      return 1
+    fi
     require_cmd npm
     npm install -g "$QMD_SOURCE"
     QMD_SOURCE_RESULT="$QMD_SOURCE"
@@ -434,6 +710,14 @@ ensure_qmd_available() {
     QMD_COMMAND="$local_cmd"
     QMD_SOURCE_RESULT="packet-local"
     return 0
+  fi
+
+  if [[ "$ALLOW_GLOBAL_TOOL_INSTALL" -ne 1 ]]; then
+    local git_source
+    git_source="$(resolve_git_source "$QMD_REPO_URL")"
+    QMD_SOURCE_RESULT="manual-required"
+    QMD_MANUAL_MESSAGE="pk-qmd is missing and packet-local install was unavailable. Install $git_source manually or rerun with --allow-global-tool-install."
+    return 1
   fi
 
   require_cmd npm
@@ -542,26 +826,47 @@ get_brv_providers() {
 
 SUMMARY=()
 FAILURES=()
+GITVIZZ_MANAGED_PATH="$(resolve_optional_path "${GITVIZZ_CHECKOUT_PATH:-${GITVIZZ_REPO_PATH:-}}" 2>/dev/null || true)"
+if [[ "$ALLOW_GLOBAL_TOOL_INSTALL" -eq 1 ]]; then
+  SUMMARY+=("Global tool install fallback enabled")
+else
+  SUMMARY+=("Global tool install fallback disabled; packet-local installs only")
+fi
+SUMMARY+=("pk-qmd configured command: $QMD_COMMAND")
+SUMMARY+=("brv configured command: $BRV_COMMAND")
+SUMMARY+=("GitVizz configured frontend: $GITVIZZ_FRONTEND_URL")
+SUMMARY+=("GitVizz configured backend: $GITVIZZ_BACKEND_URL")
+if [[ -n "$GITVIZZ_REPO_URL" ]]; then
+  SUMMARY+=("GitVizz source configured: $GITVIZZ_REPO_URL")
+else
+  SUMMARY+=("GitVizz source configured: no")
+fi
+if [[ -n "$GITVIZZ_MANAGED_PATH" ]]; then
+  SUMMARY+=("GitVizz managed checkout path: $GITVIZZ_MANAGED_PATH")
+else
+  SUMMARY+=("GitVizz managed checkout path: no")
+fi
 
 if [[ "$SKIP_QMD" -eq 0 ]]; then
   if ensure_qmd_available; then
+    SUMMARY+=("pk-qmd resolved command: $QMD_COMMAND")
     case "${QMD_SOURCE_RESULT:-existing}" in
       existing)
-        SUMMARY+=("$QMD_COMMAND already installed")
+        SUMMARY+=("pk-qmd install state: resolved existing command")
         ;;
       packet-local-existing)
-        SUMMARY+=("Using packet-local pk-qmd dependency at $QMD_COMMAND")
+        SUMMARY+=("pk-qmd install state: resolved packet-local dependency")
         ;;
       packet-local)
-        SUMMARY+=("Installed packet-local pk-qmd dependency into .llm-wiki")
+        SUMMARY+=("pk-qmd install state: installed packet-local dependency")
         ;;
       *)
-        SUMMARY+=("Installed pk-qmd from ${QMD_SOURCE_RESULT}")
+        SUMMARY+=("pk-qmd install state: installed from ${QMD_SOURCE_RESULT}")
         ;;
     esac
 
     if "$QMD_COMMAND" status; then
-      SUMMARY+=("pk-qmd verify: ok")
+      SUMMARY+=("pk-qmd reachable: status ok")
     else
       FAILURES+=("pk-qmd status failed for: $QMD_COMMAND")
     fi
@@ -574,39 +879,73 @@ if [[ "$SKIP_QMD" -eq 0 ]]; then
       SUMMARY+=("Updated ~/.codex/config.toml")
       patch_json_config "$HOME/.factory/mcp.json" factory "$QMD_COMMAND"
       SUMMARY+=("Updated ~/.factory/mcp.json")
+
+      skill_script_path="$WORKSPACE_ROOT/$SKILL_SCRIPT_RELATIVE_PATH"
+      if [[ -f "$skill_script_path" ]]; then
+        skill_args_json="$("$PYTHON_BIN" - "$skill_script_path" "$WORKSPACE_ROOT" <<'PY'
+import json
+import sys
+print(json.dumps([sys.argv[1], "mcp", "--workspace", sys.argv[2]]))
+PY
+)"
+        patch_json_server_config "$HOME/.claude/settings.json" claude "$SKILL_SERVER_KEY" "$PYTHON_BIN" "$skill_args_json"
+        SUMMARY+=("Updated ~/.claude/settings.json for $SKILL_SERVER_KEY")
+        patch_codex_server_toml "$HOME/.codex/config.toml" "$SKILL_SERVER_KEY" "$PYTHON_BIN" "$skill_args_json"
+        SUMMARY+=("Updated ~/.codex/config.toml for $SKILL_SERVER_KEY")
+        patch_json_server_config "$HOME/.factory/mcp.json" factory "$SKILL_SERVER_KEY" "$PYTHON_BIN" "$skill_args_json"
+        SUMMARY+=("Updated ~/.factory/mcp.json for $SKILL_SERVER_KEY")
+      else
+        SUMMARY+=("Skill MCP script not found, skipping $SKILL_SERVER_KEY MCP wiring")
+      fi
     fi
 
     if [[ "$SKIP_QMD_BOOTSTRAP" -eq 0 && ${#FAILURES[@]} -eq 0 ]]; then
       qmd_collection_bootstrap
     fi
   else
-    FAILURES+=("Missing pk-qmd command: $QMD_COMMAND")
-    SUMMARY+=("Install pk-qmd from the packet dependency manifest, $QMD_REPO_URL, or provide --qmd-source")
+    if [[ "${QMD_SOURCE_RESULT:-missing}" == "manual-required" && -n "${QMD_MANUAL_MESSAGE:-}" ]]; then
+      FAILURES+=("$QMD_MANUAL_MESSAGE")
+      SUMMARY+=("pk-qmd install state: missing")
+      SUMMARY+=("$QMD_MANUAL_MESSAGE")
+    else
+      FAILURES+=("Missing pk-qmd command: $QMD_COMMAND")
+      SUMMARY+=("pk-qmd install state: missing")
+      SUMMARY+=("Install pk-qmd from the packet dependency manifest, $QMD_REPO_URL, or provide --qmd-source")
+    fi
   fi
 fi
 
 if [[ "$SKIP_BRV" -eq 0 ]]; then
   if local_cmd="$(local_brv_command_path 2>/dev/null)"; then
     BRV_COMMAND="$local_cmd"
-    SUMMARY+=("Using packet-local brv dependency at $BRV_COMMAND")
+    SUMMARY+=("brv resolved command: $BRV_COMMAND")
+    SUMMARY+=("brv install state: resolved packet-local dependency")
   elif command -v "$BRV_COMMAND" >/dev/null 2>&1; then
-    SUMMARY+=("$BRV_COMMAND already installed")
+    SUMMARY+=("brv resolved command: $BRV_COMMAND")
+    SUMMARY+=("brv install state: resolved existing command")
   elif [[ "$VERIFY_ONLY" -eq 1 ]]; then
     FAILURES+=("Missing Byterover command: $BRV_COMMAND")
+    SUMMARY+=("brv install state: missing")
   else
     if local_cmd="$(install_packet_local_brv_dependency 2>/dev/null)"; then
       BRV_COMMAND="$local_cmd"
-      SUMMARY+=("Installed packet-local brv dependency into .llm-wiki")
+      SUMMARY+=("brv resolved command: $BRV_COMMAND")
+      SUMMARY+=("brv install state: installed packet-local dependency")
+    elif [[ "$ALLOW_GLOBAL_TOOL_INSTALL" -ne 1 ]]; then
+      FAILURES+=("Missing Byterover command: $BRV_COMMAND")
+      SUMMARY+=("brv install state: missing")
+      SUMMARY+=("Global brv install is disabled. Install byterover-cli manually or rerun with --allow-global-tool-install.")
     else
       require_cmd npm
       npm install -g byterover-cli
-      SUMMARY+=("Installed brv from npm")
+      SUMMARY+=("brv resolved command: $BRV_COMMAND")
+      SUMMARY+=("brv install state: installed from npm")
     fi
   fi
 
   if command -v "$BRV_COMMAND" >/dev/null 2>&1 || [[ -f "$BRV_COMMAND" ]]; then
     if test_brv_status >/dev/null; then
-      SUMMARY+=("brv verify: ok")
+      SUMMARY+=("brv reachable: status ok")
     else
       FAILURES+=("brv status failed for: $BRV_COMMAND")
     fi
@@ -650,21 +989,36 @@ fi
 
 if [[ "$SKIP_GITVIZZ_START" -eq 0 ]]; then
   start_gitvizz_if_needed
+else
+  SUMMARY+=("GitVizz launch state: skipped")
 fi
 
 if [[ "$SKIP_GITVIZZ" -eq 1 ]]; then
   SUMMARY+=("GitVizz checks skipped")
 else
+  gitvizz_managed=0
+  if [[ -n "$GITVIZZ_MANAGED_PATH" ]]; then
+    gitvizz_managed=1
+  fi
+
   if check_tcp_url "$GITVIZZ_FRONTEND_URL"; then
     SUMMARY+=("GitVizz frontend reachable: $GITVIZZ_FRONTEND_URL")
   else
-    FAILURES+=("GitVizz frontend unreachable: $GITVIZZ_FRONTEND_URL")
+    if [[ "$gitvizz_managed" -eq 1 ]]; then
+      FAILURES+=("GitVizz frontend unreachable: $GITVIZZ_FRONTEND_URL")
+    else
+      SUMMARY+=("GitVizz frontend reachable: missing ($GITVIZZ_FRONTEND_URL); no managed checkout configured, so endpoint-only/container mode remains allowed")
+    fi
   fi
 
   if check_tcp_url "$GITVIZZ_BACKEND_URL"; then
     SUMMARY+=("GitVizz backend reachable: $GITVIZZ_BACKEND_URL")
   else
-    FAILURES+=("GitVizz backend unreachable: $GITVIZZ_BACKEND_URL")
+    if [[ "$gitvizz_managed" -eq 1 ]]; then
+      FAILURES+=("GitVizz backend unreachable: $GITVIZZ_BACKEND_URL")
+    else
+      SUMMARY+=("GitVizz backend reachable: missing ($GITVIZZ_BACKEND_URL); no managed checkout configured, so endpoint-only/container mode remains allowed")
+    fi
   fi
 fi
 

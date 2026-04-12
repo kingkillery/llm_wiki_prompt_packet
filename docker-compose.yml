@@ -10,27 +10,103 @@ services:
       LLM_WIKI_TARGETS: ${LLM_WIKI_TARGETS:-claude,codex,droid}
       LLM_WIKI_FORCE_INSTALL: ${LLM_WIKI_FORCE_INSTALL:-0}
       LLM_WIKI_SKIP_GITVIZZ: ${LLM_WIKI_SKIP_GITVIZZ:-1}
+      LLM_WIKI_ENABLE_GITVIZZ: ${LLM_WIKI_ENABLE_GITVIZZ:-0}
+      LLM_WIKI_GITVIZZ_SOURCE: ${LLM_WIKI_GITVIZZ_SOURCE:-/gitvizz-source}
+      LLM_WIKI_GITVIZZ_REPO_PATH: ${LLM_WIKI_GITVIZZ_REPO_PATH:-}
+      LLM_WIKI_GITVIZZ_FRONTEND_URL: ${LLM_WIKI_GITVIZZ_FRONTEND_URL:-}
+      LLM_WIKI_GITVIZZ_BACKEND_URL: ${LLM_WIKI_GITVIZZ_BACKEND_URL:-}
+      LLM_WIKI_GITVIZZ_WAIT_TIMEOUT: ${LLM_WIKI_GITVIZZ_WAIT_TIMEOUT:-120}
       LLM_WIKI_QMD_SOURCE: ${LLM_WIKI_QMD_SOURCE:-}
       LLM_WIKI_QMD_REPO_URL: ${LLM_WIKI_QMD_REPO_URL:-https://github.com/kingkillery/pk-qmd}
       LLM_WIKI_QMD_MCP_URL: ${LLM_WIKI_QMD_MCP_URL:-http://localhost:8181/mcp}
       LLM_WIKI_BRV_COMMAND: brv
       BYTEROVER_API_KEY: ${BYTEROVER_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GH_TOKEN: ${GH_TOKEN:-}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       LLM_WIKI_MCP_SERVER_CMD: ${LLM_WIKI_MCP_SERVER_CMD:-pk-qmd mcp}
+      LLM_WIKI_MCP_UPSTREAM_HOST: ${LLM_WIKI_MCP_UPSTREAM_HOST:-127.0.0.1}
+      LLM_WIKI_AGENT_API_TOKEN: ${LLM_WIKI_AGENT_API_TOKEN:-}
+      LLM_WIKI_AGENT_API_BIND_HOST: ${LLM_WIKI_AGENT_API_BIND_HOST:-0.0.0.0}
     ports:
-      - "${LLM_WIKI_MCP_PORT:-8181}:8181"
+      - "${LLM_WIKI_MCP_BIND_HOST:-127.0.0.1}:${LLM_WIKI_MCP_PORT:-8181}:8181"
     volumes:
       - ${LLM_WIKI_VAULT_PATH:-./.docker/vault}:/workspace
+      - ${LLM_WIKI_GITVIZZ_SOURCE_HOST_PATH:-./.docker/gitvizz-source}:/gitvizz-source:ro
       - llm_wiki_home:/home/llmwiki
     command: ["serve"]
     healthcheck:
-      test: ["CMD-SHELL", "bash /workspace/scripts/check_llm_wiki_memory.sh --skip-gitvizz"]
+      test:
+        [
+          "CMD-SHELL",
+          "if [ \"$${LLM_WIKI_ENABLE_GITVIZZ:-0}\" = \"1\" ] || [ \"$${LLM_WIKI_SKIP_GITVIZZ:-1}\" != \"1\" ]; then bash /workspace/scripts/check_llm_wiki_memory.sh; else bash /workspace/scripts/check_llm_wiki_memory.sh --skip-gitvizz; fi",
+        ]
       interval: 30s
-      timeout: 10s
+      timeout: 45s
       retries: 5
-      start_period: 120s
+      start_period: 180s
+
+  gitvizz-phoenix:
+    profiles: ["gitvizz"]
+    image: arizephoenix/phoenix:latest
+    container_name: llm-wiki-gitvizz-phoenix
+    environment:
+      PHOENIX_WORKING_DIR: /mnt/data
+    ports:
+      - "${LLM_WIKI_GITVIZZ_BIND_HOST:-127.0.0.1}:${LLM_WIKI_GITVIZZ_PHOENIX_PORT:-6006}:6006"
+      - "${LLM_WIKI_GITVIZZ_BIND_HOST:-127.0.0.1}:${LLM_WIKI_GITVIZZ_PHOENIX_GRPC_PORT:-4317}:4317"
+    volumes:
+      - gitvizz_phoenix:/mnt/data
+
+  gitvizz-mongo:
+    profiles: ["gitvizz"]
+    image: mongo:5.0
+    container_name: llm-wiki-gitvizz-mongo
+    volumes:
+      - gitvizz_mongo:/data/db
+
+  gitvizz-backend:
+    profiles: ["gitvizz"]
+    build:
+      context: ${LLM_WIKI_GITVIZZ_SOURCE_HOST_PATH:-./.docker/gitvizz-source}/backend
+      dockerfile: Dockerfile
+    container_name: llm-wiki-gitvizz-backend
+    env_file:
+      - ${LLM_WIKI_GITVIZZ_SOURCE_HOST_PATH:-./.docker/gitvizz-source}/backend/.env
+    environment:
+      MONGO_URI: ${LLM_WIKI_GITVIZZ_MONGO_URI:-mongodb://gitvizz-mongo:27017}
+      PHOENIX_COLLECTOR_ENDPOINT: ${LLM_WIKI_GITVIZZ_PHOENIX_ENDPOINT:-http://gitvizz-phoenix:6006/v1/traces}
+      PHOENIX_PROJECT_NAME: ${LLM_WIKI_GITVIZZ_PHOENIX_PROJECT_NAME:-gitvizz-backend}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+    ports:
+      - "${LLM_WIKI_GITVIZZ_BIND_HOST:-127.0.0.1}:${LLM_WIKI_GITVIZZ_BACKEND_PORT:-8003}:8003"
+    volumes:
+      - gitvizz_storage:/app/storage
+    depends_on:
+      - gitvizz-mongo
+      - gitvizz-phoenix
+
+  gitvizz-frontend:
+    profiles: ["gitvizz"]
+    build:
+      context: ${LLM_WIKI_GITVIZZ_SOURCE_HOST_PATH:-./.docker/gitvizz-source}/frontend
+      dockerfile: Dockerfile
+    container_name: llm-wiki-gitvizz-frontend
+    env_file:
+      - ${LLM_WIKI_GITVIZZ_SOURCE_HOST_PATH:-./.docker/gitvizz-source}/frontend/.env.local
+    ports:
+      - "${LLM_WIKI_GITVIZZ_BIND_HOST:-127.0.0.1}:${LLM_WIKI_GITVIZZ_FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      - gitvizz-backend
 
 volumes:
   llm_wiki_home:
+  gitvizz_mongo:
+  gitvizz_phoenix:
+  gitvizz_storage:

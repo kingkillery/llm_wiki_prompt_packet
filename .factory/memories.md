@@ -1,0 +1,5 @@
+- [2026-04-11] The system target for llm_wiki_prompt_packet is the combined Kade-HQ plus G-Stack harness, using Byterover for durable memory, GitVizz for graph and web surfaces, and pk-qmd for Gemini-backed embeddings plus hybrid RAG and agentic search.
+- [2026-04-11] The richer repo-owned harness runtime is expected under `deps/pk-skills1`; packet-owned `skills/home/g-kade` and `skills/home/gstack` remain launcher wrappers, not the richer runtime itself.
+- [2026-04-11] Local Docker intentionally exposes one loopback-only host gateway at `127.0.0.1:8181`: `/mcp` for `pk-qmd`, `/graph/*` for GitVizz backend routes, and `/memory/*` for a narrow BRV adapter.
+- [2026-04-11] Local Docker gateway routes are intentionally auth-free only because they bind to loopback. Hosted or tunnelled access should add auth and must not expose raw BRV credentials, Mongo, or Phoenix directly.
+- [2026-04-11] `installers/install_g_kade_workspace.py` should create `~/.kade/HUMAN.md` from the packaged `deps/pk-skills1/kade-headquarters/HUMAN.md` profile when missing, upgrade only the exact legacy stub, and preserve any real existing Layer 1 profile.

@@ -20,6 +20,7 @@ if (-not (Test-Path -LiteralPath $Vault -PathType Container)) {
 }
 
 $Vault = (Resolve-Path -LiteralPath $Vault).Path
+$installMode = if ($env:LLM_WIKI_INSTALL_MODE) { $env:LLM_WIKI_INSTALL_MODE } else { "packet" }
 
 $repo = "kingkillery/llm_wiki_prompt_packet"
 $zipUrl = "https://github.com/$repo/archive/$Ref.zip"
@@ -44,14 +45,28 @@ try {
         throw "Python is required but was not found in PATH."
     }
 
-    $installer = Join-Path $packetRoot.FullName "installers/install_obsidian_agent_memory.py"
+    $installerName = "install_obsidian_agent_memory.py"
+    if ($installMode -eq "g-kade") {
+        $installerName = "install_g_kade_workspace.py"
+    }
+    $installer = Join-Path $packetRoot.FullName "installers/$installerName"
     if (-not (Test-Path $installer)) {
         throw "Installer not found in downloaded packet: $installer"
     }
 
-    $installArgs = @($installer, "--vault", $Vault, "--targets", $Targets)
+    if ($installMode -eq "g-kade") {
+        $installArgs = @($installer, "--workspace", $Vault, "--targets", $Targets)
+    } else {
+        $installArgs = @($installer, "--vault", $Vault, "--targets", $Targets)
+    }
     if ($Force -or $env:LLM_WIKI_FORCE -eq "1") {
         $installArgs += "--force"
+    }
+    if ($env:LLM_WIKI_SKIP_HOME_SKILLS -eq "1") {
+        $installArgs += "--skip-home-skills"
+    }
+    if ($installMode -eq "g-kade" -and $env:LLM_WIKI_SKIP_SETUP -eq "1") {
+        $installArgs += "--skip-setup"
     }
 
     if ($python.Name -eq "py") {
@@ -60,7 +75,7 @@ try {
         & python @installArgs
     }
 
-    if ($env:LLM_WIKI_SKIP_SETUP -ne "1") {
+    if ($installMode -ne "g-kade" -and $env:LLM_WIKI_SKIP_SETUP -ne "1") {
         $setupHelper = Join-Path $Vault "scripts/setup_llm_wiki_memory.ps1"
         if (-not (Test-Path $setupHelper)) {
             throw "Setup helper not found: $setupHelper"

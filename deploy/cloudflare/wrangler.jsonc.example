@@ -1,0 +1,9 @@
+{
+  "name": "llm-wiki-mcp-edge",
+  "main": "mcp-edge-worker.js",
+  "compatibility_date": "2026-04-10",
+  "workers_dev": true,
+  "vars": {
+    "ORIGIN_BASE_URL": "https://mcp-origin.example.com"
+  }
+}

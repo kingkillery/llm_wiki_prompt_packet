@@ -1,0 +1,9 @@
+{
+  "name": "llm-wiki-memory-local",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Local dependency bundle for llm-wiki-memory",
+  "dependencies": {
+    "@kingkillery/pk-qmd": "git+https://github.com/kingkillery/pk-qmd.git#main"
+  }
+}
