@@ -6,7 +6,6 @@ import importlib.util
 import os
 import subprocess
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -14,8 +13,17 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 PACKET_INSTALLER_PATH = Path(__file__).resolve().parent / "install_obsidian_agent_memory.py"
 
 SKILL_LAYOUTS = (".agents", ".codex", ".claude")
-RICH_MARKERS = {"bin", "browse", "qa", "review", "kade"}
-RICH_SIBLING_HINTS = {"debug", "debugging", "deploy", "deployment", "design", "dogfood", "dx", "investigate", "ship", "workflows"}
+LEGACY_HUMAN_MD_TEXT = (
+    "# HUMAN.md\n\n"
+    "This is the global KADE human profile.\n\n"
+    "- preferred style: concise, checkpoint-driven, direct\n"
+    "- expectation: keep one next action visible\n"
+    "- note: replace this starter with real user-specific guidance\n"
+)
+HUMAN_MD_SOURCE_CANDIDATES = (
+    REPO_ROOT / "deps" / "pk-skills1" / "kade-headquarters" / "HUMAN.md",
+    REPO_ROOT / "deps" / "pk-skills1" / "kade-hq" / "templates" / "HUMAN.md",
+)
 
 
 def load_packet_installer():
@@ -29,20 +37,23 @@ def load_packet_installer():
 PACKET = load_packet_installer()
 
 
-@dataclass
-class UpstreamSkill:
-    name: str
-    root: Path
-    skill_md: Path
-    markers: list[str]
-    summary: str
-
-
 def env_flag(name: str) -> bool:
     value = os.getenv(name)
     if value is None:
         return False
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def resolve_g_kade_home_skill_install(args: argparse.Namespace) -> bool:
+    explicit = (
+        getattr(args, "install_home_skills", False)
+        or getattr(args, "skip_home_skills", False)
+        or env_flag("LLM_WIKI_INSTALL_HOME_SKILLS")
+        or env_flag("LLM_WIKI_SKIP_HOME_SKILLS")
+    )
+    if explicit:
+        return PACKET.resolve_home_skill_install(args)
+    return True
 
 
 def parse_args() -> argparse.Namespace:
@@ -126,6 +137,26 @@ def parse_args() -> argparse.Namespace:
         default=os.getenv("LLM_WIKI_GITVIZZ_REPO_PATH", ""),
         help="Optional GitVizz checkout path",
     )
+    parser.add_argument(
+        "--gitvizz-repo-url",
+        default=os.getenv("LLM_WIKI_GITVIZZ_REPO_URL", ""),
+        help="Optional GitVizz repo URL for managed local acquisition",
+    )
+    parser.add_argument(
+        "--gitvizz-checkout-path",
+        default=os.getenv("LLM_WIKI_GITVIZZ_CHECKOUT_PATH", ""),
+        help="Optional managed local checkout path for GitVizz acquisition or update",
+    )
+    parser.add_argument(
+        "--g-kade-dependency-path",
+        default=os.getenv("LLM_WIKI_G_KADE_DEPENDENCY_PATH", PACKET.REPO_RUNTIME_DEFAULT_PATHS["g-kade"]),
+        help="Repo-owned richer g-kade dependency, submodule, or vendor path relative to the workspace",
+    )
+    parser.add_argument(
+        "--gstack-dependency-path",
+        default=os.getenv("LLM_WIKI_GSTACK_DEPENDENCY_PATH", PACKET.REPO_RUNTIME_DEFAULT_PATHS["gstack"]),
+        help="Repo-owned richer gstack dependency, submodule, or vendor path relative to the workspace",
+    )
     return parser.parse_args()
 
 
@@ -145,73 +176,9 @@ def detect_workspace_root(start: Path) -> Path:
     return Path(root).resolve() if root else probe
 
 
-def ordered_candidate_entries(workspace_root: Path, home_root: Path) -> list[tuple[str, Path]]:
-    ordered = [
-        ("g-kade", home_root / ".codex" / "skills" / "g-kade"),
-        ("g-kade", home_root / ".claude" / "skills" / "g-kade"),
-        ("g-kade", home_root / ".agents" / "skills" / "g-kade"),
-        ("gstack", home_root / ".codex" / "skills" / "gstack"),
-        ("gstack", home_root / ".claude" / "skills" / "gstack"),
-        ("gstack", home_root / ".agents" / "skills" / "gstack"),
-        ("g-kade", workspace_root / ".codex" / "skills" / "g-kade"),
-        ("g-kade", workspace_root / ".claude" / "skills" / "g-kade"),
-        ("g-kade", workspace_root / ".agents" / "skills" / "g-kade"),
-        ("gstack", workspace_root / ".codex" / "skills" / "gstack"),
-        ("gstack", workspace_root / ".claude" / "skills" / "gstack"),
-        ("gstack", workspace_root / ".agents" / "skills" / "gstack"),
-    ]
-    seen: set[str] = set()
-    result: list[tuple[str, Path]] = []
-    for name, candidate in ordered:
-        key = f"{name}:{str(candidate.expanduser()).lower()}"
-        if key in seen:
-            continue
-        seen.add(key)
-        expanded = candidate.expanduser()
-        result.append((name, expanded))
-    return result
-
-
-def skill_markers(candidate: Path, wrapper_root: Path) -> list[str]:
-    if not candidate.exists() or not candidate.is_dir():
-        return []
-    if not (candidate / "SKILL.md").exists():
-        return []
-
-    markers: list[str] = []
-    child_dirs = sorted(path.name for path in candidate.iterdir() if path.is_dir())
-    child_files = sorted(path.name for path in candidate.iterdir() if path.is_file())
-    source_files = {
-        path.relative_to(wrapper_root).as_posix()
-        for path in wrapper_root.rglob("*")
-        if path.is_file()
-    }
-    candidate_files = {
-        path.relative_to(candidate).as_posix()
-        for path in candidate.rglob("*")
-        if path.is_file()
-    }
-
-    for marker in sorted(RICH_MARKERS):
-        if (candidate / marker).exists():
-            markers.append(marker)
-
-    sibling_matches = sorted(name for name in child_dirs if name in RICH_SIBLING_HINTS)
-    if len(sibling_matches) >= 2:
-        markers.append(f"siblings:{','.join(sibling_matches)}")
-
-    extra_files = sorted(path for path in candidate_files if path not in source_files)
-    if len(extra_files) >= 3:
-        markers.append("extra-files")
-
-    extra_markdown = [name for name in child_files if name.endswith(".md") and name != "SKILL.md"]
-    if extra_markdown:
-        markers.append("companion-docs")
-
-    return markers
-
-
-def read_skill_summary(skill_md: Path) -> str:
+def read_skill_summary(skill_md: Path | None) -> str:
+    if skill_md is None:
+        return "not detected"
     try:
         text = skill_md.read_text(encoding="utf-8").strip()
     except OSError:
@@ -241,63 +208,92 @@ def read_skill_summary(skill_md: Path) -> str:
     return summary[:240]
 
 
-def detect_richer_upstreams(workspace_root: Path, home_root: Path) -> tuple[UpstreamSkill | None, UpstreamSkill | None]:
-    found: dict[str, UpstreamSkill | None] = {"g-kade": None, "gstack": None}
-    for name, candidate in ordered_candidate_entries(workspace_root, home_root):
-        if found[name] is not None:
-            continue
-        wrapper_root = PACKET.HOME_SKILLS_ROOT / name
-        markers = skill_markers(candidate, wrapper_root)
-        if not markers:
-            continue
-        found[name] = UpstreamSkill(
-            name=name,
-            root=candidate.resolve(),
-            skill_md=(candidate / "SKILL.md").resolve(),
-            markers=markers,
-            summary=read_skill_summary(candidate / "SKILL.md"),
+def repo_runtime_dependency(workspace_root: Path, name: str, configured_path: str) -> dict[str, object]:
+    status = PACKET.repo_runtime_dependency_status(workspace_root, name, configured_path)
+    detected_path = status.get("detected_path")
+    detected_root = PACKET.workspace_relative_path(workspace_root, str(detected_path)) if detected_path else None
+    skill_md = (detected_root / "SKILL.md").resolve() if detected_root and (detected_root / "SKILL.md").exists() else None
+    return {
+        **status,
+        "root": detected_root.resolve() if detected_root and detected_root.exists() else detected_root,
+        "skill_md": skill_md,
+        "summary": read_skill_summary(skill_md),
+    }
+
+
+def layering_result(gkade: dict[str, object], gstack: dict[str, object]) -> str:
+    statuses = {gkade["name"]: gkade["status"], gstack["name"]: gstack["status"]}
+    if statuses["g-kade"] == "detected" and statuses["gstack"] == "detected":
+        return "packet wrappers plus repo-owned g-kade and gstack runtimes"
+    if statuses["g-kade"] == "detected":
+        return "packet wrappers plus repo-owned g-kade runtime"
+    if statuses["gstack"] == "detected":
+        return "packet wrappers plus repo-owned gstack runtime"
+    if "present-but-thin" in statuses.values():
+        return "packet wrappers plus thin repo dependency placeholders"
+    return "packet wrappers only (repo runtimes missing)"
+
+
+def runtime_guidance_lines(runtime: dict[str, object]) -> list[str]:
+    lines = [
+        f"- contract: `{runtime['contract']}`",
+        f"- configured path: `{runtime['configured_path']}`",
+    ]
+    if runtime["status"] == "detected":
+        lines.extend(
+            [
+                f"- status: `detected`",
+                f"- detected path: `{runtime['detected_path']}`",
+                f"- markers: `{', '.join(runtime.get('markers', []))}`",
+                f"- summary: `{runtime['summary']}`",
+            ]
         )
-        if found["g-kade"] is not None and found["gstack"] is not None:
-            break
-    return found["g-kade"], found["gstack"]
+    elif runtime["status"] == "present-but-thin":
+        lines.extend(
+            [
+                f"- status: `present-but-thin`",
+                f"- detected path: `{runtime['detected_path']}`",
+                f"- note: `{runtime.get('reason', 'wrapper-like or incomplete runtime')}`",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                f"- status: `missing`",
+                "- note: `packet wrapper installed; richer repo-owned runtime still needs to be vendored or added as a submodule/dependency`",
+            ]
+        )
+    return lines
 
 
-def layering_result(gkade: UpstreamSkill | None, gstack: UpstreamSkill | None) -> str:
-    if gkade and gstack:
-        return "both richer external installs"
-    if gkade:
-        return "richer external g-kade"
-    if gstack:
-        return "richer external gstack"
-    return "packet wrapper only"
-
-
-def repo_skill_text(name: str, workspace_root: Path, upstream: UpstreamSkill | None) -> str:
+def repo_skill_text(name: str, workspace_root: Path, runtime: dict[str, object]) -> str:
     if name == "g-kade":
         description = "Repo-local KADE bridge layered on top of the llm-wiki-memory packet."
         workflow_lines = [
             "- treat this repo root as the workspace root",
             "- prefer packet helpers for search, memory, and MCP wiring",
             "- use `kade/AGENTS.md` and `kade/KADE.md` as the project overlay",
-            "- if richer upstream guidance is listed below, read it before routing work",
+            "- if the richer repo-owned runtime is present, read it before routing work",
         ]
         install_notes = [
             "## Fastest Successful Install",
             "",
             "- run `python installers/install_g_kade_workspace.py --workspace <repo-root>` from the packet checkout when available",
             "- if using the hosted installer fallback, set `LLM_WIKI_INSTALL_MODE=g-kade` before invoking `install.sh` or `install.ps1`",
+            "- vendor or submodule the richer runtime into the configured repo dependency path before claiming the full KADE/G-Stack runtime is available",
             "- let setup and health run with GitVizz skipped until a real GitVizz repo path is configured",
             "",
             "## Roadblocks And Corrections",
             "",
-            "- packet file copy alone is not enough; this workspace also needs repo-local skill surfaces, KADE overlays, setup, and health verification",
+            "- packet file copy alone is not enough; this workspace also needs repo-local skill surfaces, KADE overlays, repo-owned runtime dependencies, setup, and health verification",
             "- home skill installs are optional overlays, not proof the repo is bootstrapped",
-            "- thin wrappers do not count as richer upstream runtimes",
+            "- thin wrappers do not count as richer repo-owned runtimes",
             "",
             "## Wish I Knew Before Install",
             "",
             "- `xyz`: the repo root is the real workspace target",
             "- `xyz`: `/g-kade install` must keep going after packet file install",
+            "- `xyz`: the richer runtime belongs in a repo-owned dependency/submodule path, not just a home skill folder",
             "- `xyz`: GitVizz should not block first-run QMD, BRV, and MCP bootstrap",
         ]
     else:
@@ -314,15 +310,8 @@ def repo_skill_text(name: str, workspace_root: Path, upstream: UpstreamSkill | N
         ]
         install_notes = []
 
-    upstream_lines = [
-        f"- path: `{upstream.root}`",
-        f"- skill: `{upstream.skill_md}`",
-        f"- markers: `{', '.join(upstream.markers)}`",
-        f"- summary: `{upstream.summary}`",
-    ] if upstream else ["- none detected; use the packet wrapper behavior"]
-
     workflow_block = "\n".join(workflow_lines)
-    upstream_block = "\n".join(upstream_lines)
+    runtime_block = "\n".join(runtime_guidance_lines(runtime))
 
     return (
         f"---\n"
@@ -331,11 +320,11 @@ def repo_skill_text(name: str, workspace_root: Path, upstream: UpstreamSkill | N
         f"---\n\n"
         f"# {name}\n\n"
         f"This is the repo-local `{name}` surface for the packet-backed workspace rooted at `{workspace_root}`.\n\n"
-        f"## Upstream Guidance\n\n"
-        f"{upstream_block}\n\n"
+        f"## Repo Runtime Dependency\n\n"
+        f"{runtime_block}\n\n"
         f"## Local Routing\n\n"
         f"{workflow_block}\n\n"
-        f"Do not treat global skill installs as sufficient for this repo. Use the packet root files, `.llm-wiki/config.json`, and the repo-local `kade/` overlay as the first-class workspace contract.\n"
+        f"Do not treat global skill installs as sufficient for this repo. Use the packet root files, `.llm-wiki/config.json`, the repo-owned dependency paths, and the repo-local `kade/` overlay as the first-class workspace contract.\n"
         + ("\n" + "\n".join(install_notes) + "\n" if install_notes else "")
     )
 
@@ -343,8 +332,8 @@ def repo_skill_text(name: str, workspace_root: Path, upstream: UpstreamSkill | N
 def scaffold_repo_local_skills(
     workspace_root: Path,
     *,
-    gkade_upstream: UpstreamSkill | None,
-    gstack_upstream: UpstreamSkill | None,
+    gkade_runtime: dict[str, object],
+    gstack_runtime: dict[str, object],
     force: bool,
     dry_run: bool,
 ) -> list[str]:
@@ -355,7 +344,7 @@ def scaffold_repo_local_skills(
             [
                 PACKET.write_text(
                     skill_root / "g-kade" / "SKILL.md",
-                    repo_skill_text("g-kade", workspace_root, gkade_upstream),
+                    repo_skill_text("g-kade", workspace_root, gkade_runtime),
                     force=force,
                     dry_run=dry_run,
                 ),
@@ -367,7 +356,7 @@ def scaffold_repo_local_skills(
                 ),
                 PACKET.write_text(
                     skill_root / "gstack" / "SKILL.md",
-                    repo_skill_text("gstack", workspace_root, gstack_upstream),
+                    repo_skill_text("gstack", workspace_root, gstack_runtime),
                     force=force,
                     dry_run=dry_run,
                 ),
@@ -382,16 +371,17 @@ def scaffold_repo_local_skills(
     return actions
 
 
-def kade_agents_text(workspace_root: Path, gkade: UpstreamSkill | None, gstack: UpstreamSkill | None) -> str:
-    upstream_lines = []
-    if gkade:
-        upstream_lines.append(f"- richer external `g-kade`: `{gkade.skill_md}`")
-    if gstack:
-        upstream_lines.append(f"- richer external `gstack`: `{gstack.skill_md}`")
-    if not upstream_lines:
-        upstream_lines.append("- no richer external `g-kade` or `gstack` install detected")
+def kade_agents_text(workspace_root: Path, gkade: dict[str, object], gstack: dict[str, object]) -> str:
+    runtime_lines = [
+        f"- `g-kade`: `{gkade['status']}` at `{gkade['configured_path']}`",
+        f"- `gstack`: `{gstack['status']}` at `{gstack['configured_path']}`",
+    ]
+    if gkade.get("detected_path"):
+        runtime_lines.append(f"- detected richer `g-kade`: `{gkade['detected_path']}`")
+    if gstack.get("detected_path"):
+        runtime_lines.append(f"- detected richer `gstack`: `{gstack['detected_path']}`")
 
-    upstream_block = "\n".join(upstream_lines)
+    runtime_block = "\n".join(runtime_lines)
     return (
         "# AGENTS.md\n\n"
         "This `kade/AGENTS.md` file is the KADE overlay for a packet-backed workspace.\n\n"
@@ -405,42 +395,66 @@ def kade_agents_text(workspace_root: Path, gkade: UpstreamSkill | None, gstack: 
         "Boundaries:\n\n"
         "- packet root files own search, memory, MCP wiring, and workspace scaffolding\n"
         "- this overlay owns KADE-specific session structure and handoff expectations\n"
+        "- richer g-kade and gstack runtimes belong in repo-owned dependency paths, not home wrappers alone\n"
         "- do not overwrite root packet files with KADE-specific content\n\n"
-        "Detected upstream guidance:\n\n"
-        f"{upstream_block}\n\n"
+        "Repo runtime contract:\n\n"
+        f"{runtime_block}\n\n"
         f"Workspace root: `{workspace_root}`\n"
     )
 
 
-def kade_md_text(workspace_root: Path, layer_result: str, gkade: UpstreamSkill | None, gstack: UpstreamSkill | None) -> str:
-    upstream_lines = []
-    if gkade:
-        upstream_lines.append(f"- `g-kade`: `{gkade.skill_md}`")
-    if gstack:
-        upstream_lines.append(f"- `gstack`: `{gstack.skill_md}`")
-    if not upstream_lines:
-        upstream_lines.append("- packet wrapper only")
+def kade_md_text(workspace_root: Path, layer_result: str, gkade: dict[str, object], gstack: dict[str, object]) -> str:
+    runtime_lines = [
+        f"- `g-kade`: status `{gkade['status']}`, configured `{gkade['configured_path']}`",
+        f"- `gstack`: status `{gstack['status']}`, configured `{gstack['configured_path']}`",
+    ]
+    if gkade.get("detected_path"):
+        runtime_lines.append(f"- `g-kade` detected path: `{gkade['detected_path']}`")
+    if gstack.get("detected_path"):
+        runtime_lines.append(f"- `gstack` detected path: `{gstack['detected_path']}`")
 
-    upstream_block = "\n".join(upstream_lines)
+    runtime_block = "\n".join(runtime_lines)
     return (
         "# KADE.md\n\n"
         "## Workspace\n\n"
         f"- root: `{workspace_root}`\n"
         f"- layering result: `{layer_result}`\n\n"
-        "## Upstream Guidance\n\n"
-        f"{upstream_block}\n\n"
+        "## Repo Runtime Contract\n\n"
+        f"{runtime_block}\n\n"
         "## Handoff Log\n\n"
     )
 
 
 def human_md_text() -> str:
-    return (
-        "# HUMAN.md\n\n"
-        "This is the global KADE human profile.\n\n"
-        "- preferred style: concise, checkpoint-driven, direct\n"
-        "- expectation: keep one next action visible\n"
-        "- note: replace this starter with real user-specific guidance\n"
-    )
+    for candidate in HUMAN_MD_SOURCE_CANDIDATES:
+        try:
+            text = candidate.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        normalized = text.replace("\r\n", "\n").strip()
+        if normalized:
+            return normalized + "\n"
+    return LEGACY_HUMAN_MD_TEXT
+
+
+def has_legacy_human_stub(path: Path) -> bool:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return text.replace("\r\n", "\n").strip() == LEGACY_HUMAN_MD_TEXT.strip()
+
+
+def write_home_human_profile(human_md: Path, *, dry_run: bool) -> str:
+    if human_md.exists():
+        if not has_legacy_human_stub(human_md):
+            return f"skip   {human_md} (exists)"
+        if dry_run:
+            return f"write  {human_md} (replace legacy stub)"
+        human_md.parent.mkdir(parents=True, exist_ok=True)
+        human_md.write_text(human_md_text(), encoding="utf-8")
+        return f"write  {human_md} (replaced legacy stub)"
+    return PACKET.write_text(human_md, human_md_text(), force=False, dry_run=dry_run)
 
 
 def scaffold_kade_overlays(
@@ -448,8 +462,8 @@ def scaffold_kade_overlays(
     home_root: Path,
     *,
     layer_result_label: str,
-    gkade_upstream: UpstreamSkill | None,
-    gstack_upstream: UpstreamSkill | None,
+    gkade_runtime: dict[str, object],
+    gstack_runtime: dict[str, object],
     install_home_profile: bool,
     force: bool,
     dry_run: bool,
@@ -457,13 +471,13 @@ def scaffold_kade_overlays(
     actions = [
         PACKET.write_text(
             workspace_root / "kade" / "AGENTS.md",
-            kade_agents_text(workspace_root, gkade_upstream, gstack_upstream),
+            kade_agents_text(workspace_root, gkade_runtime, gstack_runtime),
             force=force,
             dry_run=dry_run,
         ),
         PACKET.write_text(
             workspace_root / "kade" / "KADE.md",
-            kade_md_text(workspace_root, layer_result_label, gkade_upstream, gstack_upstream),
+            kade_md_text(workspace_root, layer_result_label, gkade_runtime, gstack_runtime),
             force=force,
             dry_run=dry_run,
         ),
@@ -471,14 +485,7 @@ def scaffold_kade_overlays(
 
     if install_home_profile:
         human_md = home_root / ".kade" / "HUMAN.md"
-        actions.append(
-            PACKET.write_text(
-                human_md,
-                human_md_text(),
-                force=False,
-                dry_run=dry_run,
-            )
-        )
+        actions.append(write_home_human_profile(human_md, dry_run=dry_run))
     return actions
 
 
@@ -548,7 +555,7 @@ def main() -> int:
     workspace_root = detect_workspace_root(Path(args.workspace))
     home_root = Path(args.home_root).expanduser().resolve()
     targets = PACKET.normalize_targets(args.targets)
-    install_home_skills = PACKET.resolve_home_skill_install(args)
+    install_home_skills = resolve_g_kade_home_skill_install(args)
     skip_home_skills = not install_home_skills
     allow_home_root = args.allow_home_root or env_flag("LLM_WIKI_ALLOW_HOME_ROOT")
 
@@ -565,6 +572,8 @@ def main() -> int:
         install_home_skills=install_home_skills,
         run_setup=not args.skip_setup,
         allow_global_tool_install=PACKET.global_tool_install_allowed(args),
+        g_kade_dependency_path=args.g_kade_dependency_path,
+        gstack_dependency_path=args.gstack_dependency_path,
     )
 
     if args.preflight_only:
@@ -582,8 +591,9 @@ def main() -> int:
         )
         return 0
 
-    gkade_upstream, gstack_upstream = detect_richer_upstreams(workspace_root, home_root)
-    layer_result_label = layering_result(gkade_upstream, gstack_upstream)
+    gkade_runtime = repo_runtime_dependency(workspace_root, "g-kade", args.g_kade_dependency_path)
+    gstack_runtime = repo_runtime_dependency(workspace_root, "gstack", args.gstack_dependency_path)
+    layer_result_label = layering_result(gkade_runtime, gstack_runtime)
 
     packet_args = argparse.Namespace(
         vault=str(workspace_root),
@@ -602,7 +612,11 @@ def main() -> int:
         allow_global_tool_install=args.allow_global_tool_install,
         gitvizz_frontend_url=args.gitvizz_frontend_url,
         gitvizz_backend_url=args.gitvizz_backend_url,
+        gitvizz_repo_url=args.gitvizz_repo_url,
+        gitvizz_checkout_path=args.gitvizz_checkout_path,
         gitvizz_repo_path=args.gitvizz_repo_path,
+        g_kade_dependency_path=args.g_kade_dependency_path,
+        gstack_dependency_path=args.gstack_dependency_path,
     )
 
     actions = PACKET.install_packet_workspace(
@@ -617,8 +631,8 @@ def main() -> int:
     actions.extend(
         scaffold_repo_local_skills(
             workspace_root,
-            gkade_upstream=gkade_upstream,
-            gstack_upstream=gstack_upstream,
+            gkade_runtime=gkade_runtime,
+            gstack_runtime=gstack_runtime,
             force=args.force,
             dry_run=args.dry_run,
         )
@@ -628,8 +642,8 @@ def main() -> int:
             workspace_root,
             home_root,
             layer_result_label=layer_result_label,
-            gkade_upstream=gkade_upstream,
-            gstack_upstream=gstack_upstream,
+            gkade_runtime=gkade_runtime,
+            gstack_runtime=gstack_runtime,
             install_home_profile=install_home_skills,
             force=args.force,
             dry_run=args.dry_run,
@@ -664,8 +678,8 @@ def main() -> int:
         f"Home root:      {home_root}",
         f"Targets:        {', '.join(targets)}",
         f"Layering:       {layer_result_label}",
-        f"Richer g-kade:  {gkade_upstream.skill_md if gkade_upstream else 'none'}",
-        f"Richer gstack:  {gstack_upstream.skill_md if gstack_upstream else 'none'}",
+        f"Repo g-kade:    {gkade_runtime.get('detected_path') or gkade_runtime['status']}",
+        f"Repo gstack:    {gstack_runtime.get('detected_path') or gstack_runtime['status']}",
         f"Mode:           {'dry-run' if args.dry_run else 'write'}",
         "",
         *preflight,
