@@ -2,10 +2,13 @@
 
 This repo is the prompt packet and vault installer for the `llm-wiki-memory` stack:
 
+- `Kade-HQ` and `G-Stack` provide the agent harness layer
 - `pk-qmd` is the source-evidence retrieval plane
 - `Byterover` (`brv`) is the curated durable-memory plane
 - `GitVizz` is the repo graph and web surface
 - `llm-wiki-skills` is the local-first reusable skill lifecycle plane
+
+The intended system combines `Kade-HQ`, `G-Stack`, `Byterover`, `GitVizz`, and `pk-qmd` into one contract, while still supporting local-first bootstrap paths.
 
 The packet installs concise guidance files, tool-specific command/workflow files, a stack config, and health-check scripts into an Obsidian vault. It does not hide these components from maintainers, but the installed prompts tell agents to present one coherent intelligence surface to end users.
 
@@ -15,7 +18,7 @@ The installer can also seed packet-owned `gstack` and `g-kade` wrapper skills in
 - `~/.codex/skills/`
 - `~/.claude/skills/`
 
-Those wrappers live in this repo under `skills/home/` and are intentionally light. They are the packet-owned bridge layer, not a vendored copy of the full upstream `gstack` runtime bundle.
+Those wrappers live in this repo under `skills/home/` and are intentionally light. They are the packet-owned bridge layer, not a vendored copy of the full upstream `gstack` runtime bundle. The richer `gstack` and `g-kade` pieces are expected to arrive from the `deps/pk-skills1` submodule when that bootstrap path is enabled.
 
 ## Architecture
 
@@ -24,6 +27,7 @@ The stack contract baked into this packet is:
 - use `pk-qmd` first for repo-specific evidence, docs, prompts, notes, and exact local behavior
 - use `brv` for durable preferences, workflow quirks, and reused project decisions
 - use `llm-wiki-skills` for reusable task shortcuts, feedback, and retirement
+- treat `Kade-HQ` and `G-Stack` as part of the same system contract, not as an unrelated optional add-on
 - prefer direct source evidence over memory when they conflict
 - treat `GitVizz` as the local graph surface, with frontend and backend URLs configured explicitly
 - do not expect end users to manage raw tool choices
@@ -114,6 +118,8 @@ The stack contract baked into this packet is:
 
 The packet configures the stack, but the easiest path is now the hosted installer. It prompts for the vault folder when you do not pass one, lays down the packet, and then runs the vault setup helper unless you explicitly skip it.
 
+Local-first use remains supported. When you want a single hosted surface, the intended Docker mode should be able to host the qmd + gitvizz + brv stack together while keeping the same contract boundaries.
+
 Use the installed helpers from the vault root when you want machine-level setup, repeatable verification, or a re-run after changing config:
 
 - `scripts/setup_llm_wiki_memory.ps1`
@@ -197,6 +203,10 @@ Key fork behavior this packet assumes:
 - command name is `pk-qmd`
 - shared MCP endpoint is `http://localhost:8181/mcp`
 - the fork adds Gemini-backed multimodal commands such as `pk-qmd membed`, `pk-qmd msearch`, and `pk-qmd simage`
+
+### 1b. Wire the harness layer
+
+The packet-owned `gstack` and `g-kade` bridge skills are kept light on purpose. The fuller harness pieces are expected to be pulled in through repo-owned dependency or submodule paths during bootstrap, not assumed to already exist as a fully vendored runtime. When those paths are present, the setup flow should mount them into the home skill roots and preserve the local packet wrappers as the stable entry point.
 
 ### 2. Install and authenticate Byterover
 
@@ -347,6 +357,8 @@ The installer writes `.llm-wiki/config.json` using these defaults:
 - `LLM_WIKI_BRV_COMMAND=brv`
 - `LLM_WIKI_GITVIZZ_FRONTEND_URL=http://localhost:3000`
 - `LLM_WIKI_GITVIZZ_BACKEND_URL=http://localhost:8003`
+- `LLM_WIKI_GITVIZZ_REPO_URL=<optional git URL for managed checkout>`
+- `LLM_WIKI_GITVIZZ_CHECKOUT_PATH=<optional managed checkout path>`
 - `LLM_WIKI_GITVIZZ_REPO_PATH=<optional local checkout path>`
 
 ### Docker container
@@ -371,21 +383,38 @@ docker compose up --build
 Default container behavior:
 
 - vault mount: `./.docker/vault -> /workspace`
-- MCP port: `8181`
+- host gateway bind: `127.0.0.1:8181` by default
+- `pk-qmd` is exposed on `/mcp`
+- GitVizz backend is exposed on `/graph/*`
+- BRV is exposed through `/memory/status`, `/memory/query`, and `/memory/curate`
 - targets installed into the mounted vault: `claude,codex,droid`
 - GitVizz checks are skipped by default in-container unless you opt in
+- optional full-stack mode can also wire in-container GitVizz services from a mounted GitVizz checkout
+- local Docker mode does not require auth on these routes because the host bind is loopback-only
 
 Useful overrides:
 
+- `LLM_WIKI_MCP_BIND_HOST=127.0.0.1`
 - `LLM_WIKI_VAULT_PATH=/absolute/path/to/vault`
 - `LLM_WIKI_TARGETS=claude,codex,droid`
 - `LLM_WIKI_FORCE_INSTALL=1`
 - `LLM_WIKI_QMD_SOURCE=/path/to/pk-qmd`
+- `LLM_WIKI_ENABLE_GITVIZZ=1`
+- `LLM_WIKI_GITVIZZ_SOURCE_HOST_PATH=/absolute/path/to/GitVizz`
+- `LLM_WIKI_AGENT_API_TOKEN=<optional bearer token for hosted use>`
 - `BYTEROVER_API_KEY=<key>`
 - `GEMINI_API_KEY=<key>`
 - `GH_TOKEN=<token>` or `GITHUB_TOKEN=<token>` for private `pk-qmd` fetches
 - `LLM_WIKI_SKIP_GITVIZZ=0`
 - `LLM_WIKI_MCP_SERVER_CMD="pk-qmd mcp"`
+
+Host agent examples:
+
+```bash
+curl http://127.0.0.1:8181/healthz
+curl http://127.0.0.1:8181/graph/openapi.json
+curl -X POST http://127.0.0.1:8181/memory/query -H "Content-Type: application/json" -d '{"query":"what prior decisions matter here?"}'
+```
 
 If the `pk-qmd` repo is private in your environment and you already have a local checkout, use the local-checkout override so `serve` keeps that checkout mounted:
 
@@ -399,6 +428,16 @@ docker compose -f docker-compose.yml -f docker-compose.local-qmd.yml up --build
 Shell:
 
 ```bash
+export LLM_WIKI_QMD_SOURCE_HOST_PATH=/absolute/path/to/pk-qmd-main
+docker compose -f docker-compose.yml -f docker-compose.local-qmd.yml up --build
+```
+
+If you want the packet container to talk to in-container GitVizz services instead of an external endpoint, enable the GitVizz profile and mount a real GitVizz checkout:
+
+```bash
+export COMPOSE_PROFILES=gitvizz
+export LLM_WIKI_ENABLE_GITVIZZ=1
+export LLM_WIKI_GITVIZZ_SOURCE_HOST_PATH=/absolute/path/to/GitVizz
 export LLM_WIKI_QMD_SOURCE_HOST_PATH=/absolute/path/to/pk-qmd-main
 docker compose -f docker-compose.yml -f docker-compose.local-qmd.yml up --build
 ```
@@ -425,8 +464,8 @@ docker compose run --rm llm-wiki shell
 
 Notes:
 
-- the container health check uses `scripts/check_llm_wiki_memory.sh --skip-gitvizz`
-- if you want GitVizz included in the health path, set `LLM_WIKI_SKIP_GITVIZZ=0` and point the stack URLs at a reachable GitVizz frontend/backend
+- the container health check skips GitVizz unless you opt in with `LLM_WIKI_ENABLE_GITVIZZ=1` or `LLM_WIKI_SKIP_GITVIZZ=0`
+- if you want GitVizz included in the health path, either point the stack URLs at a reachable GitVizz frontend/backend or enable the `gitvizz` compose profile with a mounted checkout
 - the MCP config written by the setup helper lives inside the container home volume, not your host home directory
 
 ### Google Cloud VM
@@ -507,7 +546,7 @@ The repo includes a minimal scaffold for this path:
 Operational notes:
 
 - the packet VM in this repo only hosts the MCP-facing packet service by default
-- GitVizz is still a separate runtime with its own `docker-compose.yaml`, so it should be deployed from the GitVizz repo and exposed separately
+- GitVizz can still stay a separate runtime with its own compose stack, but this repo also supports an opt-in containerized local GitVizz path when you mount a checkout and enable the compose profile
 - `brv` remains a private memory plane; expose curated app-level routes, not raw BRV provider credentials or direct provider calls
 
 ### GitVizz command-line wrapper

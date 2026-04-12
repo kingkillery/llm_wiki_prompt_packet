@@ -1,7 +1,8 @@
 # LLM Wiki Memory Stack
 
-This vault expects a three-part tooling stack around the markdown wiki:
+This vault expects the following tooling stack around the markdown wiki:
 
+- `Kade-HQ` and `G-Stack` for the agent harness and local bootstrap surface
 - `pk-qmd` for repo-local evidence retrieval and MCP-backed search
 - `brv` for durable memory capture and recall
 - `GitVizz` for local repo graph and web access
@@ -13,6 +14,7 @@ Treat the stack as a routing system:
 - Use `pk-qmd` first for exact evidence retrieval, prompt/docs lookup, and difficult broad searches when you do not yet know the right repo area.
 - Use `GitVizz` first for repository topology, API surface, route relationships, dependency navigation, and for honing in after `pk-qmd` has located the likely folder or subsystem.
 - Use `brv` only for durable memory such as stable preferences, prior decisions, and repeated workflow quirks.
+- Treat `gstack` and `g-kade` as surfaces supplied by the `deps/pk-skills1` submodule when the bootstrap path is enabled; do not describe them as fully vendored runtime bundles unless the checkout actually contains them.
 
 Typical flow:
 
@@ -22,6 +24,7 @@ Typical flow:
 
 The canonical stack settings live in `.llm-wiki/config.json`.
 The local dependency manifest for packet-managed installs lives in `.llm-wiki/package.json`.
+The current repo may only ship thin wrappers for some harness pieces; bootstrap is responsible for surfacing the expected dependency or submodule paths when present.
 
 ## Skill creation at expert level
 
@@ -74,6 +77,8 @@ For long tasks, the parent path should consume the reducer packet by default and
 - GitVizz frontend: `http://localhost:3000`
 - GitVizz backend: `http://localhost:8003`
 - QMD MCP endpoint: `http://localhost:8181/mcp`
+
+Local-first remains the default, but an optional Docker-hosted mode should be able to run the qmd + gitvizz + brv stack together when a single hosted surface is preferred.
 
 ## `pk-qmd`
 
@@ -200,6 +205,14 @@ If you are configuring the GitHub App locally, keep these aligned:
 - Setup URL: `http://localhost:3000/`
 - Callback URL: `http://localhost:3000/api/auth/callback/github`
 
+When you run the local Docker path, the host-facing gateway is loopback-only by default on `127.0.0.1:8181` and exposes:
+
+- `/mcp` for `pk-qmd`
+- `/graph/*` for the configured GitVizz backend
+- `/memory/status`, `/memory/query`, and `/memory/curate` as a narrow BRV adapter
+
+Local Docker mode does not require auth on those routes because the host bind is loopback-only. Set `LLM_WIKI_AGENT_API_TOKEN` only when you intentionally need a bearer gate, such as hosted or tunnelled access.
+
 ## Setup helpers
 
 These vault-local helpers are installed with the packet:
@@ -235,7 +248,7 @@ Use the setup helper to:
 - wire the local skill MCP server
 - validate `brv status --format json`
 - let `brv status` initialize `.brv/config.json` and `.brv/context-tree` when needed
-- auto-launch GitVizz when `gitvizz.repo_path` is configured
+- auto-launch or acquire GitVizz when `gitvizz.repo_url`, `gitvizz.checkout_path`, or `gitvizz.repo_path` are configured
 - verify the local GitVizz endpoints
 
 ### BRV benchmark runner
@@ -296,6 +309,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\launch_gitvizz.ps1
 bash ./scripts/launch_gitvizz.sh --rebuild
 ```
 
+Managed GitVizz acquisition config lives alongside the endpoint URLs:
+
+- `gitvizz.repo_url`
+- `gitvizz.checkout_path`
+- `gitvizz.repo_path`
+
+Environment overrides:
+
+- `LLM_WIKI_GITVIZZ_REPO_URL`
+- `LLM_WIKI_GITVIZZ_CHECKOUT_PATH`
+- `LLM_WIKI_GITVIZZ_REPO_PATH`
+
 PowerShell:
 
 ```powershell
@@ -355,4 +380,6 @@ The setup helpers honor these environment variables:
 - `LLM_WIKI_BRV_COMMAND`
 - `LLM_WIKI_GITVIZZ_FRONTEND_URL`
 - `LLM_WIKI_GITVIZZ_BACKEND_URL`
+- `LLM_WIKI_GITVIZZ_REPO_URL`
+- `LLM_WIKI_GITVIZZ_CHECKOUT_PATH`
 - `LLM_WIKI_GITVIZZ_REPO_PATH`

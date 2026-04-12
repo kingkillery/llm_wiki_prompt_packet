@@ -8,6 +8,8 @@ param(
     [string]$BrvCommand = $env:LLM_WIKI_BRV_COMMAND,
     [string]$GitvizzFrontendUrl = $env:LLM_WIKI_GITVIZZ_FRONTEND_URL,
     [string]$GitvizzBackendUrl = $env:LLM_WIKI_GITVIZZ_BACKEND_URL,
+    [string]$GitvizzRepoUrl = $env:LLM_WIKI_GITVIZZ_REPO_URL,
+    [string]$GitvizzCheckoutPath = $env:LLM_WIKI_GITVIZZ_CHECKOUT_PATH,
     [string]$GitvizzRepoPath = $env:LLM_WIKI_GITVIZZ_REPO_PATH,
     [switch]$SkipQmd,
     [switch]$SkipMcp,
@@ -86,6 +88,39 @@ function Get-NpmCommand {
     $npmCmd = Get-Command npm.cmd -ErrorAction SilentlyContinue
     if ($npmCmd) { return $npmCmd.Name }
     return $null
+}
+
+function Get-GitCommand {
+    $git = Get-Command git -ErrorAction SilentlyContinue
+    if ($git) { return $git.Name }
+    $gitCmd = Get-Command git.exe -ErrorAction SilentlyContinue
+    if ($gitCmd) { return $gitCmd.Name }
+    return $null
+}
+
+function Resolve-OptionalPath {
+    param(
+        [string]$PathValue,
+        [string]$WorkspaceRoot
+    )
+
+    if ([string]::IsNullOrWhiteSpace($PathValue)) {
+        return $null
+    }
+
+    try {
+        if ([System.IO.Path]::IsPathRooted($PathValue)) {
+            return [System.IO.Path]::GetFullPath($PathValue)
+        }
+    } catch {
+        return $PathValue
+    }
+
+    if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) {
+        return $PathValue
+    }
+
+    return [System.IO.Path]::GetFullPath((Join-Path $WorkspaceRoot $PathValue))
 }
 
 function Get-LocalQmdManifestPath {
@@ -231,6 +266,9 @@ function Get-LocalBrvCommandPath {
 
 function Resolve-GitSource {
     param([string]$RepoUrl)
+    if ([string]::IsNullOrWhiteSpace($RepoUrl)) {
+        return $null
+    }
     if ($RepoUrl.StartsWith("git+")) {
         return $RepoUrl
     }
@@ -462,42 +500,227 @@ function Test-TcpUrl {
     }
 }
 
+function Get-GitVizzComposeFilePath {
+    param([string]$RepoPath)
+
+    if ([string]::IsNullOrWhiteSpace($RepoPath)) {
+        return $null
+    }
+
+    $candidates = @(
+        "docker-compose.yaml",
+        "docker-compose.yml",
+        "compose.yaml",
+        "compose.yml"
+    )
+
+    foreach ($candidate in $candidates) {
+        $path = Join-Path $RepoPath $candidate
+        if (Test-Path $path) {
+            return $path
+        }
+    }
+
+    return $null
+}
+
+function Get-DockerComposeInvocation {
+    param([string]$ComposeFile)
+
+    $docker = Get-Command docker -ErrorAction SilentlyContinue
+    if ($docker) {
+        return [pscustomobject]@{
+            Command = $docker.Name
+            Arguments = @("compose", "-f", $ComposeFile)
+        }
+    }
+
+    $dockerCompose = Get-Command docker-compose -ErrorAction SilentlyContinue
+    if ($dockerCompose) {
+        return [pscustomobject]@{
+            Command = $dockerCompose.Name
+            Arguments = @("-f", $ComposeFile)
+        }
+    }
+
+    return $null
+}
+
+function Ensure-GitVizzCheckout {
+    param(
+        [string]$RepoUrl,
+        [string]$CheckoutPath,
+        [switch]$Verify
+    )
+
+    $summary = New-Object System.Collections.Generic.List[string]
+    $failures = New-Object System.Collections.Generic.List[string]
+    $result = [ordered]@{
+        Path = $CheckoutPath
+        Summary = $summary
+        Failures = $failures
+        State = "unmanaged"
+    }
+
+    if ([string]::IsNullOrWhiteSpace($CheckoutPath)) {
+        if ([string]::IsNullOrWhiteSpace($RepoUrl)) {
+            $summary.Add("GitVizz checkout resolved: missing")
+            return [pscustomobject]$result
+        }
+
+        $result.State = "configuration-missing"
+        $summary.Add("GitVizz checkout resolved: missing")
+        $failures.Add("GitVizz source is configured but no checkout path was provided. Set LLM_WIKI_GITVIZZ_CHECKOUT_PATH or gitvizz.checkout_path.")
+        return [pscustomobject]$result
+    }
+
+    if ([string]::IsNullOrWhiteSpace($RepoUrl)) {
+        if (Test-Path $CheckoutPath) {
+            $result.State = "resolved"
+            $summary.Add("GitVizz checkout resolved: $CheckoutPath")
+        } else {
+            $result.State = "missing"
+            $summary.Add("GitVizz checkout resolved: missing ($CheckoutPath)")
+        }
+        return [pscustomobject]$result
+    }
+
+    $git = Get-GitCommand
+    if (-not $git) {
+        $result.State = "missing-git"
+        $summary.Add("GitVizz checkout resolved: missing")
+        $failures.Add("git is required to acquire the configured GitVizz checkout.")
+        return [pscustomobject]$result
+    }
+
+    if (Test-Path $CheckoutPath) {
+        if (-not (Test-Path (Join-Path $CheckoutPath ".git"))) {
+            $result.State = "invalid"
+            $summary.Add("GitVizz checkout resolved: invalid ($CheckoutPath)")
+            $failures.Add("GitVizz checkout path exists but is not a git repository: $CheckoutPath")
+            return [pscustomobject]$result
+        }
+
+        if ($Verify) {
+            $result.State = "resolved"
+            $summary.Add("GitVizz checkout resolved: $CheckoutPath")
+            return [pscustomobject]$result
+        }
+
+        try {
+            & $git -C $CheckoutPath pull --ff-only | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                throw "git pull --ff-only failed"
+            }
+            $result.State = "updated"
+            $summary.Add("GitVizz checkout updated: $CheckoutPath")
+        } catch {
+            $result.State = "update-failed"
+            $summary.Add("GitVizz checkout resolved: $CheckoutPath")
+            $failures.Add("GitVizz checkout update failed at ${CheckoutPath}: $($_.Exception.Message)")
+        }
+
+        return [pscustomobject]$result
+    }
+
+    if ($Verify) {
+        $result.State = "missing"
+        $summary.Add("GitVizz checkout resolved: missing ($CheckoutPath)")
+        return [pscustomobject]$result
+    }
+
+    $parent = Split-Path -Parent $CheckoutPath
+    if (-not [string]::IsNullOrWhiteSpace($parent) -and -not (Test-Path $parent)) {
+        New-Item -ItemType Directory -Force -Path $parent | Out-Null
+    }
+
+    try {
+        & $git clone $RepoUrl $CheckoutPath | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "git clone failed"
+        }
+        $result.State = "installed"
+        $summary.Add("GitVizz checkout installed: $CheckoutPath")
+    } catch {
+        $result.State = "install-failed"
+        $summary.Add("GitVizz checkout resolved: missing ($CheckoutPath)")
+        $failures.Add("GitVizz checkout install failed from $RepoUrl to ${CheckoutPath}: $($_.Exception.Message)")
+    }
+
+    return [pscustomobject]$result
+}
+
 function Start-GitVizzIfNeeded {
     param(
+        [string]$RepoUrl,
         [string]$RepoPath,
         [string]$FrontendUrl,
         [string]$BackendUrl,
         [switch]$Verify
     )
 
+    $summary = New-Object System.Collections.Generic.List[string]
+    $failures = New-Object System.Collections.Generic.List[string]
+    $checkout = Ensure-GitVizzCheckout -RepoUrl $RepoUrl -CheckoutPath $RepoPath -Verify:$Verify
+    foreach ($line in $checkout.Summary) {
+        $summary.Add($line)
+    }
+    foreach ($line in $checkout.Failures) {
+        $failures.Add($line)
+    }
+
     if ((Test-TcpUrl -Url $FrontendUrl) -and (Test-TcpUrl -Url $BackendUrl)) {
-        return "GitVizz already reachable"
+        $summary.Add("GitVizz launch state: already reachable")
+        return [pscustomobject]@{ Summary = $summary; Failures = $failures }
     }
 
     if ($Verify) {
-        return "GitVizz is not reachable"
+        $summary.Add("GitVizz launch state: verify-only")
+        return [pscustomobject]@{ Summary = $summary; Failures = $failures }
     }
 
-    if (-not $RepoPath) {
-        return "GitVizz repo path not configured; set LLM_WIKI_GITVIZZ_REPO_PATH or gitvizz.repo_path to auto-launch"
+    if ($failures.Count -gt 0) {
+        $summary.Add("GitVizz launch state: blocked")
+        return [pscustomobject]@{ Summary = $summary; Failures = $failures }
     }
 
-    if (-not (Test-Path (Join-Path $RepoPath "docker-compose.yaml"))) {
-        return "GitVizz repo path missing docker-compose.yaml: $RepoPath"
+    if (-not $checkout.Path) {
+        $summary.Add("GitVizz launch state: unmanaged endpoint only")
+        return [pscustomobject]@{ Summary = $summary; Failures = $failures }
     }
 
-    Push-Location $RepoPath
+    $composeFile = Get-GitVizzComposeFilePath -RepoPath $checkout.Path
+    if (-not $composeFile) {
+        $summary.Add("GitVizz launch state: blocked")
+        $failures.Add("GitVizz checkout is missing a compose file: $($checkout.Path)")
+        return [pscustomobject]@{ Summary = $summary; Failures = $failures }
+    }
+
+    $composeInvocation = Get-DockerComposeInvocation -ComposeFile $composeFile
+    if (-not $composeInvocation) {
+        $summary.Add("GitVizz launch state: blocked")
+        $failures.Add("docker compose is required to launch the configured GitVizz checkout.")
+        return [pscustomobject]@{ Summary = $summary; Failures = $failures }
+    }
+
+    Push-Location $checkout.Path
     try {
-        & docker-compose up -d --build
+        & $composeInvocation.Command @($composeInvocation.Arguments + @("up", "-d", "--build")) | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "docker compose up -d --build failed"
+        }
     } finally {
         Pop-Location
     }
 
     if ((Test-TcpUrl -Url $FrontendUrl) -and (Test-TcpUrl -Url $BackendUrl)) {
-        return "Launched GitVizz via docker-compose"
+        $summary.Add("GitVizz launch state: launched")
+        return [pscustomobject]@{ Summary = $summary; Failures = $failures }
     }
 
-    return "GitVizz launch attempted but endpoints are still unreachable"
+    $summary.Add("GitVizz launch state: launched but unreachable")
+    $failures.Add("GitVizz launch completed but the configured endpoints are still unreachable.")
+    return [pscustomobject]@{ Summary = $summary; Failures = $failures }
 }
 
 function Test-QmdFeature {
@@ -858,7 +1081,10 @@ $QmdContext = Get-ConfigValue -Preferred $QmdContext -Fallback $(if ($config -an
 $BrvCommand = Get-ConfigValue -Preferred $BrvCommand -Fallback $(if ($config) { $config.byterover.command } else { "brv" })
 $GitvizzFrontendUrl = Get-ConfigValue -Preferred $GitvizzFrontendUrl -Fallback $(if ($config) { $config.gitvizz.frontend_url } else { "http://localhost:3000" })
 $GitvizzBackendUrl = Get-ConfigValue -Preferred $GitvizzBackendUrl -Fallback $(if ($config) { $config.gitvizz.backend_url } else { "http://localhost:8003" })
+$GitvizzRepoUrl = Get-ConfigValue -Preferred $GitvizzRepoUrl -Fallback $(if ($config) { $config.gitvizz.repo_url } else { $null })
+$GitvizzCheckoutPath = Get-ConfigValue -Preferred $GitvizzCheckoutPath -Fallback $(if ($config) { $config.gitvizz.checkout_path } else { $null })
 $GitvizzRepoPath = Get-ConfigValue -Preferred $GitvizzRepoPath -Fallback $(if ($config) { $config.gitvizz.repo_path } else { $null })
+$GitvizzManagedPath = Resolve-OptionalPath -PathValue $(if ($GitvizzCheckoutPath) { $GitvizzCheckoutPath } else { $GitvizzRepoPath }) -WorkspaceRoot $WorkspaceRoot
 $SkillServerKey = if ($config -and $config.skills.mcp_server_key) { [string]$config.skills.mcp_server_key } else { "llm-wiki-skills" }
 $SkillScriptRelativePath = if ($config -and $config.skills.script_path) { [string]$config.skills.script_path } else { "scripts\llm_wiki_skill_mcp.py" }
 if (-not $AllowGlobalToolInstall -and (Test-EnvFlag -Name "LLM_WIKI_ALLOW_GLOBAL_TOOL_INSTALL")) {
@@ -872,30 +1098,50 @@ if ($AllowGlobalToolInstall) {
 } else {
     $summary.Add("Global tool install fallback disabled; packet-local installs only")
 }
+$summary.Add("pk-qmd configured command: $QmdCommand")
+$summary.Add("brv configured command: $BrvCommand")
+$summary.Add("GitVizz configured frontend: $GitvizzFrontendUrl")
+$summary.Add("GitVizz configured backend: $GitvizzBackendUrl")
+if ($GitvizzRepoUrl) {
+    $summary.Add("GitVizz source configured: $GitvizzRepoUrl")
+} else {
+    $summary.Add("GitVizz source configured: no")
+}
+if ($GitvizzManagedPath) {
+    $summary.Add("GitVizz managed checkout path: $GitvizzManagedPath")
+} else {
+    $summary.Add("GitVizz managed checkout path: no")
+}
 
 if (-not $SkipQmd) {
     $qmd = Ensure-QmdAvailable -WorkspaceRoot $WorkspaceRoot -CurrentCommand $QmdCommand -SourcePath $QmdSource -RepoUrl $QmdRepoUrl -AllowGlobalToolInstall:$AllowGlobalToolInstall -Verify:$VerifyOnly
     $QmdCommand = $qmd.Command
+    $summary.Add("pk-qmd resolved command: $QmdCommand")
 
     switch ($qmd.Source) {
-        "existing" { $summary.Add("$QmdCommand already installed") }
-        "packet-local" { $summary.Add("Installed packet-local pk-qmd dependency into .llm-wiki") }
-        "source-checkout" { $summary.Add($qmd.Message) }
+        "existing" { $summary.Add("pk-qmd install state: resolved existing command") }
+        "packet-local" { $summary.Add("pk-qmd install state: installed packet-local dependency") }
+        "source-checkout" {
+            $summary.Add("pk-qmd install state: resolved source checkout")
+            $summary.Add($qmd.Message)
+        }
         "manual-required" {
             $failures.Add($qmd.Message)
+            $summary.Add("pk-qmd install state: missing")
             $summary.Add($qmd.Message)
         }
         "missing" {
             $failures.Add("Missing pk-qmd command: $QmdCommand")
+            $summary.Add("pk-qmd install state: missing")
             $summary.Add("Install pk-qmd from the packet dependency manifest, $QmdRepoUrl, or provide -QmdSource")
         }
-        default { $summary.Add("Installed pk-qmd from $($qmd.Source)") }
+        default { $summary.Add("pk-qmd install state: installed from $($qmd.Source)") }
     }
 
     if ($qmd.Source -notin @("missing", "manual-required")) {
         try {
             Invoke-CommandChecked -CommandName $QmdCommand -Arguments @("status") | Out-Null
-            $summary.Add("pk-qmd verify: ok")
+            $summary.Add("pk-qmd reachable: status ok")
         } catch {
             $failures.Add("pk-qmd status failed: $($_.Exception.Message)")
         }
@@ -946,29 +1192,36 @@ if (-not $SkipBrv) {
     $localBrv = Get-LocalBrvCommandPath -WorkspaceRoot $WorkspaceRoot
     if ($localBrv) {
         $BrvCommand = $localBrv
-        $summary.Add("Using packet-local brv dependency at $BrvCommand")
+        $summary.Add("brv resolved command: $BrvCommand")
+        $summary.Add("brv install state: resolved packet-local dependency")
     } else {
         $brvExists = Get-Command $BrvCommand -ErrorAction SilentlyContinue
         if ($brvExists) {
-            $summary.Add("$BrvCommand already installed")
+            $summary.Add("brv resolved command: $BrvCommand")
+            $summary.Add("brv install state: resolved existing command")
         } elseif ($VerifyOnly) {
             $failures.Add("Missing Byterover command: $BrvCommand")
+            $summary.Add("brv install state: missing")
         } else {
             $localInstalledBrv = Install-PacketLocalBrvDependency -WorkspaceRoot $WorkspaceRoot
             if ($localInstalledBrv) {
                 $BrvCommand = $localInstalledBrv
-                $summary.Add("Installed packet-local brv dependency into .llm-wiki")
+                $summary.Add("brv resolved command: $BrvCommand")
+                $summary.Add("brv install state: installed packet-local dependency")
             } elseif (-not $AllowGlobalToolInstall) {
                 $failures.Add("Missing Byterover command: $BrvCommand")
+                $summary.Add("brv install state: missing")
                 $summary.Add("Global brv install is disabled. Install byterover-cli manually or rerun with -AllowGlobalToolInstall.")
             } else {
                 $npm = Get-NpmCommand
                 if (-not $npm) {
                     $failures.Add("Missing Byterover command: $BrvCommand")
+                    $summary.Add("brv install state: missing")
                     $summary.Add("npm is required to install brv.")
                 } else {
                     & $npm install -g byterover-cli
-                    $summary.Add("Installed brv from npm")
+                    $summary.Add("brv resolved command: $BrvCommand")
+                    $summary.Add("brv install state: installed from npm")
                 }
             }
         }
@@ -977,7 +1230,7 @@ if (-not $SkipBrv) {
     if ((Get-Command $BrvCommand -ErrorAction SilentlyContinue) -or (Test-Path $BrvCommand)) {
         $brvStatus = Test-BrvStatus -CommandName $BrvCommand
         if ($brvStatus.Ok) {
-            $summary.Add("brv verify: ok")
+            $summary.Add("brv reachable: status ok")
         } else {
             $failures.Add("brv status failed: $($brvStatus.Output)")
         }
@@ -1007,13 +1260,21 @@ if ($SkipGitvizz) {
 }
 
 if (-not $SkipGitvizzStart) {
-    $summary.Add((Start-GitVizzIfNeeded -RepoPath $GitvizzRepoPath -FrontendUrl $GitvizzFrontendUrl -BackendUrl $GitvizzBackendUrl -Verify:$VerifyOnly))
+    $gitvizzLaunch = Start-GitVizzIfNeeded -RepoUrl $GitvizzRepoUrl -RepoPath $GitvizzManagedPath -FrontendUrl $GitvizzFrontendUrl -BackendUrl $GitvizzBackendUrl -Verify:$VerifyOnly
+    foreach ($line in $gitvizzLaunch.Summary) {
+        $summary.Add($line)
+    }
+    foreach ($line in $gitvizzLaunch.Failures) {
+        $failures.Add($line)
+    }
+} else {
+    $summary.Add("GitVizz launch state: skipped")
 }
 
 if ($SkipGitvizz) {
     $summary.Add("GitVizz checks skipped")
 } else {
-    $gitvizzManaged = -not [string]::IsNullOrWhiteSpace([string]$GitvizzRepoPath)
+    $gitvizzManaged = -not [string]::IsNullOrWhiteSpace([string]$GitvizzManagedPath)
     $frontendReachable = Test-TcpUrl -Url $GitvizzFrontendUrl
     $backendReachable = Test-TcpUrl -Url $GitvizzBackendUrl
 
@@ -1023,7 +1284,7 @@ if ($SkipGitvizz) {
         if ($gitvizzManaged) {
             $failures.Add("GitVizz frontend unreachable: $GitvizzFrontendUrl")
         } else {
-            $summary.Add("GitVizz frontend unreachable but repo_path is not configured; skipping reachability enforcement during setup")
+            $summary.Add("GitVizz frontend reachable: missing ($GitvizzFrontendUrl); no managed checkout configured, so endpoint-only/container mode remains allowed")
         }
     }
 
@@ -1033,7 +1294,7 @@ if ($SkipGitvizz) {
         if ($gitvizzManaged) {
             $failures.Add("GitVizz backend unreachable: $GitvizzBackendUrl")
         } else {
-            $summary.Add("GitVizz backend unreachable but repo_path is not configured; skipping reachability enforcement during setup")
+            $summary.Add("GitVizz backend reachable: missing ($GitvizzBackendUrl); no managed checkout configured, so endpoint-only/container mode remains allowed")
         }
     }
 }

@@ -28,6 +28,28 @@ STACK_DEPENDENCY_MANIFEST_PATH = ".llm-wiki/package.json"
 STACK_GITIGNORE_PATH = ".llm-wiki/.gitignore"
 PACKET_OWNER = "llm-wiki-prompt-packet"
 HOME_SKILL_OWNER_MARKER = ".llm-wiki-packet-owner.json"
+RICH_MARKERS = {"bin", "browse", "qa", "review", "kade"}
+RICH_SIBLING_HINTS = {"debug", "debugging", "deploy", "deployment", "design", "dogfood", "dx", "investigate", "ship", "workflows"}
+REPO_RUNTIME_DEFAULT_PATHS = {
+    "g-kade": "deps/pk-skills1/gstack/g-kade",
+    "gstack": "deps/pk-skills1/gstack",
+}
+REPO_RUNTIME_PREFERRED_CANDIDATES = {
+    "g-kade": (
+        "deps/pk-skills1/gstack/g-kade",
+        "deps/pk-skills1/g-kade",
+    ),
+    "gstack": (
+        "deps/pk-skills1/gstack",
+    ),
+}
+REPO_RUNTIME_FALLBACK_ROOTS = (
+    ".llm-wiki/deps",
+    "vendor",
+    "deps",
+    "dependencies",
+    "submodules",
+)
 
 ROOT_FILES = {
     "AGENTS.md": PROMPTS / "01-AGENTS.md",
@@ -140,6 +162,10 @@ def normalize_url(value: str) -> str:
     return value.rstrip("/")
 
 
+def normalize_path_string(value: str) -> str:
+    return value.strip().rstrip("/\\")
+
+
 def env_flag(name: str) -> bool:
     value = os.getenv(name)
     if value is None:
@@ -249,6 +275,26 @@ def parse_args() -> argparse.Namespace:
         default=env_or_default("LLM_WIKI_GITVIZZ_REPO_PATH", ""),
         help="Optional local checkout path for launching GitVizz via docker-compose",
     )
+    parser.add_argument(
+        "--gitvizz-repo-url",
+        default=env_or_default("LLM_WIKI_GITVIZZ_REPO_URL", ""),
+        help="Optional GitVizz repo URL for managed local acquisition",
+    )
+    parser.add_argument(
+        "--gitvizz-checkout-path",
+        default=env_or_default("LLM_WIKI_GITVIZZ_CHECKOUT_PATH", ""),
+        help="Optional managed local checkout path for GitVizz acquisition or update",
+    )
+    parser.add_argument(
+        "--g-kade-dependency-path",
+        default=env_or_default("LLM_WIKI_G_KADE_DEPENDENCY_PATH", REPO_RUNTIME_DEFAULT_PATHS["g-kade"]),
+        help="Repo-owned richer g-kade dependency, submodule, or vendor path relative to the workspace",
+    )
+    parser.add_argument(
+        "--gstack-dependency-path",
+        default=env_or_default("LLM_WIKI_GSTACK_DEPENDENCY_PATH", REPO_RUNTIME_DEFAULT_PATHS["gstack"]),
+        help="Repo-owned richer gstack dependency, submodule, or vendor path relative to the workspace",
+    )
     return parser.parse_args()
 
 
@@ -295,6 +341,129 @@ def tool_status_line(name: str, path: str | Path | None, *, missing_note: str) -
     return f"preflight {name}: missing ({missing_note})"
 
 
+def workspace_relative_path(workspace_root: Path, raw_path: str) -> Path:
+    candidate = Path(raw_path).expanduser()
+    if candidate.is_absolute():
+        return candidate
+    return workspace_root / normalize_path_string(raw_path)
+
+
+def relative_or_absolute_path(path: Path, workspace_root: Path) -> str:
+    resolved = path.expanduser().resolve()
+    try:
+        return resolved.relative_to(workspace_root.resolve()).as_posix()
+    except ValueError:
+        return str(resolved)
+
+
+def repo_runtime_candidate_relpaths(name: str, configured_path: str) -> list[str]:
+    normalized = normalize_path_string(configured_path) or REPO_RUNTIME_DEFAULT_PATHS[name]
+    candidates = [normalized]
+    for preferred in REPO_RUNTIME_PREFERRED_CANDIDATES.get(name, ()):
+        if preferred not in candidates:
+            candidates.append(preferred)
+    for root in REPO_RUNTIME_FALLBACK_ROOTS:
+        fallback = f"{root}/{name}"
+        if fallback not in candidates:
+            candidates.append(fallback)
+    return candidates
+
+
+def richer_skill_markers(candidate: Path, wrapper_root: Path) -> list[str]:
+    if not candidate.exists() or not candidate.is_dir():
+        return []
+    if not (candidate / "SKILL.md").exists():
+        return []
+
+    markers: list[str] = []
+    child_dirs = sorted(path.name for path in candidate.iterdir() if path.is_dir())
+    child_files = sorted(path.name for path in candidate.iterdir() if path.is_file())
+    wrapper_files = {
+        path.relative_to(wrapper_root).as_posix()
+        for path in wrapper_root.rglob("*")
+        if path.is_file()
+    }
+    candidate_files = {
+        path.relative_to(candidate).as_posix()
+        for path in candidate.rglob("*")
+        if path.is_file()
+    }
+
+    for marker in sorted(RICH_MARKERS):
+        if (candidate / marker).exists():
+            markers.append(marker)
+
+    sibling_matches = sorted(name for name in child_dirs if name in RICH_SIBLING_HINTS)
+    if len(sibling_matches) >= 2:
+        markers.append(f"siblings:{','.join(sibling_matches)}")
+
+    extra_files = sorted(path for path in candidate_files if path not in wrapper_files)
+    if len(extra_files) >= 3:
+        markers.append("extra-files")
+
+    extra_markdown = [name for name in child_files if name.endswith(".md") and name != "SKILL.md"]
+    if extra_markdown:
+        markers.append("companion-docs")
+
+    if any(name.endswith(".tmpl") for name in child_files):
+        markers.append("template-assets")
+
+    return markers
+
+
+def repo_runtime_dependency_status(workspace_root: Path, name: str, configured_path: str) -> dict[str, object]:
+    wrapper_root = HOME_SKILLS_ROOT / name
+    candidate_relpaths = repo_runtime_candidate_relpaths(name, configured_path)
+    thin_candidate: Path | None = None
+    thin_reason = "missing SKILL.md"
+
+    for relpath in candidate_relpaths:
+        candidate = workspace_relative_path(workspace_root, relpath)
+        markers = richer_skill_markers(candidate, wrapper_root)
+        if markers:
+            return {
+                "name": name,
+                "contract": "repo-owned dependency/submodule/vendor path",
+                "configured_path": normalize_path_string(configured_path) or REPO_RUNTIME_DEFAULT_PATHS[name],
+                "candidate_paths": candidate_relpaths,
+                "status": "detected",
+                "detected_path": relative_or_absolute_path(candidate, workspace_root),
+                "markers": markers,
+                "manual_install_required": True,
+            }
+        if candidate.exists() and thin_candidate is None:
+            thin_candidate = candidate
+            if (candidate / "SKILL.md").exists():
+                thin_reason = "wrapper-like or incomplete runtime"
+
+    return {
+        "name": name,
+        "contract": "repo-owned dependency/submodule/vendor path",
+        "configured_path": normalize_path_string(configured_path) or REPO_RUNTIME_DEFAULT_PATHS[name],
+        "candidate_paths": candidate_relpaths,
+        "status": "present-but-thin" if thin_candidate else "missing",
+        "detected_path": relative_or_absolute_path(thin_candidate, workspace_root) if thin_candidate else None,
+        "markers": [],
+        "reason": thin_reason if thin_candidate else "not present",
+        "manual_install_required": True,
+    }
+
+
+def repo_runtime_preflight_line(status: dict[str, object]) -> str:
+    name = status["name"]
+    configured = status["configured_path"]
+    detected = status.get("detected_path")
+    state = status["status"]
+    if state == "detected":
+        markers = ", ".join(status.get("markers", []))
+        suffix = f" ({markers})" if markers else ""
+        return f"preflight {name} runtime: repo-owned dependency {detected}{suffix}"
+    if state == "present-but-thin":
+        reason = status.get("reason", "wrapper-like or incomplete runtime")
+        return f"preflight {name} runtime: present but thin at {detected} ({reason}; configured path {configured})"
+    return f"preflight {name} runtime: missing (expected repo-owned dependency at {configured})"
+
+
 def build_preflight_report(
     vault: Path,
     home_root: Path,
@@ -302,6 +471,8 @@ def build_preflight_report(
     install_home_skills: bool,
     run_setup: bool,
     allow_global_tool_install: bool,
+    g_kade_dependency_path: str,
+    gstack_dependency_path: str,
 ) -> list[str]:
     node = shutil.which("node")
     npm = shutil.which("npm")
@@ -311,6 +482,8 @@ def build_preflight_report(
     local_brv = first_existing(local_brv_candidates(vault))
     global_qmd = shutil.which("pk-qmd")
     global_brv = shutil.which("brv")
+    g_kade_runtime = repo_runtime_dependency_status(vault, "g-kade", g_kade_dependency_path)
+    gstack_runtime = repo_runtime_dependency_status(vault, "gstack", gstack_dependency_path)
 
     lines = [
         "Preflight:",
@@ -318,6 +491,10 @@ def build_preflight_report(
         f"preflight home-root: {home_root}",
         f"preflight home-skill-install: {'enabled' if install_home_skills else 'disabled (default)'}",
         f"preflight global-tool-install: {'enabled' if allow_global_tool_install else 'disabled (default)'}",
+        f"preflight g-kade wrapper: {'enabled' if install_home_skills else 'available (home install opt-in)'}",
+        f"preflight gstack wrapper: {'enabled' if install_home_skills else 'available (home install opt-in)'}",
+        repo_runtime_preflight_line(g_kade_runtime),
+        repo_runtime_preflight_line(gstack_runtime),
         tool_status_line("python", Path(sys.executable), missing_note="running interpreter unavailable"),
         tool_status_line("git", git, missing_note="required for git-based npm dependencies"),
         tool_status_line("node", node, missing_note="optional for qmd embed runner"),
@@ -483,8 +660,12 @@ def build_stack_config(args: argparse.Namespace) -> dict[str, object]:
     frontend_url = normalize_url(args.gitvizz_frontend_url)
     backend_url = normalize_url(args.gitvizz_backend_url)
     qmd_mcp_url = normalize_url(args.qmd_mcp_url)
-    vault_name = Path(args.vault).expanduser().resolve().name.lower().replace(" ", "-")
-    qmd_context = f"Primary llm-wiki-memory vault for {Path(args.vault).expanduser().resolve()}"
+    workspace_root = Path(args.vault).expanduser().resolve()
+    vault_name = workspace_root.name.lower().replace(" ", "-")
+    qmd_context = f"Primary llm-wiki-memory vault for {workspace_root}"
+    install_home_skills = resolve_home_skill_install(args)
+    g_kade_runtime = repo_runtime_dependency_status(workspace_root, "g-kade", args.g_kade_dependency_path)
+    gstack_runtime = repo_runtime_dependency_status(workspace_root, "gstack", args.gstack_dependency_path)
 
     return {
         "version": 1,
@@ -500,6 +681,26 @@ def build_stack_config(args: argparse.Namespace) -> dict[str, object]:
                 "qmd_for_repo_specific_tasks": True,
                 "brv_for_durable_preferences_and_decisions": True,
                 "skills_for_reusable_execution_shortcuts": True,
+            },
+        },
+        "agent_runtimes": {
+            "packet_wrappers": {
+                "g-kade": {
+                    "owner": PACKET_OWNER,
+                    "source_path": "skills/home/g-kade",
+                    "status": "home-install-enabled" if install_home_skills else "available-home-install-opt-in",
+                    "manual_install_required": False,
+                },
+                "gstack": {
+                    "owner": PACKET_OWNER,
+                    "source_path": "skills/home/gstack",
+                    "status": "home-install-enabled" if install_home_skills else "available-home-install-opt-in",
+                    "manual_install_required": False,
+                },
+            },
+            "repo_dependencies": {
+                "g-kade": g_kade_runtime,
+                "gstack": gstack_runtime,
             },
         },
         "pk_qmd": {
@@ -547,6 +748,8 @@ def build_stack_config(args: argparse.Namespace) -> dict[str, object]:
             "homepage_url": f"{frontend_url}/",
             "setup_url": f"{frontend_url}/",
             "github_callback_url": f"{frontend_url}/api/auth/callback/github",
+            "repo_url": args.gitvizz_repo_url or None,
+            "checkout_path": args.gitvizz_checkout_path or args.gitvizz_repo_path or None,
             "repo_path": args.gitvizz_repo_path or None,
         },
         "skills": {
@@ -672,6 +875,8 @@ def main() -> int:
         install_home_skills=install_home_skills,
         run_setup=False,
         allow_global_tool_install=global_tool_install_allowed(args),
+        g_kade_dependency_path=args.g_kade_dependency_path,
+        gstack_dependency_path=args.gstack_dependency_path,
     )
 
     if args.preflight_only:

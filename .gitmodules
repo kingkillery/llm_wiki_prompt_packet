@@ -1,0 +1,3 @@
+[submodule "pk-skills1"]
+	path = deps/pk-skills1
+	url = https://github.com/kingkillery/pk-skills1.git

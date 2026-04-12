@@ -3,4 +3,4 @@ services:
     environment:
       LLM_WIKI_QMD_SOURCE: /qmd-source
     volumes:
-      - ${LLM_WIKI_QMD_SOURCE_HOST_PATH:?set LLM_WIKI_QMD_SOURCE_HOST_PATH to your local pk-qmd checkout}:/qmd-source
+      - ${LLM_WIKI_QMD_SOURCE_HOST_PATH:?set LLM_WIKI_QMD_SOURCE_HOST_PATH to your local pk-qmd checkout}:/qmd-source:ro

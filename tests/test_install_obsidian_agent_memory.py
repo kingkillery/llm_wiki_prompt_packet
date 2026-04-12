@@ -96,6 +96,86 @@ class InstallerHomeSkillTests(unittest.TestCase):
     def test_ensure_safe_install_root_allows_explicit_home_root_override(self) -> None:
         self.module.ensure_safe_install_root(self.home_root, self.home_root, allow_home_root=True)
 
+    def test_repo_runtime_dependency_status_defaults_to_missing_reserved_path(self) -> None:
+        status = self.module.repo_runtime_dependency_status(
+            self.home_root,
+            "g-kade",
+            self.module.REPO_RUNTIME_DEFAULT_PATHS["g-kade"],
+        )
+
+        self.assertEqual(status["status"], "missing")
+        self.assertEqual(status["configured_path"], self.module.REPO_RUNTIME_DEFAULT_PATHS["g-kade"])
+        self.assertIsNone(status["detected_path"])
+
+    def test_repo_runtime_dependency_status_detects_repo_owned_richer_runtime(self) -> None:
+        runtime_root = self.home_root / "deps" / "pk-skills1" / "gstack"
+        runtime_root.mkdir(parents=True, exist_ok=True)
+        (runtime_root / "SKILL.md").write_text("repo-owned gstack runtime\n", encoding="utf-8")
+        (runtime_root / "qa").mkdir()
+        (runtime_root / "review").mkdir()
+        (runtime_root / "docs.md").write_text("runtime docs\n", encoding="utf-8")
+
+        status = self.module.repo_runtime_dependency_status(
+            self.home_root,
+            "gstack",
+            self.module.REPO_RUNTIME_DEFAULT_PATHS["gstack"],
+        )
+
+        self.assertEqual(status["status"], "detected")
+        self.assertEqual(status["detected_path"], "deps/pk-skills1/gstack")
+        self.assertIn("qa", status["markers"])
+
+    def test_build_stack_config_records_wrapper_and_repo_runtime_status(self) -> None:
+        runtime_root = self.home_root / "deps" / "pk-skills1" / "gstack" / "g-kade"
+        runtime_root.mkdir(parents=True, exist_ok=True)
+        (runtime_root / "SKILL.md").write_text("repo-owned g-kade runtime\n", encoding="utf-8")
+        (runtime_root / "kade").mkdir()
+        (runtime_root / "review").mkdir()
+        (runtime_root / "notes.md").write_text("runtime notes\n", encoding="utf-8")
+
+        args = argparse.Namespace(
+            vault=str(self.home_root),
+            install_home_skills=True,
+            skip_home_skills=False,
+            gitvizz_frontend_url="http://localhost:3000",
+            gitvizz_backend_url="http://localhost:8003",
+            qmd_mcp_url="http://localhost:8181/mcp",
+            qmd_command="pk-qmd",
+            qmd_repo_url="https://github.com/kingkillery/pk-qmd",
+            brv_command="brv",
+            allow_global_tool_install=False,
+            gitvizz_repo_url="https://github.com/example/gitvizz.git",
+            gitvizz_checkout_path="deps/gitvizz",
+            gitvizz_repo_path="",
+            g_kade_dependency_path=self.module.REPO_RUNTIME_DEFAULT_PATHS["g-kade"],
+            gstack_dependency_path=self.module.REPO_RUNTIME_DEFAULT_PATHS["gstack"],
+        )
+
+        config = self.module.build_stack_config(args)
+
+        self.assertEqual(config["agent_runtimes"]["packet_wrappers"]["g-kade"]["status"], "home-install-enabled")
+        self.assertEqual(config["agent_runtimes"]["repo_dependencies"]["g-kade"]["status"], "detected")
+        self.assertEqual(config["agent_runtimes"]["repo_dependencies"]["gstack"]["status"], "present-but-thin")
+        self.assertEqual(config["agent_runtimes"]["repo_dependencies"]["gstack"]["detected_path"], "deps/pk-skills1/gstack")
+        self.assertEqual(config["gitvizz"]["repo_url"], "https://github.com/example/gitvizz.git")
+        self.assertEqual(config["gitvizz"]["checkout_path"], "deps/gitvizz")
+
+    def test_build_preflight_report_mentions_repo_runtime_contract(self) -> None:
+        lines = self.module.build_preflight_report(
+            self.home_root,
+            self.home_root / "home",
+            install_home_skills=False,
+            run_setup=False,
+            allow_global_tool_install=False,
+            g_kade_dependency_path=self.module.REPO_RUNTIME_DEFAULT_PATHS["g-kade"],
+            gstack_dependency_path=self.module.REPO_RUNTIME_DEFAULT_PATHS["gstack"],
+        )
+
+        report = "\n".join(lines)
+        self.assertIn("preflight g-kade wrapper: available", report)
+        self.assertIn("preflight g-kade runtime: missing", report)
+        self.assertIn("deps/pk-skills1/gstack/g-kade", report)
+
 
 if __name__ == "__main__":
     unittest.main()

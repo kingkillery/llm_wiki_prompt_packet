@@ -12,8 +12,12 @@ TARGETS="${LLM_WIKI_TARGETS:-claude,codex,droid}"
 FORCE_INSTALL="${LLM_WIKI_FORCE_INSTALL:-0}"
 SKIP_GITVIZZ="${LLM_WIKI_SKIP_GITVIZZ:-1}"
 MCP_SERVER_CMD="${LLM_WIKI_MCP_SERVER_CMD:-pk-qmd mcp}"
+ENABLE_GITVIZZ="${LLM_WIKI_ENABLE_GITVIZZ:-0}"
+GITVIZZ_SOURCE="${LLM_WIKI_GITVIZZ_SOURCE:-/gitvizz-source}"
+GITVIZZ_WAIT_TIMEOUT="${LLM_WIKI_GITVIZZ_WAIT_TIMEOUT:-120}"
+MCP_UPSTREAM_HOST="${LLM_WIKI_MCP_UPSTREAM_HOST:-127.0.0.1}"
 
-mkdir -p "$VAULT_PATH" "$HOME/.claude" "$HOME/.codex" "$HOME/.factory" "$NPM_CONFIG_PREFIX" "$NPM_CONFIG_CACHE"
+mkdir -p "$VAULT_PATH" "$VAULT_PATH/.brv/context-tree" "$HOME/.claude" "$HOME/.codex" "$HOME/.factory" "$NPM_CONFIG_PREFIX" "$NPM_CONFIG_CACHE"
 
 configure_git_auth() {
   local github_token="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
@@ -24,6 +28,79 @@ configure_git_auth() {
   git config --global url."https://${github_token}:x-oauth-basic@github.com/".insteadOf https://github.com/
   git config --global url."https://${github_token}:x-oauth-basic@github.com/".insteadOf ssh://git@github.com/
   git config --global url."https://${github_token}:x-oauth-basic@github.com/".insteadOf git@github.com:
+}
+
+gitvizz_source_ready() {
+  [[ -d "$GITVIZZ_SOURCE" ]] || return 1
+  [[ -f "$GITVIZZ_SOURCE/docker-compose.yaml" || -f "$GITVIZZ_SOURCE/docker-compose.yml" ]]
+}
+
+configure_gitvizz_mode() {
+  if [[ "$ENABLE_GITVIZZ" != "1" ]]; then
+    return 0
+  fi
+
+  if [[ -z "${LLM_WIKI_GITVIZZ_FRONTEND_URL:-}" || "${LLM_WIKI_GITVIZZ_FRONTEND_URL:-}" == "http://localhost:3000" || "${LLM_WIKI_GITVIZZ_FRONTEND_URL:-}" == "http://127.0.0.1:3000" ]]; then
+    export LLM_WIKI_GITVIZZ_FRONTEND_URL="http://gitvizz-frontend:3000"
+  fi
+
+  if [[ -z "${LLM_WIKI_GITVIZZ_BACKEND_URL:-}" || "${LLM_WIKI_GITVIZZ_BACKEND_URL:-}" == "http://localhost:8003" || "${LLM_WIKI_GITVIZZ_BACKEND_URL:-}" == "http://127.0.0.1:8003" ]]; then
+    export LLM_WIKI_GITVIZZ_BACKEND_URL="http://gitvizz-backend:8003"
+  fi
+
+  if [[ -z "${LLM_WIKI_GITVIZZ_REPO_PATH:-}" ]] && gitvizz_source_ready; then
+    export LLM_WIKI_GITVIZZ_REPO_PATH="$GITVIZZ_SOURCE"
+  fi
+
+  SKIP_GITVIZZ=0
+  export LLM_WIKI_SKIP_GITVIZZ=0
+}
+
+wait_for_url() {
+  local url="$1"
+  local timeout_seconds="$2"
+
+  python3 - "$url" "$timeout_seconds" <<'PY'
+import socket
+import sys
+import time
+from urllib.parse import urlparse
+
+url = sys.argv[1]
+timeout_seconds = int(sys.argv[2])
+parsed = urlparse(url)
+host = parsed.hostname
+port = parsed.port
+
+if not host or not port:
+    raise SystemExit(f"invalid URL: {url}")
+
+deadline = time.time() + timeout_seconds
+last_error = None
+
+while time.time() < deadline:
+    try:
+        with socket.create_connection((host, port), timeout=1.5):
+            raise SystemExit(0)
+    except OSError as exc:
+        last_error = exc
+        time.sleep(1)
+
+if last_error is None:
+    last_error = RuntimeError("timed out waiting for service")
+
+print(f"Timed out waiting for {url}: {last_error}", file=sys.stderr)
+raise SystemExit(1)
+PY
+}
+
+wait_for_gitvizz() {
+  if [[ "$ENABLE_GITVIZZ" != "1" ]]; then
+    return 0
+  fi
+
+  wait_for_url "${LLM_WIKI_GITVIZZ_FRONTEND_URL:?}" "$GITVIZZ_WAIT_TIMEOUT"
+  wait_for_url "${LLM_WIKI_GITVIZZ_BACKEND_URL:?}" "$GITVIZZ_WAIT_TIMEOUT"
 }
 
 stage_qmd_source() {
@@ -79,6 +156,10 @@ bootstrap_packet() {
     setup_args+=("--qmd-source" "$LLM_WIKI_QMD_SOURCE")
   fi
 
+  if [[ "$ENABLE_GITVIZZ" == "1" ]]; then
+    setup_args+=("--skip-gitvizz-start")
+  fi
+
   if [[ "$SKIP_GITVIZZ" == "1" ]]; then
     setup_args+=("--skip-gitvizz")
   fi
@@ -125,25 +206,23 @@ run_mcp_server() {
   "$qmd_command" mcp --http --port "$upstream_port" &
   local qmd_pid=$!
 
-  node /opt/llm-wiki/docker/mcp_http_proxy.mjs "$public_port" "$upstream_port" &
+  node /opt/llm-wiki/docker/mcp_http_proxy.mjs "$public_port" "$upstream_port" "$MCP_UPSTREAM_HOST" &
   local proxy_pid=$!
 
   trap 'kill "$qmd_pid" "$proxy_pid" 2>/dev/null || true' EXIT INT TERM
 
   while kill -0 "$qmd_pid" >/dev/null 2>&1; do
-    if python3 - "$upstream_port" <<'PY'
+    if python3 - "$MCP_UPSTREAM_HOST" "$upstream_port" <<'PY'
 import socket
 import sys
 
-port = int(sys.argv[1])
-sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
-sock.settimeout(0.5)
+host = sys.argv[1]
+port = int(sys.argv[2])
 try:
-    sock.connect(("::1", port))
+    with socket.create_connection((host, port), timeout=0.5):
+        raise SystemExit(0)
 except OSError:
     raise SystemExit(1)
-finally:
-    sock.close()
 PY
     then
       break
@@ -173,19 +252,24 @@ health_check() {
 case "$MODE" in
   init)
     configure_git_auth
+    configure_gitvizz_mode
     install_packet
     ;;
   bootstrap)
     configure_git_auth
+    configure_gitvizz_mode
     stage_qmd_source
     install_packet
+    wait_for_gitvizz
     bootstrap_packet
     ;;
   health)
     configure_git_auth
+    configure_gitvizz_mode
     stage_qmd_source
     FORCE_INSTALL=1
     install_packet
+    wait_for_gitvizz
     health_check
     ;;
   shell)
@@ -193,8 +277,10 @@ case "$MODE" in
     ;;
   serve)
     configure_git_auth
+    configure_gitvizz_mode
     stage_qmd_source
     install_packet
+    wait_for_gitvizz
     bootstrap_packet
     run_mcp_server
     ;;
