@@ -1,0 +1,307 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import shutil
+import subprocess
+import sys
+import threading
+from collections import deque
+from pathlib import Path
+from typing import Any, TextIO
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from llm_wiki_failure_collector import FailureCollector, ensure_text
+
+
+MAX_CAPTURE_CHARS = 12000
+
+AGENT_METADATA: dict[str, dict[str, str]] = {
+    "claude": {
+        "display_name": "Claude Code",
+        "command": "claude",
+        "agent_name": "claude-code",
+    },
+    "codex": {
+        "display_name": "Codex",
+        "command": "codex",
+        "agent_name": "codex",
+    },
+    "droid": {
+        "display_name": "Factory Droid",
+        "command": "droid",
+        "agent_name": "factory-droid",
+    },
+    "pi": {
+        "display_name": "pi mono",
+        "command": "pi",
+        "agent_name": "pi-mono",
+    },
+}
+
+
+class TailBuffer:
+    def __init__(self, limit: int = MAX_CAPTURE_CHARS) -> None:
+        self.limit = max(256, limit)
+        self.parts: deque[str] = deque()
+        self.length = 0
+
+    def append(self, text: str) -> None:
+        if not text:
+            return
+        self.parts.append(text)
+        self.length += len(text)
+        while self.length > self.limit and self.parts:
+            removed = self.parts.popleft()
+            self.length -= len(removed)
+
+    def text(self) -> str:
+        return "".join(self.parts).strip()
+
+
+def normalize_argv(argv: list[str]) -> list[str]:
+    if argv and argv[0] == "--":
+        return argv[1:]
+    return argv
+
+
+def first_positional(argv: list[str]) -> str:
+    for item in argv:
+        if not item.startswith("-"):
+            return item
+    return ""
+
+
+def infer_mode(agent: str, argv: list[str]) -> str:
+    first = first_positional(argv)
+    args = set(argv)
+    if agent == "claude":
+        if args.intersection({"-p", "--print", "-h", "--help", "-v", "--version"}):
+            return "noninteractive"
+        if first in {"agents", "auth", "doctor", "install", "mcp", "plugin", "plugins", "setup-token", "update", "upgrade"}:
+            return "noninteractive"
+        return "interactive"
+    if agent == "codex":
+        if args.intersection({"-h", "--help", "-V", "--version"}):
+            return "noninteractive"
+        if first in {"exec", "review", "login", "logout", "mcp", "mcp-server", "app-server", "completion", "sandbox", "debug", "apply", "cloud", "exec-server", "features", "help"}:
+            return "noninteractive"
+        return "interactive"
+    if agent == "droid":
+        if args.intersection({"-h", "--help", "-v", "--version"}):
+            return "noninteractive"
+        if first in {"exec", "mcp", "plugin", "daemon", "search", "find", "computer", "update"}:
+            return "noninteractive"
+        return "interactive"
+    if agent == "pi":
+        if args.intersection({"-p", "--print", "-h", "--help", "-v", "--version", "--list-models", "--export"}):
+            return "noninteractive"
+        if first in {"install", "remove", "uninstall", "update", "list"}:
+            return "noninteractive"
+        return "interactive"
+    return "interactive"
+
+
+def resolve_command_name(agent: str, override: str = "") -> str:
+    candidate = ensure_text(override) or AGENT_METADATA[agent]["command"]
+    resolved = shutil.which(candidate)
+    if resolved:
+        return resolved
+    return candidate
+
+
+def summarize_goal(agent: str, argv: list[str]) -> str:
+    display_name = AGENT_METADATA[agent]["display_name"]
+    first = first_positional(argv)
+    if agent == "droid" and first == "exec":
+        for item in argv[1:]:
+            if item and not item.startswith("-"):
+                return ensure_text(item)
+    if agent == "claude" and ("-p" in argv or "--print" in argv):
+        for item in argv:
+            if item and not item.startswith("-"):
+                return ensure_text(item)
+    if agent == "pi" and ("-p" in argv or "--print" in argv):
+        for item in argv:
+            if item and not item.startswith("-"):
+                return ensure_text(item)
+    if first:
+        return f"Complete `{display_name}` command `{first}`."
+    return f"Launch {display_name} successfully."
+
+
+def classify_error(agent: str, returncode: int, message: str) -> tuple[str, bool]:
+    normalized = ensure_text(message).lower()
+    prefix = agent.replace("-", "_")
+    if any(token in normalized for token in ("authentication", "unauthorized", "api key", "oauth", "token")):
+        return (f"{prefix}_auth_failure", False)
+    if "rate limit" in normalized:
+        return (f"{prefix}_rate_limit", False)
+    if "billing" in normalized:
+        return (f"{prefix}_billing_error", False)
+    if any(token in normalized for token in ("not recognized as", "no such file", "not found", "could not find command", "is not installed")):
+        return (f"{prefix}_command_missing", False)
+    return (f"{prefix}_exit_{returncode}", True)
+
+
+def preview_command(command: list[str]) -> str:
+    return json.dumps(command, ensure_ascii=True)
+
+
+def write_stream_text(target: TextIO, text: str) -> None:
+    try:
+        target.write(text)
+        return
+    except UnicodeEncodeError:
+        encoding = getattr(target, "encoding", None) or "utf-8"
+        try:
+            safe_bytes = text.encode(encoding, errors="replace")
+        except LookupError:
+            encoding = "utf-8"
+            safe_bytes = text.encode(encoding, errors="replace")
+        buffer = getattr(target, "buffer", None)
+        if buffer is not None:
+            buffer.write(safe_bytes)
+            return
+        target.write(safe_bytes.decode(encoding, errors="replace"))
+
+
+def tee_stream(stream: TextIO, target: TextIO, buffer: TailBuffer) -> None:
+    try:
+        for line in iter(stream.readline, ""):
+            write_stream_text(target, line)
+            target.flush()
+            buffer.append(line)
+    finally:
+        stream.close()
+
+
+def run_command(command: list[str], cwd: Path, mode: str) -> dict[str, Any]:
+    if mode == "interactive":
+        try:
+            completed = subprocess.run(command, cwd=str(cwd), check=False)
+            return {"returncode": completed.returncode, "stdout": "", "stderr": "", "spawn_error": ""}
+        except FileNotFoundError as exc:
+            return {"returncode": 127, "stdout": "", "stderr": "", "spawn_error": str(exc)}
+
+    stdout_tail = TailBuffer()
+    stderr_tail = TailBuffer()
+    try:
+        process = subprocess.Popen(
+            command,
+            cwd=str(cwd),
+            stdin=None,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+        )
+    except FileNotFoundError as exc:
+        return {"returncode": 127, "stdout": "", "stderr": "", "spawn_error": str(exc)}
+
+    assert process.stdout is not None
+    assert process.stderr is not None
+    stdout_thread = threading.Thread(target=tee_stream, args=(process.stdout, sys.stdout, stdout_tail), daemon=True)
+    stderr_thread = threading.Thread(target=tee_stream, args=(process.stderr, sys.stderr, stderr_tail), daemon=True)
+    stdout_thread.start()
+    stderr_thread.start()
+    returncode = process.wait()
+    stdout_thread.join()
+    stderr_thread.join()
+    return {
+        "returncode": returncode,
+        "stdout": stdout_tail.text(),
+        "stderr": stderr_tail.text(),
+        "spawn_error": "",
+    }
+
+
+def build_failure_payload(
+    *,
+    workspace: Path,
+    agent: str,
+    command: list[str],
+    argv: list[str],
+    mode: str,
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    meta = AGENT_METADATA[agent]
+    error_source = ensure_text(result.get("spawn_error") or result.get("stderr") or result.get("stdout") or f"exit code {result['returncode']}")
+    error_class, auto_promote = classify_error(agent, int(result["returncode"]), error_source)
+    first = first_positional(argv)
+    evidence_parts = [
+        f"{meta['display_name']} exited with code {result['returncode']}.",
+        f"Wrapper mode: {mode}",
+        f"Workspace: {workspace}",
+        f"Command: {preview_command(command)}",
+    ]
+    if ensure_text(result.get("spawn_error")):
+        evidence_parts.append(f"Spawn error: {ensure_text(result['spawn_error'])}")
+    if ensure_text(result.get("stderr")):
+        evidence_parts.append(f"stderr:\n{ensure_text(result['stderr'])}")
+    if ensure_text(result.get("stdout")):
+        evidence_parts.append(f"stdout tail:\n{ensure_text(result['stdout'])}")
+    return {
+        "title": f"{meta['display_name']} CLI failure",
+        "kind": "workflow",
+        "goal": summarize_goal(agent, argv),
+        "problem": f"{meta['display_name']} exited before successful completion.",
+        "trigger": f"Use when {meta['display_name']} repeatedly fails with the same startup or execution error.",
+        "evidence": "\n".join(evidence_parts),
+        "tool_name": meta["command"],
+        "error_class": error_class,
+        "error_message": error_source,
+        "agent": meta["agent_name"],
+        "route_decision": "complete",
+        "source_type": f"{agent}_cli_process_wrapper",
+        "auto_promote": auto_promote,
+        "fingerprint_hint": " ".join(part for part in [agent, first, error_class, error_source[:160]] if part),
+        "benchmark": f"{agent}-cli-wrapper",
+        "tags": ["agent-cli-wrapper", agent, mode, first or "session"],
+    }
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run an agent CLI and record non-zero exits into the llm-wiki failure plane.")
+    parser.add_argument("--workspace", default=".", help="Workspace root that contains .llm-wiki/config.json")
+    parser.add_argument("--agent", choices=sorted(AGENT_METADATA), required=True, help="Agent CLI to launch.")
+    parser.add_argument("--mode", choices=("auto", "interactive", "noninteractive"), default="auto")
+    parser.add_argument("--command-name", default="", help="Override the executable name or absolute path.")
+    parser.add_argument("argv", nargs=argparse.REMAINDER, help="Arguments passed to the underlying CLI after `--`.")
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    workspace = Path(args.workspace).resolve()
+    forwarded_args = normalize_argv(list(args.argv))
+    command_name = resolve_command_name(args.agent, args.command_name)
+    mode = infer_mode(args.agent, forwarded_args) if args.mode == "auto" else args.mode
+    command = [command_name, *forwarded_args]
+    result = run_command(command, workspace, mode)
+    returncode = int(result["returncode"])
+    if returncode == 0:
+        return 0
+
+    collector = FailureCollector(workspace)
+    payload = build_failure_payload(
+        workspace=workspace,
+        agent=args.agent,
+        command=command,
+        argv=forwarded_args,
+        mode=mode,
+        result=result,
+    )
+    recorded = collector.record(payload)
+    collector.promote(fingerprint=recorded["event"]["fingerprint"], limit=1, force=False)
+    return returncode
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

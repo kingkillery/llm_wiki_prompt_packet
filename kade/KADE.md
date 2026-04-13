@@ -18,6 +18,12 @@
 
 ## Handoff Log
 
+2026-04-13T02:26:00-06:00 - Pokemon benchmark self-test path landed
+Changed: added `support/scripts/pokemon_benchmark_adapter.py` and `support/scripts/run_pokemon_benchmark.ps1` so this repo can act as the agent-under-test against Gym-Anything's Pokemon benchmark. The adapter starts a real Gym session, supports a deterministic headless smoke mode plus a wrapper-driven framework mode, reuses `support/scripts/run_llm_wiki_agent.ps1` and the existing failure-capture plane, writes prompt/task/session/verification/result artifacts under `.artifacts/pokemon-benchmark/runs/`, and includes a narrow `session-write-report` helper so the required `/root/Desktop/pokemon_session_report.json` can be created inside the live container without brittle shell quoting. `support/scripts/run_llm_wiki_agent.ps1` now also accepts `-ArgumentJson` for machine-driven noninteractive agent calls.
+Files: `support/scripts/pokemon_benchmark_adapter.py`, `support/scripts/run_pokemon_benchmark.ps1`, `support/scripts/run_llm_wiki_agent.ps1`, `.gitignore`, `.factory/memories.md`, `kade/KADE.md`, and the canonical Obsidian system map note.
+Why: the repo needed a reusable harness-owned evaluation surface for the Pokemon benchmark that preserved the existing wrapper and failure-capture behavior instead of introducing a separate one-off benchmark runner.
+Verified: [x] `python -m py_compile support/scripts/pokemon_benchmark_adapter.py`; [x] `python support/scripts/pokemon_benchmark_adapter.py smoke`; [x] `python support/scripts/pokemon_benchmark_adapter.py framework --agent codex --timeout-sec 1200`; [x] smoke verifier 100/100; [x] framework verifier 100/100.
+Next: add tested default launcher presets for Claude Code, Factory Droid, and `pi` if they need the same benchmark path, while keeping the current adapter contract benchmark-agnostic enough to reuse for other Gym-Anything tasks.
 2026-04-12T13:25:00-06:00 - Official Kade-HQ memory base and launcher split aligned
 Changed: promoted the official durable memory base to the `Kade-HQ` Obsidian vault, aligned repo mirrors to the `kade-hq` vault identity, and clarified that `kade-hq`, `g-kade`, and `gstack` all install as launcher surfaces while `g-kade` remains only the bridge skill.
 Files: `AGENTS.md`, `.factory/memories.md`, `kade/AGENTS.md`, `kade/KADE.md`, installer tests, and the official Obsidian system map note.

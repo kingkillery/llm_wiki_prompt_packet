@@ -5,3 +5,4 @@ __pycache__/
 node_modules/
 npm-debug.log*
 .llm-wiki/tools/
+.artifacts/pokemon-benchmark/
