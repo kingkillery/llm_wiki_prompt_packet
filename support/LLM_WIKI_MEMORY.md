@@ -63,8 +63,20 @@ Prefer the pipeline tools when the local MCP server is installed:
 - `skill_pipeline_run`
 - `skill_propose`
 - `skill_feedback`
+- `skill_evolve`
+- `skill_frontier`
 - `skill_get`
 - `skill_retire`
+
+Recommended lifecycle:
+
+1. `skill_lookup` before rediscovery.
+2. `skill_reflect` when a task produced a reusable shortcut or reducer packet.
+3. `skill_validate` when privacy, overlap, or promotion confidence is unclear.
+4. `skill_pipeline_run` when you want the standard reflect-plus-validate packet workflow in one pass.
+5. `skill_propose` when the candidate should be reviewed as a new skill or merge delta.
+6. `skill_feedback` after real use, then `skill_evolve` and `skill_frontier` when repeated evidence suggests a stronger version should replace the current one.
+7. `skill_get` to inspect the exact stored record and `skill_retire` when a shortcut is stale, unsafe, or superseded.
 
 The implementation guide for this lives in `SKILL_CREATION_AT_EXPERT_LEVEL.md`.
 
