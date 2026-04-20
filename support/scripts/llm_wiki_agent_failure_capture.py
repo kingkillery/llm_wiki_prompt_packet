@@ -44,6 +44,10 @@ AGENT_METADATA: dict[str, dict[str, str]] = {
 }
 
 
+def default_workspace_root() -> Path:
+    return SCRIPT_DIR.parent.resolve()
+
+
 class TailBuffer:
     def __init__(self, limit: int = MAX_CAPTURE_CHARS) -> None:
         self.limit = max(256, limit)
@@ -269,7 +273,7 @@ def build_failure_payload(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run an agent CLI and record non-zero exits into the llm-wiki failure plane.")
-    parser.add_argument("--workspace", default=".", help="Workspace root that contains .llm-wiki/config.json")
+    parser.add_argument("--workspace", default=str(default_workspace_root()), help="Workspace root that contains .llm-wiki/config.json")
     parser.add_argument("--agent", choices=sorted(AGENT_METADATA), required=True, help="Agent CLI to launch.")
     parser.add_argument("--mode", choices=("auto", "interactive", "noninteractive"), default="auto")
     parser.add_argument("--command-name", default="", help="Override the executable name or absolute path.")
