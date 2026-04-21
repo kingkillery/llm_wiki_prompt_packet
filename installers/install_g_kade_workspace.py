@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -80,7 +81,7 @@ def parse_args() -> argparse.Namespace:
     home_skill_group.add_argument(
         "--install-home-skills",
         action="store_true",
-        help="Install packet-owned wrapper skills into ~/.agents, ~/.codex, and ~/.claude",
+        help="Install packet-owned wrapper skills into ~/.agents, ~/.codex, ~/.claude, and ~/.pi/agent",
     )
     home_skill_group.add_argument(
         "--skip-home-skills",
@@ -116,6 +117,11 @@ def parse_args() -> argparse.Namespace:
         help="Skip running setup and health helpers after installing files",
     )
     parser.add_argument(
+        "--enable-gitvizz",
+        action="store_true",
+        help="Run setup and health helpers without forcing GitVizz to be skipped.",
+    )
+    parser.add_argument(
         "--qmd-command",
         default=os.getenv("LLM_WIKI_QMD_COMMAND", "pk-qmd"),
         help="Command name for the custom QMD fork",
@@ -124,6 +130,11 @@ def parse_args() -> argparse.Namespace:
         "--qmd-repo-url",
         default=os.getenv("LLM_WIKI_QMD_REPO_URL", "https://github.com/kingkillery/pk-qmd"),
         help="Packet fallback source for the custom pk-qmd fork",
+    )
+    parser.add_argument(
+        "--qmd-repo-ref",
+        default=os.getenv("LLM_WIKI_QMD_REPO_REF", PACKET.DEFAULT_QMD_REPO_REF),
+        help="Pinned commit or tag for the managed pk-qmd checkout",
     )
     parser.add_argument(
         "--qmd-mcp-url",
@@ -202,6 +213,42 @@ def detect_workspace_root(start: Path) -> Path:
         return probe
     root = result.stdout.strip()
     return Path(root).resolve() if root else probe
+
+
+def maybe_init_pk_skills_submodule(workspace_root: Path, *, dry_run: bool) -> list[str]:
+    submodule_root = workspace_root / PACKET.PK_SKILLS_SUBMODULE_PATH
+    if submodule_root.exists():
+        return [f"info   pk-skills1 source present: {submodule_root}"]
+
+    gitmodules_path = workspace_root / ".gitmodules"
+    if not gitmodules_path.exists():
+        return []
+
+    try:
+        gitmodules_text = gitmodules_path.read_text(encoding="utf-8")
+    except OSError:
+        return []
+
+    if f"path = {PACKET.PK_SKILLS_SUBMODULE_PATH}" not in gitmodules_text:
+        return []
+
+    if dry_run:
+        return [f"info   would initialize submodule: {PACKET.PK_SKILLS_SUBMODULE_PATH}"]
+
+    git = shutil.which("git") or shutil.which("git.exe")
+    if not git:
+        return [f"warn   unable to initialize {PACKET.PK_SKILLS_SUBMODULE_PATH} (git not found)"]
+
+    result = subprocess.run(
+        [git, "-C", str(workspace_root), "submodule", "update", "--init", "--recursive", PACKET.PK_SKILLS_SUBMODULE_PATH],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or f"exit code {result.returncode}"
+        return [f"warn   unable to initialize {PACKET.PK_SKILLS_SUBMODULE_PATH} ({detail})"]
+    return [f"init   {PACKET.PK_SKILLS_SUBMODULE_PATH}"]
 
 
 def read_skill_summary(skill_md: Path | None) -> str:
@@ -426,6 +473,30 @@ def scaffold_repo_local_skills(
                     force=force,
                     dry_run=dry_run,
                 ),
+                PACKET.copy_file(
+                    PACKET.HOME_SKILLS_ROOT / "llm-wiki-skills" / "SKILL.md",
+                    skill_root / "llm-wiki-skills" / "SKILL.md",
+                    force=force,
+                    dry_run=dry_run,
+                ),
+                PACKET.copy_file(
+                    PACKET.HOME_SKILLS_ROOT / "llm-wiki-skills" / "agents" / "openai.yaml",
+                    skill_root / "llm-wiki-skills" / "agents" / "openai.yaml",
+                    force=force,
+                    dry_run=dry_run,
+                ),
+                PACKET.copy_file(
+                    PACKET.HOME_SKILLS_ROOT / "pokemon-benchmark" / "SKILL.md",
+                    skill_root / "pokemon-benchmark" / "SKILL.md",
+                    force=force,
+                    dry_run=dry_run,
+                ),
+                PACKET.copy_file(
+                    PACKET.HOME_SKILLS_ROOT / "pokemon-benchmark" / "agents" / "openai.yaml",
+                    skill_root / "pokemon-benchmark" / "agents" / "openai.yaml",
+                    force=force,
+                    dry_run=dry_run,
+                ),
             ]
         )
     return actions
@@ -559,22 +630,39 @@ def required_paths(workspace_root: Path) -> list[Path]:
         workspace_root / "AGENTS.md",
         workspace_root / "CLAUDE.md",
         workspace_root / "LLM_WIKI_MEMORY.md",
+        workspace_root / "SYSTEM_CONTRACT.md",
+        workspace_root / "KNOWN_ISSUES.md",
         workspace_root / ".llm-wiki" / "config.json",
+        workspace_root / "scripts" / "llm_wiki_memory_runtime.py",
+        workspace_root / "scripts" / "pokemon_benchmark_adapter.py",
+        workspace_root / "scripts" / "run_pokemon_benchmark.ps1",
+        workspace_root / "scripts" / "llm_wiki_packet.py",
+        workspace_root / "scripts" / "llm_wiki_packet.ps1",
+        workspace_root / "scripts" / "llm_wiki_packet.sh",
+        workspace_root / "scripts" / "llm_wiki_packet.cmd",
         workspace_root / "scripts" / "setup_llm_wiki_memory.ps1",
         workspace_root / "scripts" / "setup_llm_wiki_memory.sh",
+        workspace_root / "scripts" / "setup_llm_wiki_memory.cmd",
         workspace_root / ".agents" / "skills" / "kade-hq" / "SKILL.md",
         workspace_root / ".agents" / "skills" / "g-kade" / "SKILL.md",
         workspace_root / ".agents" / "skills" / "gstack" / "SKILL.md",
+        workspace_root / ".agents" / "skills" / "llm-wiki-skills" / "SKILL.md",
+        workspace_root / ".agents" / "skills" / "pokemon-benchmark" / "SKILL.md",
         workspace_root / ".codex" / "skills" / "kade-hq" / "SKILL.md",
         workspace_root / ".codex" / "skills" / "g-kade" / "SKILL.md",
         workspace_root / ".codex" / "skills" / "gstack" / "SKILL.md",
+        workspace_root / ".codex" / "skills" / "llm-wiki-skills" / "SKILL.md",
+        workspace_root / ".codex" / "skills" / "pokemon-benchmark" / "SKILL.md",
         workspace_root / ".claude" / "skills" / "kade-hq" / "SKILL.md",
         workspace_root / ".claude" / "skills" / "g-kade" / "SKILL.md",
         workspace_root / ".claude" / "skills" / "gstack" / "SKILL.md",
+        workspace_root / ".claude" / "skills" / "llm-wiki-skills" / "SKILL.md",
+        workspace_root / ".claude" / "skills" / "pokemon-benchmark" / "SKILL.md",
         workspace_root / "kade" / "AGENTS.md",
         workspace_root / "kade" / "KADE.md",
         workspace_root / "scripts" / "check_llm_wiki_memory.ps1",
         workspace_root / "scripts" / "check_llm_wiki_memory.sh",
+        workspace_root / "scripts" / "check_llm_wiki_memory.cmd",
     ]
 
 
@@ -583,21 +671,20 @@ def run_helper(
     *,
     helper_kind: str,
     allow_global_tool_install: bool,
+    skip_gitvizz: bool,
 ) -> tuple[list[str], int]:
     if os.name == "nt":
         script_name = f"{helper_kind}_llm_wiki_memory.ps1"
         helper = workspace_root / "scripts" / script_name
-        if helper_kind == "setup":
-            command = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(helper), "-SkipGitvizz"]
-        else:
-            command = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(helper), "-SkipGitvizz"]
+        command = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(helper)]
+        if skip_gitvizz:
+            command.append("--skip-gitvizz")
     else:
         script_name = f"{helper_kind}_llm_wiki_memory.sh"
         helper = workspace_root / "scripts" / script_name
-        if helper_kind == "setup":
-            command = ["bash", str(helper), "--skip-gitvizz"]
-        else:
-            command = ["bash", str(helper), "--skip-gitvizz"]
+        command = ["bash", str(helper)]
+        if skip_gitvizz:
+            command.append("--skip-gitvizz")
 
     env = os.environ.copy()
     if allow_global_tool_install:
@@ -660,6 +747,7 @@ def main() -> int:
         )
         return 0
 
+    submodule_actions = maybe_init_pk_skills_submodule(workspace_root, dry_run=args.dry_run)
     gkade_runtime = repo_runtime_dependency(workspace_root, "g-kade", args.g_kade_dependency_path)
     gstack_runtime = repo_runtime_dependency(workspace_root, "gstack", args.gstack_dependency_path)
     layer_result_label = layering_result(gkade_runtime, gstack_runtime)
@@ -676,6 +764,7 @@ def main() -> int:
         install_home_skills=install_home_skills,
         qmd_command=args.qmd_command,
         qmd_repo_url=args.qmd_repo_url,
+        qmd_repo_ref=args.qmd_repo_ref,
         qmd_mcp_url=args.qmd_mcp_url,
         brv_command=args.brv_command,
         install_scope=args.install_scope,
@@ -701,6 +790,7 @@ def main() -> int:
         skip_home_skills=skip_home_skills,
         args=packet_args,
     )
+    actions.extend(submodule_actions)
     actions.extend(
         scaffold_repo_local_skills(
             workspace_root,
@@ -733,6 +823,7 @@ def main() -> int:
                 workspace_root,
                 helper_kind="setup",
                 allow_global_tool_install=PACKET.global_tool_install_allowed(args),
+                skip_gitvizz=not args.enable_gitvizz,
             )
             verification.extend(setup_output)
             if setup_code != 0:
@@ -741,6 +832,7 @@ def main() -> int:
                 workspace_root,
                 helper_kind="check",
                 allow_global_tool_install=PACKET.global_tool_install_allowed(args),
+                skip_gitvizz=not args.enable_gitvizz,
             )
             verification.extend(health_output)
             if health_code != 0:

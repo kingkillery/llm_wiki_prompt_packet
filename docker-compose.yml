@@ -7,7 +7,7 @@ services:
     container_name: llm-wiki-prompt-packet
     environment:
       LLM_WIKI_VAULT: /workspace
-      LLM_WIKI_TARGETS: ${LLM_WIKI_TARGETS:-claude,codex,droid}
+      LLM_WIKI_TARGETS: ${LLM_WIKI_TARGETS:-claude,codex,droid,pi}
       LLM_WIKI_FORCE_INSTALL: ${LLM_WIKI_FORCE_INSTALL:-0}
       LLM_WIKI_SKIP_GITVIZZ: ${LLM_WIKI_SKIP_GITVIZZ:-1}
       LLM_WIKI_ENABLE_GITVIZZ: ${LLM_WIKI_ENABLE_GITVIZZ:-0}
@@ -31,6 +31,7 @@ services:
       LLM_WIKI_MCP_UPSTREAM_HOST: ${LLM_WIKI_MCP_UPSTREAM_HOST:-127.0.0.1}
       LLM_WIKI_AGENT_API_TOKEN: ${LLM_WIKI_AGENT_API_TOKEN:-}
       LLM_WIKI_AGENT_API_BIND_HOST: ${LLM_WIKI_AGENT_API_BIND_HOST:-0.0.0.0}
+      LLM_WIKI_AGENT_API_HOST_BIND_HOST: ${LLM_WIKI_MCP_BIND_HOST:-127.0.0.1}
     ports:
       - "${LLM_WIKI_MCP_BIND_HOST:-127.0.0.1}:${LLM_WIKI_MCP_PORT:-8181}:8181"
     volumes:

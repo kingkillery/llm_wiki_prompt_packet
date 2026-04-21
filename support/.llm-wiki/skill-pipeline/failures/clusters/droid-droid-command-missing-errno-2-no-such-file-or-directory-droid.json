@@ -1,0 +1,26 @@
+{
+  "id": "cluster-droid-droid-command-missing-errno-2-no-such-file-or-directory-droid",
+  "fingerprint": "droid-droid-command-missing-errno-2-no-such-file-or-directory-droid",
+  "title": "Factory Droid CLI failure",
+  "kind": "workflow",
+  "goal": "Launch Factory Droid successfully.",
+  "applies_to": [],
+  "count": 2,
+  "unique_sessions": 2,
+  "session_keys": [
+    "failure-376d72e0758b",
+    "failure-cea0b8593f0c"
+  ],
+  "skill_ids": [],
+  "latest_failure_at": "2026-04-13T01:28:18Z",
+  "error_classes": {
+    "droid_command_missing": 2
+  },
+  "event_refs": [
+    ".llm-wiki/skill-pipeline/failures/events/2026-04-13--droid-droid-command-missing-errno-2-no-such-file-or-directory-droid--failure-cea0b8593f0c.json",
+    ".llm-wiki/skill-pipeline/failures/events/2026-04-13--droid-droid-command-missing-errno-2-no-such-file-or-directory-droid--failure-376d72e0758b.json"
+  ],
+  "promotion_status": "pending",
+  "last_promotion_at": "",
+  "updated_at": "2026-04-13T01:28:18Z"
+}

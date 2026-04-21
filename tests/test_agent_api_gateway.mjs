@@ -57,7 +57,8 @@ async function startGateway(options) {
       ...process.env,
       LLM_WIKI_GITVIZZ_BACKEND_URL: options.graphUrl || "",
       LLM_WIKI_AGENT_API_TOKEN: options.token || "",
-      LLM_WIKI_AGENT_API_BIND_HOST: "127.0.0.1",
+      LLM_WIKI_AGENT_API_BIND_HOST: options.bindHost || "127.0.0.1",
+      LLM_WIKI_AGENT_API_UNSAFE_NO_AUTH: options.allowUnsafeNoAuth ? "1" : "",
       LLM_WIKI_BRV_QUERY_SCRIPT: options.queryScript || "",
       LLM_WIKI_BRV_CURATE_SCRIPT: options.curateScript || "",
       LLM_WIKI_BRV_COMMAND: options.brvCommand || "brv",
@@ -82,6 +83,16 @@ async function startGateway(options) {
       await new Promise((resolve) => child.on("close", resolve));
     },
   };
+}
+
+async function waitForExit(child, timeoutMs = 5000) {
+  return await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Process did not exit in time")), timeoutMs);
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      resolve(code);
+    });
+  });
 }
 
 test("gateway proxies /mcp, /graph, and memory routes without auth in local mode", async (t) => {
@@ -196,4 +207,37 @@ test("gateway enforces bearer auth when a token is configured", async (t) => {
     headers: { Authorization: "Bearer secret-token" },
   });
   assert.equal(authorized.status, 200);
+});
+
+test("gateway refuses non-loopback binds without auth unless explicitly overridden", async () => {
+  const qmd = createJsonServer(async (_req, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ ok: true }));
+  });
+  const { port: qmdPort } = await listen(qmd.server);
+  const probe = http.createServer();
+  const { port: gatewayPort } = await listen(probe);
+  await closeServer(probe);
+
+  const child = spawn(process.execPath, [gatewayScript, String(gatewayPort), String(qmdPort), "127.0.0.1"], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      LLM_WIKI_AGENT_API_BIND_HOST: "0.0.0.0",
+      LLM_WIKI_VAULT: repoRoot,
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
+  });
+
+  let stderr = "";
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk.toString("utf-8");
+  });
+
+  const exitCode = await waitForExit(child);
+  await closeServer(qmd.server);
+
+  assert.notEqual(exitCode, 0);
+  assert.match(stderr, /Refusing to bind 0\.0\.0\.0/);
 });

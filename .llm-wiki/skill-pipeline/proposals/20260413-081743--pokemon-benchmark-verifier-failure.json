@@ -1,0 +1,25 @@
+{
+  "id": "proposal-pokemon-benchmark-verifier-failure-38e961fa",
+  "title": "Pokemon benchmark verifier failure",
+  "action": "create_skill",
+  "reason": "Promote repeated failure evidence into an EvoSkill mutation.",
+  "failure_summary": "Repeated failure cluster codex-start-server-capture-state-1-pokemon-benchmark-verifier-failure triggered 3 times across 3 sessions.",
+  "skill_id": "",
+  "candidate_skill_id": "",
+  "related_skill_ids": [],
+  "duplicate_matches": [],
+  "history_refs": [
+    ".llm-wiki/skill-pipeline/failures/events/2026-04-13--codex-start-server-capture-state-1-pokemon-benchmark-verifier-failure--failure-82f43d1d5312.json",
+    ".llm-wiki/skill-pipeline/failures/events/2026-04-13--codex-start-server-capture-state-1-pokemon-benchmark-verifier-failure--failure-f55b42e1de40.json",
+    ".llm-wiki/skill-pipeline/failures/events/2026-04-13--codex-start-server-capture-state-1-pokemon-benchmark-verifier-failure--failure-1e3e498684f3.json"
+  ],
+  "benchmark": "pokemon-start_server_capture_state@1",
+  "iteration": 0,
+  "packet_id": "packet-pokemon-benchmark-verifier-failure-81f298a7",
+  "packet_path": ".llm-wiki/skill-pipeline/packets/20260413-081743--pokemon-benchmark-verifier-failure.json",
+  "validation_status": "blocked",
+  "validation_score": 20,
+  "validation_path": ".llm-wiki/skill-pipeline/validations/20260413-081743--pokemon-benchmark-verifier-failure.json",
+  "delta_path": ".llm-wiki/skill-pipeline/deltas/20260413-081743--pokemon-benchmark-verifier-failure.json",
+  "created_at": "2026-04-13T08:17:43Z"
+}

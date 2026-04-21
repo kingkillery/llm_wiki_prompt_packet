@@ -52,6 +52,21 @@ class GKadeInstallerTests(unittest.TestCase):
             os.environ.pop("LLM_WIKI_SKIP_HOME_SKILLS", None)
             self.assertTrue(self.module.resolve_g_kade_home_skill_install(args))
 
+    def test_maybe_init_pk_skills_submodule_reports_missing_git_or_would_init(self) -> None:
+        gitmodules = self.workspace_root / ".gitmodules"
+        gitmodules.write_text(
+            '[submodule "pk-skills1"]\n\tpath = deps/pk-skills1\n\turl = https://github.com/kingkillery/pk-skills1.git\n',
+            encoding="utf-8",
+        )
+
+        dry_run_actions = self.module.maybe_init_pk_skills_submodule(self.workspace_root, dry_run=True)
+        self.assertIn("would initialize submodule", "\n".join(dry_run_actions))
+
+        with mock.patch.object(self.module.shutil, "which", return_value=None):
+            actions = self.module.maybe_init_pk_skills_submodule(self.workspace_root, dry_run=False)
+
+        self.assertIn("git not found", "\n".join(actions))
+
     def test_repo_runtime_dependency_prefers_repo_owned_reserved_path(self) -> None:
         runtime_root = self.workspace_root / "deps" / "pk-skills1" / "gstack"
         runtime_root.mkdir(parents=True, exist_ok=True)
@@ -116,12 +131,18 @@ class GKadeInstallerTests(unittest.TestCase):
             self.workspace_root / ".agents" / "skills" / "kade-hq" / "SKILL.md",
             self.workspace_root / ".agents" / "skills" / "g-kade" / "SKILL.md",
             self.workspace_root / ".agents" / "skills" / "gstack" / "SKILL.md",
+            self.workspace_root / ".agents" / "skills" / "llm-wiki-skills" / "SKILL.md",
+            self.workspace_root / ".agents" / "skills" / "pokemon-benchmark" / "SKILL.md",
             self.workspace_root / ".codex" / "skills" / "kade-hq" / "SKILL.md",
             self.workspace_root / ".codex" / "skills" / "g-kade" / "SKILL.md",
             self.workspace_root / ".codex" / "skills" / "gstack" / "SKILL.md",
+            self.workspace_root / ".codex" / "skills" / "llm-wiki-skills" / "SKILL.md",
+            self.workspace_root / ".codex" / "skills" / "pokemon-benchmark" / "SKILL.md",
             self.workspace_root / ".claude" / "skills" / "kade-hq" / "SKILL.md",
             self.workspace_root / ".claude" / "skills" / "g-kade" / "SKILL.md",
             self.workspace_root / ".claude" / "skills" / "gstack" / "SKILL.md",
+            self.workspace_root / ".claude" / "skills" / "llm-wiki-skills" / "SKILL.md",
+            self.workspace_root / ".claude" / "skills" / "pokemon-benchmark" / "SKILL.md",
             self.workspace_root / "kade" / "AGENTS.md",
             self.workspace_root / "kade" / "KADE.md",
             self.home_root / ".kade" / "HUMAN.md",
@@ -132,6 +153,8 @@ class GKadeInstallerTests(unittest.TestCase):
 
         gkade_text = (self.workspace_root / ".agents" / "skills" / "g-kade" / "SKILL.md").read_text(encoding="utf-8")
         kadehq_text = (self.workspace_root / ".agents" / "skills" / "kade-hq" / "SKILL.md").read_text(encoding="utf-8")
+        llm_wiki_skills_text = (self.workspace_root / ".agents" / "skills" / "llm-wiki-skills" / "SKILL.md").read_text(encoding="utf-8")
+        benchmark_text = (self.workspace_root / ".agents" / "skills" / "pokemon-benchmark" / "SKILL.md").read_text(encoding="utf-8")
         human_text = (self.home_root / ".kade" / "HUMAN.md").read_text(encoding="utf-8")
         self.assertIn("g-kade is only the unifier skill", kadehq_text)
         self.assertIn("Fastest Successful Install", gkade_text)
@@ -140,6 +163,9 @@ class GKadeInstallerTests(unittest.TestCase):
         self.assertIn("Repo Runtime Dependency", gkade_text)
         self.assertIn("deps/pk-skills1/gstack/g-kade", gkade_text)
         self.assertIn("detected", gkade_text)
+        self.assertIn("skill_lookup", llm_wiki_skills_text)
+        self.assertIn("skill_pipeline_run", llm_wiki_skills_text)
+        self.assertIn("run_pokemon_benchmark.ps1", benchmark_text)
         self.assertIn("How to Work with Kade", human_text)
         self.assertNotIn("This is the global KADE human profile.", human_text)
 
@@ -254,6 +280,29 @@ class GKadeInstallerTests(unittest.TestCase):
         self.assertTrue((self.workspace_root / "kade" / "AGENTS.md").exists())
         self.assertTrue((self.workspace_root / "kade" / "KADE.md").exists())
         self.assertFalse((self.home_root / ".kade" / "HUMAN.md").exists())
+
+    def test_run_helper_uses_runtime_style_skip_gitvizz_flag_on_windows(self) -> None:
+        scripts_dir = self.workspace_root / "scripts"
+        scripts_dir.mkdir(parents=True, exist_ok=True)
+        (scripts_dir / "setup_llm_wiki_memory.ps1").write_text("Write-Host ok\n", encoding="utf-8")
+
+        completed = mock.Mock(returncode=0, stdout="", stderr="")
+        with mock.patch.object(self.module, "os") as os_mock:
+            os_mock.name = "nt"
+            os_mock.environ.copy.return_value = {}
+            with mock.patch.object(self.module.subprocess, "run", return_value=completed) as run_mock:
+                output, code = self.module.run_helper(
+                    self.workspace_root,
+                    helper_kind="setup",
+                    allow_global_tool_install=False,
+                    skip_gitvizz=True,
+                )
+
+        self.assertEqual(code, 0)
+        self.assertTrue(output[0].startswith("$ powershell"))
+        invoked = run_mock.call_args.args[0]
+        self.assertIn("--skip-gitvizz", invoked)
+        self.assertNotIn("-SkipGitvizz", invoked)
 
 
 if __name__ == "__main__":

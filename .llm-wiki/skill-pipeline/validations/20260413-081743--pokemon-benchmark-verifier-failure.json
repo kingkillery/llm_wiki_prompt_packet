@@ -1,0 +1,285 @@
+{
+  "status": "blocked",
+  "score": 20,
+  "min_validation_score": 7,
+  "blockers": [
+    "At least one applies-to pattern is required.",
+    "Fast path is required and should be reusable.",
+    "Complete route requires a substantive outcome or reusable fast_path."
+  ],
+  "warnings": [
+    "Preconditions are missing or too short.",
+    "skip_steps_estimate should be positive."
+  ],
+  "checks": [
+    {
+      "name": "privacy",
+      "status": "pass",
+      "detail": "No obvious PII detected."
+    },
+    {
+      "name": "title",
+      "status": "pass",
+      "detail": "Skill title is specific enough."
+    },
+    {
+      "name": "kind",
+      "status": "pass",
+      "detail": "Kind `workflow` matches the recommended taxonomy."
+    },
+    {
+      "name": "applies_to",
+      "status": "fail",
+      "detail": "At least one applies-to pattern is required."
+    },
+    {
+      "name": "trigger",
+      "status": "pass",
+      "detail": "Trigger is concrete."
+    },
+    {
+      "name": "problem",
+      "status": "pass",
+      "detail": "Problem statement is grounded."
+    },
+    {
+      "name": "preconditions",
+      "status": "warn",
+      "detail": "Preconditions are missing or too short."
+    },
+    {
+      "name": "proposal_action",
+      "status": "pass",
+      "detail": "Proposal action is valid."
+    },
+    {
+      "name": "surrogate_verdict",
+      "status": "pass",
+      "detail": "Surrogate verdict is valid."
+    },
+    {
+      "name": "verification_mode",
+      "status": "pass",
+      "detail": "Verification mode `heuristic` is supported."
+    },
+    {
+      "name": "judge_choice",
+      "status": "pass",
+      "detail": "Judge choice is normalized to A/B."
+    },
+    {
+      "name": "fast_path",
+      "status": "fail",
+      "detail": "Fast path is required and should be reusable."
+    },
+    {
+      "name": "failure_modes",
+      "status": "pass",
+      "detail": "Failure modes captured."
+    },
+    {
+      "name": "evidence",
+      "status": "pass",
+      "detail": "Evidence is substantive."
+    },
+    {
+      "name": "skip_steps",
+      "status": "warn",
+      "detail": "skip_steps_estimate should be positive."
+    },
+    {
+      "name": "briefing",
+      "status": "pass",
+      "detail": "Long-task context was captured with a reducer packet and supporting brief."
+    },
+    {
+      "name": "route_decision_present",
+      "status": "pass",
+      "detail": "Long-task context includes an explicit route decision."
+    },
+    {
+      "name": "route_decision_valid",
+      "status": "pass",
+      "detail": "Route decision `complete` is valid."
+    },
+    {
+      "name": "hop_budget",
+      "status": "pass",
+      "detail": "hop_count is within the configured limit (2)."
+    },
+    {
+      "name": "retry_budget",
+      "status": "pass",
+      "detail": "retry_count is within the configured limit (1)."
+    },
+    {
+      "name": "route_complete",
+      "status": "fail",
+      "detail": "Complete route requires a substantive outcome or reusable fast_path."
+    },
+    {
+      "name": "summary_only",
+      "status": "pass",
+      "detail": "Packet stays summary-only and references artifacts for raw detail."
+    },
+    {
+      "name": "dedupe",
+      "status": "pass",
+      "detail": "No strong duplicate detected."
+    }
+  ],
+  "candidate": {
+    "skill_id": "",
+    "target_skill_id": "",
+    "parent_skill_id": "",
+    "title": "Pokemon benchmark verifier failure",
+    "kind": "workflow",
+    "applies_to": [],
+    "problem": "The framework run finished without satisfying the Pokemon verifier contract.",
+    "trigger": "Use when the Pokemon benchmark leaves the report, state, screenshot, or save contract incomplete.",
+    "preconditions": "",
+    "fast_path": "",
+    "failure_modes": "- Missing pokemon session report",
+    "evidence": "- Failure example 1: pokemon_benchmark_verifier_failure: Missing pokemon session report\nVerifier feedback: Missing pokemon session report\nWrapper return code: 1\nTask contract: C:\\dev\\Desktop-Benchmarks\\Gym-Anything\\gym-anything\\benchmarks\\cua_world\\environments\\pokemon_agent_env\\tasks\\start_server_capture_state\\task.json\nRun directory: C:\\dev\\Desktop-Projects\\llm_wiki_prompt_packet\\llm_wiki_prompt_packet\\.artifacts\\pokemon-benchmark\\runs\\20260413_021008_framework\nError class: pokemon_benchmark_verifier_failure\nError message: Missing pokemon session report\n- Failure example 2: pokemon_benchmark_verifier_failure: Missing pokemon session report\nWrapper return code: 0\nRun directory: C:\\dev\\Desktop-Projects\\llm_wiki_prompt_packet\\llm_wiki_prompt_packet\\.artifacts\\pokemon-benchmark\\runs\\20260413_021137_framework\n- Failure example 3: pokemon_benchmark_verifier_failure: Missing pokemon session report\nRun directory: C:\\dev\\Desktop-Projects\\llm_wiki_prompt_packet\\llm_wiki_prompt_packet\\.artifacts\\pokemon-benchmark\\runs\\20260413_021549_framework\nReferences:\n- C:\\dev\\Desktop-Benchmarks\\Gym-Anything\\gym-anything\\benchmarks\\cua_world\\environments\\pokemon_agent_env\\tasks\\start_server_capture_state\\task.json",
+    "http_candidate": false,
+    "source_type": "summary",
+    "skip_steps_estimate": 0,
+    "confidence": "medium",
+    "last_validated": "",
+    "important_context": "",
+    "observations": [],
+    "risks": [],
+    "next_actions": [],
+    "files": [],
+    "references": [
+      "C:\\dev\\Desktop-Benchmarks\\Gym-Anything\\gym-anything\\benchmarks\\cua_world\\environments\\pokemon_agent_env\\tasks\\start_server_capture_state\\task.json"
+    ],
+    "outcome": "",
+    "brief_refs": [
+      ".llm-wiki/skill-pipeline/briefs/20260413-081743--pokemon-benchmark-verifier-failure.md"
+    ],
+    "route_decision": "complete",
+    "route_reason": "Repeated failure cluster codex-start-server-capture-state-1-pokemon-benchmark-verifier-failure reached promotion threshold.",
+    "unresolved_questions": [],
+    "artifact_refs": [
+      ".artifacts/pokemon-benchmark/runs/20260413_021549_framework/task_contract.json",
+      ".artifacts/pokemon-benchmark/runs/20260413_021549_framework/framework_prompt.md",
+      ".artifacts/pokemon-benchmark/runs/20260413_021549_framework/wrapper_stdout.txt",
+      ".artifacts/pokemon-benchmark/runs/20260413_021549_framework/wrapper_stderr.txt",
+      ".artifacts/pokemon-benchmark/runs/20260413_021549_framework/wrapper_last_message.txt",
+      ".artifacts/pokemon-benchmark/runs/20260413_021549_framework/verification.json",
+      ".artifacts/pokemon-benchmark/runs/20260413_021549_framework/exports/pokemon_state.json",
+      ".artifacts/pokemon-benchmark/runs/20260413_021549_framework/exports/pokemon_screenshot.png",
+      ".artifacts/pokemon-benchmark/runs/20260413_021549_framework/exports/pokemon_server.log",
+      ".artifacts/pokemon-benchmark/runs/20260413_021549_framework/container.log",
+      ".artifacts/pokemon-benchmark/runs/20260413_021137_framework/task_contract.json",
+      ".artifacts/pokemon-benchmark/runs/20260413_021137_framework/framework_prompt.md",
+      ".artifacts/pokemon-benchmark/runs/20260413_021137_framework/wrapper_stdout.txt",
+      ".artifacts/pokemon-benchmark/runs/20260413_021137_framework/wrapper_stderr.txt",
+      ".artifacts/pokemon-benchmark/runs/20260413_021137_framework/wrapper_last_message.txt",
+      ".artifacts/pokemon-benchmark/runs/20260413_021137_framework/verification.json",
+      ".artifacts/pokemon-benchmark/runs/20260413_021137_framework/exports/pokemon_state.json",
+      ".artifacts/pokemon-benchmark/runs/20260413_021137_framework/exports/pokemon_screenshot.png",
+      ".artifacts/pokemon-benchmark/runs/20260413_021137_framework/container.log",
+      ".artifacts/pokemon-benchmark/runs/20260413_021008_framework/task_contract.json",
+      ".artifacts/pokemon-benchmark/runs/20260413_021008_framework/framework_prompt.md",
+      ".artifacts/pokemon-benchmark/runs/20260413_021008_framework/wrapper_stdout.txt",
+      ".artifacts/pokemon-benchmark/runs/20260413_021008_framework/wrapper_stderr.txt",
+      ".artifacts/pokemon-benchmark/runs/20260413_021008_framework/verification.json",
+      ".artifacts/pokemon-benchmark/runs/20260413_021008_framework/container.log",
+      ".llm-wiki/skill-pipeline/briefs/20260413-081743--pokemon-benchmark-verifier-failure.md"
+    ],
+    "assigned_target": "",
+    "parent_packet_id": "",
+    "hop_count": 0,
+    "retry_count": 0,
+    "long_task": false,
+    "proposal_action": "create_skill",
+    "proposal_reason": "Promote repeated failure evidence into an EvoSkill mutation.",
+    "failure_summary": "Repeated failure cluster codex-start-server-capture-state-1-pokemon-benchmark-verifier-failure triggered 3 times across 3 sessions.",
+    "benchmark": "pokemon-start_server_capture_state@1",
+    "iteration": 0,
+    "baseline_validation_score": 0,
+    "surrogate_verdict": "",
+    "surrogate_summary": "",
+    "surrogate_findings": [
+      "Observed 3 failures across 3 sessions.",
+      "Top error classes: pokemon_benchmark_verifier_failure x3"
+    ],
+    "oracle_verdict": "",
+    "history_refs": [
+      ".llm-wiki/skill-pipeline/failures/events/2026-04-13--codex-start-server-capture-state-1-pokemon-benchmark-verifier-failure--failure-82f43d1d5312.json",
+      ".llm-wiki/skill-pipeline/failures/events/2026-04-13--codex-start-server-capture-state-1-pokemon-benchmark-verifier-failure--failure-f55b42e1de40.json",
+      ".llm-wiki/skill-pipeline/failures/events/2026-04-13--codex-start-server-capture-state-1-pokemon-benchmark-verifier-failure--failure-1e3e498684f3.json"
+    ],
+    "program_id": "cluster-codex-start-server-capture-state-1-pokemon-benchmark-verifier-failure",
+    "parent_program_id": "",
+    "verification_mode": "heuristic",
+    "subjective_task": "Complete Gym-Anything task start_server_capture_state@1 through the repo-local wrapper surface.",
+    "subjective_rubric": [],
+    "baseline_output": "",
+    "candidate_output": "",
+    "judge_choice_raw": "",
+    "judge_choice": "",
+    "judge_summary": "",
+    "judge_findings": []
+  },
+  "packet": {
+    "id": "packet-pokemon-benchmark-verifier-failure-81f298a7",
+    "skill_id": "",
+    "title": "Pokemon benchmark verifier failure",
+    "task_type": "workflow",
+    "goal": "Complete Gym-Anything task start_server_capture_state@1 through the repo-local wrapper surface.",
+    "executive_summary": "Pokemon benchmark verifier failure: Complete Gym-Anything task start_server_capture_state@1 through the repo-local wrapper surface.. Outcome: pending. Future agent shortcut: solve in 1 fewer steps by reusing the fast path.",
+    "important_context": "",
+    "outcome": "",
+    "observations": [],
+    "risks": [],
+    "next_actions": [],
+    "confidence": "medium",
+    "route_decision": "complete",
+    "route_reason": "Repeated failure cluster codex-start-server-capture-state-1-pokemon-benchmark-verifier-failure reached promotion threshold.",
+    "unresolved_questions": [],
+    "artifact_refs": [
+      ".artifacts/pokemon-benchmark/runs/20260413_021549_framework/task_contract.json",
+      ".artifacts/pokemon-benchmark/runs/20260413_021549_framework/framework_prompt.md",
+      ".artifacts/pokemon-benchmark/runs/20260413_021549_framework/wrapper_stdout.txt",
+      ".artifacts/pokemon-benchmark/runs/20260413_021549_framework/wrapper_stderr.txt",
+      ".artifacts/pokemon-benchmark/runs/20260413_021549_framework/wrapper_last_message.txt",
+      ".artifacts/pokemon-benchmark/runs/20260413_021549_framework/verification.json",
+      ".artifacts/pokemon-benchmark/runs/20260413_021549_framework/exports/pokemon_state.json",
+      ".artifacts/pokemon-benchmark/runs/20260413_021549_framework/exports/pokemon_screenshot.png",
+      ".artifacts/pokemon-benchmark/runs/20260413_021549_framework/exports/pokemon_server.log",
+      ".artifacts/pokemon-benchmark/runs/20260413_021549_framework/container.log",
+      ".artifacts/pokemon-benchmark/runs/20260413_021137_framework/task_contract.json",
+      ".artifacts/pokemon-benchmark/runs/20260413_021137_framework/framework_prompt.md",
+      ".artifacts/pokemon-benchmark/runs/20260413_021137_framework/wrapper_stdout.txt",
+      ".artifacts/pokemon-benchmark/runs/20260413_021137_framework/wrapper_stderr.txt",
+      ".artifacts/pokemon-benchmark/runs/20260413_021137_framework/wrapper_last_message.txt",
+      ".artifacts/pokemon-benchmark/runs/20260413_021137_framework/verification.json",
+      ".artifacts/pokemon-benchmark/runs/20260413_021137_framework/exports/pokemon_state.json",
+      ".artifacts/pokemon-benchmark/runs/20260413_021137_framework/exports/pokemon_screenshot.png",
+      ".artifacts/pokemon-benchmark/runs/20260413_021137_framework/container.log",
+      ".artifacts/pokemon-benchmark/runs/20260413_021008_framework/task_contract.json",
+      ".artifacts/pokemon-benchmark/runs/20260413_021008_framework/framework_prompt.md",
+      ".artifacts/pokemon-benchmark/runs/20260413_021008_framework/wrapper_stdout.txt",
+      ".artifacts/pokemon-benchmark/runs/20260413_021008_framework/wrapper_stderr.txt",
+      ".artifacts/pokemon-benchmark/runs/20260413_021008_framework/verification.json",
+      ".artifacts/pokemon-benchmark/runs/20260413_021008_framework/container.log",
+      ".llm-wiki/skill-pipeline/briefs/20260413-081743--pokemon-benchmark-verifier-failure.md"
+    ],
+    "assigned_target": "",
+    "parent_packet_id": "",
+    "hop_count": 0,
+    "retry_count": 0,
+    "long_task": false,
+    "related_skill_ids": [],
+    "created_at": "2026-04-13T08:17:43Z",
+    "updated_at": "2026-04-13T08:17:43Z",
+    "path": ".llm-wiki/skill-pipeline/packets/20260413-081743--pokemon-benchmark-verifier-failure.json"
+  },
+  "packet_path": ".llm-wiki/skill-pipeline/packets/20260413-081743--pokemon-benchmark-verifier-failure.json",
+  "duplicate_matches": [],
+  "merge_target": "",
+  "validated_at": "2026-04-13T08:17:43Z"
+}

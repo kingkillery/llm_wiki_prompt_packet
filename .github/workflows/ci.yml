@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Run Python tests
+        shell: bash
+        run: python -m unittest discover -s tests -p "test_*.py"
+
+      - name: Run Node tests
+        shell: bash
+        run: node --test tests/test_agent_api_gateway.mjs
+
+      - name: Install smoke workspace (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          SMOKE_ROOT="$RUNNER_TEMP/llm-wiki-smoke"
+          mkdir -p "$SMOKE_ROOT"
+          python installers/install_obsidian_agent_memory.py --vault "$SMOKE_ROOT" --targets codex --skip-home-skills --force
+          bash "$SMOKE_ROOT/scripts/setup_llm_wiki_memory.sh" --workspace "$SMOKE_ROOT" --skip-qmd --skip-brv --skip-gitvizz
+          bash "$SMOKE_ROOT/scripts/check_llm_wiki_memory.sh" --workspace "$SMOKE_ROOT" --skip-qmd --skip-brv --skip-gitvizz
+
+      - name: Install smoke workspace (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $smokeRoot = Join-Path $env:RUNNER_TEMP "llm-wiki-smoke"
+          New-Item -ItemType Directory -Force -Path $smokeRoot | Out-Null
+          python installers/install_obsidian_agent_memory.py --vault $smokeRoot --targets codex --skip-home-skills --force
+          & (Join-Path $smokeRoot "scripts\setup_llm_wiki_memory.ps1") --workspace $smokeRoot --skip-qmd --skip-brv --skip-gitvizz
+          cmd /d /s /c "`"$smokeRoot\scripts\check_llm_wiki_memory.cmd`" --workspace `"$smokeRoot`" --skip-qmd --skip-brv --skip-gitvizz"

@@ -1,0 +1,28 @@
+{
+  "id": "cluster-codex-start-server-capture-state-1-pokemon-benchmark-verifier-failure",
+  "fingerprint": "codex-start-server-capture-state-1-pokemon-benchmark-verifier-failure",
+  "title": "Pokemon benchmark verifier failure",
+  "kind": "workflow",
+  "goal": "Complete Gym-Anything task start_server_capture_state@1 through the repo-local wrapper surface.",
+  "applies_to": [],
+  "count": 3,
+  "unique_sessions": 3,
+  "session_keys": [
+    "failure-1e3e498684f3",
+    "failure-82f43d1d5312",
+    "failure-f55b42e1de40"
+  ],
+  "skill_ids": [],
+  "latest_failure_at": "2026-04-13T08:17:43Z",
+  "error_classes": {
+    "pokemon_benchmark_verifier_failure": 3
+  },
+  "event_refs": [
+    ".llm-wiki/skill-pipeline/failures/events/2026-04-13--codex-start-server-capture-state-1-pokemon-benchmark-verifier-failure--failure-82f43d1d5312.json",
+    ".llm-wiki/skill-pipeline/failures/events/2026-04-13--codex-start-server-capture-state-1-pokemon-benchmark-verifier-failure--failure-f55b42e1de40.json",
+    ".llm-wiki/skill-pipeline/failures/events/2026-04-13--codex-start-server-capture-state-1-pokemon-benchmark-verifier-failure--failure-1e3e498684f3.json"
+  ],
+  "promotion_status": "promoted",
+  "last_promotion_at": "2026-04-13T08:17:43Z",
+  "updated_at": "2026-04-13T08:17:43Z"
+}

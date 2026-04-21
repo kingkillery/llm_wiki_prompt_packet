@@ -22,7 +22,7 @@ ASSET_ROOT = PACKET_ROOT / "installers" / "assets" / "vault"
 SUPPORT = PACKET_ROOT / "support"
 HOME_SKILLS_ROOT = PACKET_ROOT / "skills" / "home"
 
-TARGETS_ALL = ("claude", "antigravity", "codex", "droid")
+TARGETS_ALL = ("claude", "antigravity", "codex", "droid", "pi")
 STACK_CONFIG_PATH = ".llm-wiki/config.json"
 STACK_DEPENDENCY_MANIFEST_PATH = ".llm-wiki/package.json"
 STACK_GITIGNORE_PATH = ".llm-wiki/.gitignore"
@@ -32,10 +32,13 @@ RICH_MARKERS = {"bin", "browse", "qa", "review", "kade"}
 RICH_SIBLING_HINTS = {"debug", "debugging", "deploy", "deployment", "design", "dogfood", "dx", "investigate", "ship", "workflows"}
 DEFAULT_INSTALL_SCOPE = "local"
 DEFAULT_BRV_PACKAGE = "byterover-cli"
+DEFAULT_QMD_REPO_REF = "ef26cb62bb8132bc3a851b23f450af8e382e4c4e"
 DEFAULT_GITVIZZ_REPO_URL = "https://github.com/kingkillery/GitVizz.git"
 OFFICIAL_MEMORY_VAULT_NAME = "kade-hq"
 OFFICIAL_MEMORY_VAULT_ID = "fd8411f00d3a9d21"
 OFFICIAL_MEMORY_VAULT_PATH = r"C:\dev\Desktop-Projects\Helpful-Docs-Prompts\VAULTS-OBSIDIAN\Kade-HQ"
+PK_SKILLS_SUBMODULE_PATH = "deps/pk-skills1"
+PK_SKILLS_REPO_URL = "https://github.com/kingkillery/pk-skills1.git"
 REPO_RUNTIME_DEFAULT_PATHS = {
     "g-kade": "deps/pk-skills1/gstack/g-kade",
     "gstack": "deps/pk-skills1/gstack",
@@ -61,6 +64,8 @@ ROOT_FILES = {
     "AGENTS.md": PROMPTS / "01-AGENTS.md",
     "CLAUDE.md": PROMPTS / "02-CLAUDE.md",
     "LLM_WIKI_MEMORY.md": SUPPORT / "LLM_WIKI_MEMORY.md",
+    "SYSTEM_CONTRACT.md": SUPPORT / "SYSTEM_CONTRACT.md",
+    "KNOWN_ISSUES.md": SUPPORT / "KNOWN_ISSUES.md",
     "SKILL_CREATION_AT_EXPERT_LEVEL.md": SUPPORT / "SKILL_CREATION_AT_EXPERT_LEVEL.md",
 }
 
@@ -88,9 +93,24 @@ CODEX_FILES = {
 STACK_FILES = {
     "scripts/check_llm_wiki_memory.ps1": ASSET_ROOT / "scripts" / "check_llm_wiki_memory.ps1",
     "scripts/check_llm_wiki_memory.sh": ASSET_ROOT / "scripts" / "check_llm_wiki_memory.sh",
+    "scripts/check_llm_wiki_memory.cmd": ASSET_ROOT / "scripts" / "check_llm_wiki_memory.cmd",
+    "scripts/llm_wiki_packet.py": SUPPORT / "scripts" / "llm_wiki_packet.py",
+    "scripts/llm_wiki_packet.ps1": SUPPORT / "scripts" / "llm_wiki_packet.ps1",
+    "scripts/llm_wiki_packet.sh": SUPPORT / "scripts" / "llm_wiki_packet.sh",
+    "scripts/llm_wiki_packet.cmd": SUPPORT / "scripts" / "llm_wiki_packet.cmd",
+    "scripts/llm_wiki_memory_runtime.py": SUPPORT / "scripts" / "llm_wiki_memory_runtime.py",
     "scripts/llm_wiki_skill_mcp.py": SUPPORT / "scripts" / "llm_wiki_skill_mcp.py",
+    "scripts/llm_wiki_failure_collector.py": SUPPORT / "scripts" / "llm_wiki_failure_collector.py",
+    "scripts/llm_wiki_failure_hook.py": SUPPORT / "scripts" / "llm_wiki_failure_hook.py",
+    "scripts/llm_wiki_agent_failure_capture.py": SUPPORT / "scripts" / "llm_wiki_agent_failure_capture.py",
+    "scripts/run_llm_wiki_agent.ps1": SUPPORT / "scripts" / "run_llm_wiki_agent.ps1",
+    "scripts/run_llm_wiki_agent.sh": SUPPORT / "scripts" / "run_llm_wiki_agent.sh",
+    "scripts/run_llm_wiki_agent.cmd": SUPPORT / "scripts" / "run_llm_wiki_agent.cmd",
+    "scripts/pokemon_benchmark_adapter.py": SUPPORT / "scripts" / "pokemon_benchmark_adapter.py",
+    "scripts/run_pokemon_benchmark.ps1": SUPPORT / "scripts" / "run_pokemon_benchmark.ps1",
     "scripts/setup_llm_wiki_memory.ps1": SUPPORT / "scripts" / "setup_llm_wiki_memory.ps1",
     "scripts/setup_llm_wiki_memory.sh": SUPPORT / "scripts" / "setup_llm_wiki_memory.sh",
+    "scripts/setup_llm_wiki_memory.cmd": SUPPORT / "scripts" / "setup_llm_wiki_memory.cmd",
     "scripts/qmd_embed_runner.mjs": SUPPORT / "scripts" / "qmd_embed_runner.mjs",
     "scripts/invoke_bash_helper.ps1": SUPPORT / "scripts" / "invoke_bash_helper.ps1",
     "scripts/brv_query.ps1": SUPPORT / "scripts" / "brv_query.ps1",
@@ -125,13 +145,21 @@ BOOTSTRAP_FILES = {
     "templates/.gitkeep": "",
     "scripts/.gitkeep": "",
     ".llm-wiki/.gitkeep": "",
-    ".llm-wiki/.gitignore": "node_modules/\npackage-lock.json\ntools/\n",
-    ".llm-wiki/skills-registry.json": "{\n  \"skills\": {},\n  \"feedback\": [],\n  \"briefs\": [],\n  \"deltas\": [],\n  \"validations\": [],\n  \"packets\": [],\n  \"events\": []\n}\n",
+    ".llm-wiki/.gitignore": "node_modules/\npackage-lock.json\ntools/\nsetup-state.json\n",
+    ".llm-wiki/skills-registry.json": "{\n  \"skills\": {},\n  \"feedback\": [],\n  \"briefs\": [],\n  \"deltas\": [],\n  \"validations\": [],\n  \"packets\": [],\n  \"proposals\": [],\n  \"surrogate_reviews\": [],\n  \"evolution_runs\": [],\n  \"frontier\": [],\n  \"events\": []\n}\n",
     ".llm-wiki/skill-pipeline/.gitkeep": "",
     ".llm-wiki/skill-pipeline/briefs/.gitkeep": "",
     ".llm-wiki/skill-pipeline/deltas/.gitkeep": "",
     ".llm-wiki/skill-pipeline/validations/.gitkeep": "",
     ".llm-wiki/skill-pipeline/packets/.gitkeep": "",
+    ".llm-wiki/skill-pipeline/proposals/.gitkeep": "",
+    ".llm-wiki/skill-pipeline/surrogate-reviews/.gitkeep": "",
+    ".llm-wiki/skill-pipeline/evolution-runs/.gitkeep": "",
+    ".llm-wiki/skill-pipeline/frontier.json": "[]\n",
+    ".llm-wiki/skill-pipeline/failures/.gitkeep": "",
+    ".llm-wiki/skill-pipeline/failures/events/.gitkeep": "",
+    ".llm-wiki/skill-pipeline/failures/clusters/.gitkeep": "",
+    ".llm-wiki/skill-pipeline/failures/benchmarks/.gitkeep": "",
     ".brv/.gitkeep": "",
     ".brv/context-tree/.gitkeep": "",
     ".llm-wiki/qmd-embed-state.json": "{\n  \"status\": \"not-run\"\n}\n",
@@ -141,17 +169,31 @@ HOME_SKILL_TARGETS = {
     ".agents/skills/gstack": HOME_SKILLS_ROOT / "gstack",
     ".agents/skills/kade-hq": HOME_SKILLS_ROOT / "kade-hq",
     ".agents/skills/g-kade": HOME_SKILLS_ROOT / "g-kade",
+    ".agents/skills/llm-wiki-skills": HOME_SKILLS_ROOT / "llm-wiki-skills",
+    ".agents/skills/pokemon-benchmark": HOME_SKILLS_ROOT / "pokemon-benchmark",
+    ".pi/agent/skills/gstack": HOME_SKILLS_ROOT / "gstack",
+    ".pi/agent/skills/kade-hq": HOME_SKILLS_ROOT / "kade-hq",
+    ".pi/agent/skills/g-kade": HOME_SKILLS_ROOT / "g-kade",
+    ".pi/agent/skills/llm-wiki-skills": HOME_SKILLS_ROOT / "llm-wiki-skills",
+    ".pi/agent/skills/pokemon-benchmark": HOME_SKILLS_ROOT / "pokemon-benchmark",
     ".codex/skills/gstack": HOME_SKILLS_ROOT / "gstack",
     ".codex/skills/kade-hq": HOME_SKILLS_ROOT / "kade-hq",
     ".codex/skills/g-kade": HOME_SKILLS_ROOT / "g-kade",
+    ".codex/skills/llm-wiki-skills": HOME_SKILLS_ROOT / "llm-wiki-skills",
+    ".codex/skills/pokemon-benchmark": HOME_SKILLS_ROOT / "pokemon-benchmark",
     ".claude/skills/gstack": HOME_SKILLS_ROOT / "gstack",
     ".claude/skills/kade-hq": HOME_SKILLS_ROOT / "kade-hq",
     ".claude/skills/g-kade": HOME_SKILLS_ROOT / "g-kade",
+    ".claude/skills/llm-wiki-skills": HOME_SKILLS_ROOT / "llm-wiki-skills",
+    ".claude/skills/pokemon-benchmark": HOME_SKILLS_ROOT / "pokemon-benchmark",
 }
 
 DANGEROUS_HOME_TARGETS = (
     ".agents",
     ".agents/skills",
+    ".pi",
+    ".pi/agent",
+    ".pi/agent/skills",
     ".codex",
     ".codex/skills",
     ".claude",
@@ -279,13 +321,27 @@ def global_tool_install_allowed(args: argparse.Namespace | None = None) -> bool:
     return env_flag("LLM_WIKI_ALLOW_GLOBAL_TOOL_INSTALL")
 
 
+def qmd_package_spec(repo_url: str, repo_ref: str) -> str:
+    normalized_url = repo_url.rstrip("/")
+    if normalized_url.startswith("git+"):
+        base = normalized_url
+    elif normalized_url.endswith(".git"):
+        base = f"git+{normalized_url}"
+    else:
+        base = f"git+{normalized_url}.git"
+    normalized_ref = repo_ref.strip()
+    if normalized_ref:
+        return f"{base}#{normalized_ref}"
+    return base
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--vault", required=True, help="Path to the Obsidian vault")
     parser.add_argument(
         "--targets",
-        default="claude,antigravity,codex,droid",
-        help="Comma-separated targets: claude,antigravity,codex,droid",
+        default="claude,antigravity,codex,droid,pi",
+        help="Comma-separated targets: claude,antigravity,codex,droid,pi",
     )
     parser.add_argument(
         "--force",
@@ -311,7 +367,7 @@ def parse_args() -> argparse.Namespace:
     home_skill_group.add_argument(
         "--install-home-skills",
         action="store_true",
-        help="Install packet-owned wrapper skills into ~/.agents, ~/.codex, and ~/.claude",
+        help="Install packet-owned wrapper skills into ~/.agents, ~/.codex, ~/.claude, and ~/.pi/agent",
     )
     home_skill_group.add_argument(
         "--skip-home-skills",
@@ -350,6 +406,11 @@ def parse_args() -> argparse.Namespace:
         "--qmd-repo-url",
         default=env_or_default("LLM_WIKI_QMD_REPO_URL", "https://github.com/kingkillery/pk-qmd"),
         help="Packet fallback source for the custom pk-qmd fork",
+    )
+    parser.add_argument(
+        "--qmd-repo-ref",
+        default=env_or_default("LLM_WIKI_QMD_REPO_REF", DEFAULT_QMD_REPO_REF),
+        help="Pinned commit or tag for the managed pk-qmd checkout",
     )
     parser.add_argument(
         "--qmd-mcp-url",
@@ -585,6 +646,7 @@ def build_preflight_report(
     g_kade_runtime = repo_runtime_dependency_status(vault, "g-kade", g_kade_dependency_path)
     gstack_runtime = repo_runtime_dependency_status(vault, "gstack", gstack_dependency_path)
     managed_root = managed_tool_root(vault, home_root, install_scope)
+    submodule_root = vault / PK_SKILLS_SUBMODULE_PATH
 
     lines = [
         "Preflight:",
@@ -603,6 +665,12 @@ def build_preflight_report(
         tool_status_line("node", node, missing_note="optional for qmd embed runner"),
         tool_status_line("npm", npm, missing_note="required when pk-qmd or brv must be installed"),
         tool_status_line("docker", docker, missing_note="optional unless you manage GitVizz locally"),
+        f"preflight pk-qmd pin: {DEFAULT_QMD_REPO_REF}",
+        (
+            f"preflight pk-skills1 source: {submodule_root}"
+            if submodule_root.exists()
+            else f"preflight pk-skills1 source: missing ({PK_SKILLS_SUBMODULE_PATH} from {PK_SKILLS_REPO_URL})"
+        ),
     ]
 
     if local_qmd:
@@ -793,6 +861,16 @@ def build_stack_config(args: argparse.Namespace) -> dict[str, object]:
             "install_scope": install_scope,
             "managed_tool_root": relative_or_absolute_path(managed_root, workspace_root),
         },
+        "toolset": {
+            "cli": {
+                "python": "scripts/llm_wiki_packet.py",
+                "powershell": "scripts/llm_wiki_packet.ps1",
+                "shell": "scripts/llm_wiki_packet.sh",
+                "cmd": "scripts/llm_wiki_packet.cmd",
+            },
+            "preferred_project_bootstrap_command": "init",
+            "preferred_project_runtime_commands": ["setup", "check", "pokemon-benchmark"],
+        },
         "memory_base": {
             "name": memory_vault_name,
             "vault_path": str(memory_vault_path),
@@ -812,8 +890,18 @@ def build_stack_config(args: argparse.Namespace) -> dict[str, object]:
                 "skills_for_reusable_execution_shortcuts": True,
             },
         },
+        "docs": {
+            "contract_path": "SYSTEM_CONTRACT.md",
+            "known_issues_path": "KNOWN_ISSUES.md",
+        },
         "agent_runtimes": {
             "packet_wrappers": {
+                "kade-hq": {
+                    "owner": PACKET_OWNER,
+                    "source_path": "skills/home/kade-hq",
+                    "status": "home-install-enabled" if install_home_skills else "available-home-install-opt-in",
+                    "manual_install_required": False,
+                },
                 "g-kade": {
                     "owner": PACKET_OWNER,
                     "source_path": "skills/home/g-kade",
@@ -826,16 +914,27 @@ def build_stack_config(args: argparse.Namespace) -> dict[str, object]:
                     "status": "home-install-enabled" if install_home_skills else "available-home-install-opt-in",
                     "manual_install_required": False,
                 },
+                "llm-wiki-skills": {
+                    "owner": PACKET_OWNER,
+                    "source_path": "skills/home/llm-wiki-skills",
+                    "status": "home-install-enabled" if install_home_skills else "available-home-install-opt-in",
+                    "manual_install_required": False,
+                },
             },
             "repo_dependencies": {
                 "g-kade": g_kade_runtime,
                 "gstack": gstack_runtime,
+            },
+            "source_of_truth": {
+                "submodule_path": PK_SKILLS_SUBMODULE_PATH,
+                "repo_url": PK_SKILLS_REPO_URL,
             },
         },
         "pk_qmd": {
             "command": args.qmd_command,
             "local_command_candidates": qmd_local_candidates,
             "repo_url": args.qmd_repo_url,
+            "repo_ref": args.qmd_repo_ref,
             "checkout_path": relative_or_absolute_path(managed_root / "pk-qmd", workspace_root),
             "manual_install_required": False,
             "global_install_allowed": global_tool_install_allowed(args),
@@ -885,6 +984,8 @@ def build_stack_config(args: argparse.Namespace) -> dict[str, object]:
         "skills": {
             "mcp_server_key": "llm-wiki-skills",
             "script_path": "scripts/llm_wiki_skill_mcp.py",
+            "failure_collector_script_path": "scripts/llm_wiki_failure_collector.py",
+            "failure_hook_script_path": "scripts/llm_wiki_failure_hook.py",
             "registry_path": ".llm-wiki/skills-registry.json",
             "index_path": "wiki/skills/index.md",
             "log_path": "wiki/log.md",
@@ -898,6 +999,14 @@ def build_stack_config(args: argparse.Namespace) -> dict[str, object]:
                 "delta_dir": ".llm-wiki/skill-pipeline/deltas",
                 "validation_dir": ".llm-wiki/skill-pipeline/validations",
                 "packet_dir": ".llm-wiki/skill-pipeline/packets",
+                "proposal_dir": ".llm-wiki/skill-pipeline/proposals",
+                "surrogate_review_dir": ".llm-wiki/skill-pipeline/surrogate-reviews",
+                "evolution_run_dir": ".llm-wiki/skill-pipeline/evolution-runs",
+                "frontier_path": ".llm-wiki/skill-pipeline/frontier.json",
+                "failure_dir": ".llm-wiki/skill-pipeline/failures",
+                "failure_event_dir": ".llm-wiki/skill-pipeline/failures/events",
+                "failure_cluster_dir": ".llm-wiki/skill-pipeline/failures/clusters",
+                "failure_benchmark_dir": ".llm-wiki/skill-pipeline/failures/benchmarks",
                 "min_validation_score": 7,
                 "dedupe_similarity_threshold": 0.72,
                 "auto_merge_duplicates": True,
@@ -905,6 +1014,29 @@ def build_stack_config(args: argparse.Namespace) -> dict[str, object]:
                 "max_hops_default": 2,
                 "max_retries_default": 1,
                 "enforce_summary_only": True,
+                "frontier_size": 3,
+                "min_frontier_delta": 1,
+                "surrogate_fail_blocks": True,
+                "failure_auto_promote": True,
+                "failure_promotion_threshold": 3,
+                "failure_promotion_window_hours": 168,
+                "failure_promotion_min_unique_sessions": 2,
+            },
+        },
+        "agent_failure_capture": {
+            "script_path": "scripts/llm_wiki_agent_failure_capture.py",
+            "launcher_paths": {
+                "powershell": "scripts/run_llm_wiki_agent.ps1",
+                "shell": "scripts/run_llm_wiki_agent.sh",
+                "cmd": "scripts/run_llm_wiki_agent.cmd",
+            },
+            "wrapper_supported_agents": ["claude", "codex", "droid", "pi"],
+            "native_hook_agents": ["claude"],
+            "commands": {
+                "claude": "claude",
+                "codex": "codex",
+                "droid": "droid",
+                "pi": "pi",
             },
         },
     }
@@ -917,6 +1049,7 @@ def build_stack_dependency_manifest(args: argparse.Namespace) -> dict[str, objec
         "version": "0.1.0",
         "description": "Managed local dependency bundle for llm-wiki-memory",
         "dependencies": {
+            "@kingkillery/pk-qmd": qmd_package_spec(args.qmd_repo_url, getattr(args, "qmd_repo_ref", DEFAULT_QMD_REPO_REF)),
             DEFAULT_BRV_PACKAGE: "^3.3.0",
         },
     }
@@ -961,6 +1094,8 @@ def install_packet_workspace(
 
     if "droid" in targets:
         actions.append("info   Droid target uses root AGENTS.md")
+    if "pi" in targets:
+        actions.append("info   pi target uses root AGENTS.md plus the shared agent failure wrapper")
 
     return actions
 
@@ -970,11 +1105,27 @@ def packet_required_paths(vault: Path) -> list[Path]:
         vault / "AGENTS.md",
         vault / "CLAUDE.md",
         vault / "LLM_WIKI_MEMORY.md",
+        vault / "SYSTEM_CONTRACT.md",
+        vault / "KNOWN_ISSUES.md",
         vault / STACK_CONFIG_PATH,
+        vault / "scripts" / "llm_wiki_packet.py",
+        vault / "scripts" / "llm_wiki_packet.ps1",
+        vault / "scripts" / "llm_wiki_packet.sh",
+        vault / "scripts" / "llm_wiki_packet.cmd",
+        vault / "scripts" / "llm_wiki_memory_runtime.py",
+        vault / "scripts" / "llm_wiki_failure_hook.py",
+        vault / "scripts" / "llm_wiki_agent_failure_capture.py",
+        vault / "scripts" / "pokemon_benchmark_adapter.py",
+        vault / "scripts" / "run_llm_wiki_agent.ps1",
+        vault / "scripts" / "run_llm_wiki_agent.sh",
+        vault / "scripts" / "run_llm_wiki_agent.cmd",
+        vault / "scripts" / "run_pokemon_benchmark.ps1",
         vault / "scripts" / "setup_llm_wiki_memory.ps1",
         vault / "scripts" / "setup_llm_wiki_memory.sh",
+        vault / "scripts" / "setup_llm_wiki_memory.cmd",
         vault / "scripts" / "check_llm_wiki_memory.ps1",
         vault / "scripts" / "check_llm_wiki_memory.sh",
+        vault / "scripts" / "check_llm_wiki_memory.cmd",
     ]
 
 

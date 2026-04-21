@@ -8,7 +8,7 @@ fi
 
 APP_ROOT="/opt/llm-wiki"
 VAULT_PATH="${LLM_WIKI_VAULT:-/workspace}"
-TARGETS="${LLM_WIKI_TARGETS:-claude,codex,droid}"
+TARGETS="${LLM_WIKI_TARGETS:-claude,codex,droid,pi}"
 FORCE_INSTALL="${LLM_WIKI_FORCE_INSTALL:-0}"
 SKIP_GITVIZZ="${LLM_WIKI_SKIP_GITVIZZ:-1}"
 MCP_SERVER_CMD="${LLM_WIKI_MCP_SERVER_CMD:-pk-qmd mcp}"
@@ -25,9 +25,15 @@ configure_git_auth() {
     return 0
   fi
 
-  git config --global url."https://${github_token}:x-oauth-basic@github.com/".insteadOf https://github.com/
-  git config --global url."https://${github_token}:x-oauth-basic@github.com/".insteadOf ssh://git@github.com/
-  git config --global url."https://${github_token}:x-oauth-basic@github.com/".insteadOf git@github.com:
+  local netrc_path="$HOME/.netrc"
+  umask 077
+  cat >"$netrc_path" <<EOF
+machine github.com
+  login x-access-token
+  password ${github_token}
+EOF
+  chmod 600 "$netrc_path"
+  export GIT_TERMINAL_PROMPT=0
 }
 
 gitvizz_source_ready() {

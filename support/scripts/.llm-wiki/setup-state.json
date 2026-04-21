@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "last_run_mode": "setup",
+  "last_run_at": "2026-04-20T18:22:17Z",
+  "setup": {
+    "qmd": {
+      "checkout_path": "C:\\dev\\Desktop-Projects\\llm_wiki_prompt_packet\\llm_wiki_prompt_packet\\support\\scripts\\.llm-wiki\\tools\\pk-qmd",
+      "repo_ref": "ef26cb62bb8132bc3a851b23f450af8e382e4c4e",
+      "last_install_at": "2026-04-20T18:22:44Z",
+      "collection_bootstrapped_at": "2026-04-20T18:25:08Z"
+    }
+  }
+}

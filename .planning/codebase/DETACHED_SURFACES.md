@@ -2,16 +2,16 @@
 
 ## Meaning Of "Detached" In This Repo
 
-Most of the code here is intentional, but not all of it sits on the default local bootstrap path.
+Most tracked code in this repo is intentional, but not every tracked surface sits on the default local packet-install path.
 
 This file separates:
 
 - primary path:
-  what runs for a normal local packet install
+  what runs for the normal local packet bootstrap
 - optional path:
-  connected code that only runs in special modes
-- current worktree-only path:
-  files present in this checkout that are not part of the clean tracked baseline
+  tracked code that only runs in special modes
+- local runtime state:
+  folders present in this checkout that matter operationally but are not primary source
 
 ## Primary Path
 
@@ -27,16 +27,19 @@ This file separates:
 
 ## Connected But Optional
 
-These are real parts of the system, but not used by a normal local vault bootstrap:
+These are tracked and real, but they are not required for the default local vault bootstrap:
 
 - `installers/install_g_kade_workspace.py`
-  only used for `g-kade` workspace mode
+  only used for repo-local `g-kade` workspace mode
+- `installers/install_g_kade_workspace.ps1`
+- `installers/install_g_kade_workspace.sh`
+  companion wrappers for the same workspace mode
 - `skills/home/*`
-  only used when home skill install is explicitly enabled
+  packet-owned home-wrapper surfaces installed only when explicitly requested
 - `plugins/llm-wiki-organizer/*`
-  packaging surface, not required for install/setup
+  plugin packaging and distribution surface
 - `docker/*` and `docker-compose*.yml`
-  hosted/container path
+  hosted/container runtime path
 - `deploy/gcp/*`
   remote VM deployment path
 - `deploy/cloudflare/*`
@@ -49,31 +52,30 @@ These are real parts of the system, but not used by a normal local vault bootstr
 ## Runtime State In This Checkout, Not Core Source
 
 - `.llm-wiki/`
-  installed dependency and runtime state
+  packet-local dependency manifest and local runtime state for this checkout
 - `.brv/`
   local BRV workspace state
 - `.agents/`
-  local plugin marketplace state
+  local marketplace or plugin bootstrap state
+- `.planning/`
+  generated planning and codebase-map docs
 
-These folders can be important for understanding how the repo behaves locally, but they are not the main source implementation.
+These folders can matter for understanding the current checkout, but they are not the main source implementation the installers copy from.
 
 ## Current Worktree Notes
 
-In this checkout, some extension surfaces are present but are not part of a clean tracked baseline according to `git status`:
+Current `git status --short` shows only:
 
-- `deploy/cloudflare/`
-- `installers/install_g_kade_workspace.ps1`
-- `installers/install_g_kade_workspace.sh`
-- `skills/`
+- `m deps/pk-skills1`
 
-That matters because tracked Python code already references `skills/home/*`, so the current branch mixes stable source and local extension work in a way that can confuse a first read.
+That means the main first-party source tree is currently clean, and the only active worktree deviation is inside the richer runtime submodule checkout. Treat anything under `deps/pk-skills1/` as externalized runtime content rather than packet-owned source.
 
 ## Bottom Line
 
-There is no obvious large dead-code island inside the core bootstrap path.
+There is no large dead-code island in the tracked packet source.
 
-The main confusion comes from three things:
+The main source of confusion is structural, not unused code:
 
-1. source code and runtime state are mixed in the repo root
-2. local bootstrap, plugin packaging, and hosted deployment live in the same repo
-3. some optional extension surfaces are currently worktree-only in this checkout
+1. source templates and local runtime state both live under the same repo root
+2. local bootstrap, plugin packaging, and hosted deployment are all shipped together
+3. the richer `pk-skills1` runtime is referenced by contract but lives behind a submodule boundary

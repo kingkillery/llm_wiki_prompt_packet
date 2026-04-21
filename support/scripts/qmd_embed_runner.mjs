@@ -77,6 +77,43 @@ function loadConfig(workspace) {
   return JSON.parse(fs.readFileSync(configPath, "utf8"));
 }
 
+function resolveWorkspacePath(workspace, candidate) {
+  if (!candidate || typeof candidate !== "string") {
+    return null;
+  }
+  if (path.isAbsolute(candidate)) {
+    return candidate;
+  }
+  return path.join(workspace, candidate);
+}
+
+function resolveQmdCommand(options, config) {
+  if (options.command) {
+    return options.command;
+  }
+
+  const localCandidates = Array.isArray(config?.pk_qmd?.local_command_candidates)
+    ? config.pk_qmd.local_command_candidates
+    : [];
+  for (const candidate of localCandidates) {
+    const resolved = resolveWorkspacePath(options.workspace, candidate);
+    if (resolved && fs.existsSync(resolved)) {
+      return resolved;
+    }
+  }
+
+  const configured = config?.pk_qmd?.command;
+  if (typeof configured === "string" && configured.trim()) {
+    const resolved = resolveWorkspacePath(options.workspace, configured.trim());
+    if (resolved && fs.existsSync(resolved)) {
+      return resolved;
+    }
+    return configured.trim();
+  }
+
+  return "pk-qmd";
+}
+
 function writeState(filePath, payload) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
@@ -97,7 +134,7 @@ function runCommand(command, args, cwd) {
 function main() {
   const options = parseArgs(process.argv.slice(2));
   const config = loadConfig(options.workspace);
-  const qmdCommand = options.command || config?.pk_qmd?.command || "pk-qmd";
+  const qmdCommand = resolveQmdCommand(options, config);
   const startedAt = new Date().toISOString();
 
   writeState(options.stateFile, {

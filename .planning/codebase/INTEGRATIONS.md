@@ -1,131 +1,130 @@
-# Integrations
+# External Integrations
 
-## pk-qmd
+**Analysis Date:** 2026-04-12
 
-Files:
+## APIs & External Services
 
-- `package.json`
-- `support/scripts/setup_llm_wiki_memory.ps1`
-- `support/scripts/setup_llm_wiki_memory.sh`
-- `docker/entrypoint.sh`
+**Primary Retrieval Plane:**
 
-Connection:
+- `pk-qmd` - Repo-specific retrieval, collection management, embedding, and MCP serving
+  - SDK/Client: CLI and MCP process invoked from `package.json`, `support/scripts/setup_llm_wiki_memory.sh`, `support/scripts/setup_llm_wiki_memory.ps1`, and `docker/entrypoint.sh`
+  - Auth: Optional `GH_TOKEN` / `GITHUB_TOKEN` for private fetches; runtime MCP auth is handled separately at the gateway layer
+  - Endpoints used: Local MCP endpoint defaults to `http://localhost:8181/mcp`; container serve mode starts `pk-qmd mcp --http`
 
-- root package depends on `@kingkillery/pk-qmd`
-- setup helpers prefer packet-local install under `.llm-wiki/node_modules`
-- helpers wire `pk-qmd` into agent MCP config
-- Docker serve mode runs `pk-qmd mcp --http`
+**Durable Memory Plane:**
 
-Why it matters:
+- `byterover-cli` / `brv` - Query, curate, benchmark, and workspace memory initialization
+  - SDK/Client: CLI wrappers in `support/scripts/brv_query.sh`, `support/scripts/brv_curate.ps1`, and `support/scripts/brv_benchmark.py`
+  - Auth: `BYTEROVER_API_KEY` or `brv login`
+  - Integration method: CLI plus the gateway routes `/memory/status`, `/memory/query`, and `/memory/curate`
 
-This is the primary retrieval plane and the main MCP surface expected by agent clients.
+**Graph / Web Surface:**
 
-## Byterover / brv
+- GitVizz - Optional frontend/backend graph service
+  - Integration method: Managed checkout plus Docker Compose, or external frontend/backend URLs
+  - Auth: Local mode relies on loopback/network placement; hosted examples add Cloudflare Access in `deploy/cloudflare/mcp-edge-worker.js`
+  - Rate limits: Not modeled in source; operational behavior depends on the deployed GitVizz runtime
 
-Files:
+## Data Storage
 
-- `support/scripts/setup_llm_wiki_memory.ps1`
-- `support/scripts/setup_llm_wiki_memory.sh`
-- `support/scripts/brv_query.*`
-- `support/scripts/brv_curate.*`
-- `support/scripts/brv_benchmark.*`
+**Databases:**
 
-Connection:
+- MongoDB 5.0 - Optional GitVizz backend store in `docker-compose.yml`
+  - Connection: `mongodb://gitvizz-mongo:27017`
+  - Client: External GitVizz backend container
 
-- setup verifies or installs `brv`
-- workspace BRV state lives in `.brv/`
-- helper scripts assume BRV is the durable memory layer
+**File Storage:**
 
-Why it matters:
+- Local filesystem / Obsidian vault - Packet output and skill artifacts live under installed `wiki/`, `raw/`, `.llm-wiki/`, and `.brv/`
+  - Source files: `installers/install_obsidian_agent_memory.py`, `support/scripts/llm_wiki_skill_mcp.py`
+  - Mounted paths: `/workspace` in `docker-compose.yml`
 
-This is the curated memory plane, separate from source-grounded retrieval.
+**Telemetry / Observability Storage:**
 
-## GitVizz
+- Phoenix - Optional GitVizz tracing surface in `docker-compose.yml`
+  - Volumes: `gitvizz_phoenix`, `gitvizz_storage`
 
-Files:
+## Authentication & Identity
 
-- `support/scripts/launch_gitvizz.*`
-- `support/scripts/gitvizz_api.*`
-- `support/scripts/setup_llm_wiki_memory.ps1`
-- `support/scripts/setup_llm_wiki_memory.sh`
+**Gateway Auth Provider:**
 
-Connection:
+- Packet HTTP gateway - Optional bearer-auth guard
+  - Implementation: `LLM_WIKI_AGENT_API_TOKEN` checked in `docker/mcp_http_proxy.mjs`
+  - Token storage: environment variable only
+  - Session management: stateless bearer check per request
 
-- config carries frontend and backend URLs
-- setup can verify or start GitVizz when a repo path is configured
-- health checks can enforce reachability when GitVizz is managed
+**Edge Auth Integrations:**
 
-Why it matters:
+- Cloudflare Access service token forwarding
+  - Credentials: `ACCESS_CLIENT_ID`, `ACCESS_CLIENT_SECRET`, and optional `EDGE_API_TOKEN`
+  - Implementation: `deploy/cloudflare/mcp-edge-worker.js`
 
-GitVizz is the graph and web surface, but it is optional unless the workspace is configured to manage it.
+## Monitoring & Observability
 
-## Obsidian
+**Health Checks:**
 
-Files:
+- Local gateway health endpoint in `docker/mcp_http_proxy.mjs`
+  - Path: `/healthz`
+  - Purpose: exposes route availability and memory/QMD wiring state
 
-- installers
-- prompt assets
-- installed `wiki/`, `raw/`, `templates/`, and `scripts/` tree
+**Release Validation:**
 
-Connection:
+- GitHub Actions release verification in `.github/workflows/release-installers.yml`
+  - Scope: verifies generated installer formatting and syntax
 
-- the vault is the durable markdown workspace
-- the packet installs source, structure, and helper entrypoints into that vault
+**Logs:**
 
-Why it matters:
+- stdout/stderr only for most scripts
+  - Integration: shell, PowerShell, and Python summary output plus `console.error` in `docker/mcp_http_proxy.mjs`
 
-The vault is where the packet becomes real and where durable memory and skill outputs are stored.
+## CI/CD & Deployment
 
-## User Agent Clients
+**Hosting:**
 
-Files:
+- Docker Compose - Local or VM-hosted stack in `docker-compose.yml` and `docker-compose.local-qmd.yml`
+  - Deployment: manual `docker compose up --build` or via the GCP scripts
+  - Environment vars: `LLM_WIKI_*`, provider keys, and GitHub tokens
 
-- `support/scripts/setup_llm_wiki_memory.ps1`
-- `support/scripts/setup_llm_wiki_memory.sh`
+**CI Pipeline:**
 
-Connection:
+- GitHub Actions release asset job in `.github/workflows/release-installers.yml`
+  - Workflows: build release-specific `install.ps1` and `install.sh`, then upload assets to the GitHub release
 
-- setup patches:
-  - `~/.claude/settings.json`
-  - `~/.codex/config.toml`
-  - `~/.factory/mcp.json`
+**Remote Deployment Surfaces:**
 
-Why it matters:
+- GCP Compute Engine in `deploy/gcp/deploy_compute_engine.sh` and `.ps1`
+- Cloudflare Worker edge in `deploy/cloudflare/mcp-edge-worker.js`
 
-This is how Claude, Codex, and Factory discover the `pk-qmd` and `llm-wiki-skills` servers.
+## Environment Configuration
 
-## Codex Plugin Bundle
+**Development:**
 
-Files:
+- Required env vars depend on the mode: `LLM_WIKI_INSTALL_SCOPE`, `LLM_WIKI_QMD_*`, `LLM_WIKI_GITVIZZ_*`, and optional provider keys
+- Secrets location: environment variables; no checked-in secret files
+- Mock/stub services: local temp scripts and in-process HTTP servers are used in `tests/test_agent_api_gateway.mjs`
 
-- `plugins/llm-wiki-organizer/.codex-plugin/plugin.json`
-- `plugins/llm-wiki-organizer/skills/*`
-- `plugins/llm-wiki-organizer/assets/*`
+**Staging:**
 
-Connection:
+- Not explicitly modeled as a separate environment in tracked source
 
-- packages the organizer skill as a Codex plugin surface
-- not part of the default installer happy path
+**Production:**
 
-Why it matters:
+- Hosted docs expect auth to be added at the edge or gateway level rather than exposing raw loopback defaults
+- GCP and Cloudflare deployment scaffolds live under `deploy/gcp/` and `deploy/cloudflare/`
 
-This is a packaging and distribution surface, not the core bootstrap engine.
+## Webhooks & Callbacks
 
-## Hosted Surfaces
+**Incoming:**
 
-Files:
+- None handled by the packet application code itself
+- The repo documents GitHub callback URLs for GitVizz setup in `README.md`, but the callback handling lives in the external GitVizz runtime, not this repo
 
-- `docker/*`
-- `docker-compose*.yml`
-- `deploy/gcp/*`
-- `deploy/cloudflare/*`
+**Outgoing:**
 
-Connection:
+- GitHub zip download for the packet in `install.ps1` and `install.sh`
+- Git clone / npm git-based fetches for `pk-qmd` and GitVizz in `support/scripts/setup_llm_wiki_memory.sh`, `support/scripts/setup_llm_wiki_memory.ps1`, and `docker/entrypoint.sh`
 
-- Docker packages the bootstrap and serves remote MCP
-- GCP deploy provisions a VM and runs the compose stack
-- Cloudflare provides a secure public edge in front of the VM
+---
 
-Why it matters:
-
-These files matter only if the system is being exposed remotely. They are not required for the normal local vault bootstrap.
+_Integration audit: 2026-04-12_
+_Update when external tools, auth flows, or deploy surfaces change_

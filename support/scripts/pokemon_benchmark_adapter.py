@@ -526,6 +526,11 @@ def build_framework_prompt(session: dict[str, Any], task_contract: dict[str, Any
 
         Your job is to satisfy the open benchmark session below. Do not modify the benchmark files. Work headlessly and deterministically through the repo-local adapter commands instead of GUI clicking.
 
+        Invocation model:
+        - The harness or skill under test is being called with the `pokemon-benchmark` launcher skill available.
+        - `pokemon-benchmark` is the benchmark-side coordinator, not the system being graded by itself.
+        - Complete the task through the benchmark helper surface while preserving the target harness behavior under test.
+
         Task source:
         - contract JSON: {task_contract['task_json_path']}
         - session file: {session_path.resolve()}

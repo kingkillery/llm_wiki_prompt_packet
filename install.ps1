@@ -1,6 +1,6 @@
 param(
     [string]$Vault = $env:LLM_WIKI_VAULT,
-    [string]$Targets = $(if ($env:LLM_WIKI_TARGETS) { $env:LLM_WIKI_TARGETS } else { "claude,antigravity,codex,droid" }),
+    [string]$Targets = $(if ($env:LLM_WIKI_TARGETS) { $env:LLM_WIKI_TARGETS } else { "claude,antigravity,codex,droid,pi" }),
     [string]$Ref = $(if ($env:LLM_WIKI_REF) { $env:LLM_WIKI_REF } else { "main" }),
     [ValidateSet("local", "global")]
     [string]$InstallScope = $(if ($env:LLM_WIKI_INSTALL_SCOPE) { $env:LLM_WIKI_INSTALL_SCOPE } else { "local" }),

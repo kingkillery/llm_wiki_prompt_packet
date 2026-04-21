@@ -4,6 +4,6 @@
   "version": "0.1.0",
   "description": "Bootstrap packet for the llm-wiki-memory stack",
   "dependencies": {
-    "@kingkillery/pk-qmd": "git+https://github.com/kingkillery/pk-qmd.git#main"
+    "@kingkillery/pk-qmd": "git+https://github.com/kingkillery/pk-qmd.git#ef26cb62bb8132bc3a851b23f450af8e382e4c4e"
   }
 }

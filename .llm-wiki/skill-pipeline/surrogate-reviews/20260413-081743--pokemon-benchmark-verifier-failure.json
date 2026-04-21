@@ -1,0 +1,24 @@
+{
+  "id": "surrogate-pokemon-benchmark-verifier-failure-cb3c2f5d",
+  "title": "Pokemon benchmark verifier failure",
+  "proposal_id": "proposal-pokemon-benchmark-verifier-failure-38e961fa",
+  "skill_id": "",
+  "related_skill_ids": [],
+  "verdict": "fail",
+  "summary": "The surrogate verifier found blocking issues in the proposed mutation.",
+  "findings": [
+    "Observed 3 failures across 3 sessions.",
+    "Top error classes: pokemon_benchmark_verifier_failure x3",
+    "At least one applies-to pattern is required.",
+    "Fast path is required and should be reusable.",
+    "Complete route requires a substantive outcome or reusable fast_path.",
+    "Preconditions are missing or too short.",
+    "skip_steps_estimate should be positive."
+  ],
+  "validation_status": "blocked",
+  "validation_score": 20,
+  "created_at": "2026-04-13T08:17:43Z",
+  "verification_mode": "heuristic",
+  "verifier_process": "heuristic_gate",
+  "oracle_verdict": ""
+}

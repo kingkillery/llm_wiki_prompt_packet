@@ -1,0 +1,14 @@
+{
+  "env": "pokemon_agent_env@0.1",
+  "task": "start_server_capture_state@1",
+  "start_ts": null,
+  "end_ts": 1776066924.8864775,
+  "steps": 1,
+  "verifier": {
+    "mode": "program",
+    "decided": true,
+    "passed": false,
+    "score": 0,
+    "feedback": "Missing pokemon session report"
+  }
+}

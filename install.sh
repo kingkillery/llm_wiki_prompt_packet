@@ -46,7 +46,7 @@ done
 set -- "${POSITIONAL[@]}"
 
 VAULT="${1:-${LLM_WIKI_VAULT:-}}"
-TARGETS="${2:-${LLM_WIKI_TARGETS:-claude,antigravity,codex,droid}}"
+TARGETS="${2:-${LLM_WIKI_TARGETS:-claude,antigravity,codex,droid,pi}}"
 FORCE_FLAG="${3:-}"
 REF="${4:-${LLM_WIKI_REF:-main}}"
 REPO="kingkillery/llm_wiki_prompt_packet"
