@@ -12,13 +12,73 @@ The intended system combines `Kade-HQ`, `G-Stack`, `Byterover`, `GitVizz`, and `
 
 The packet installs concise guidance files, tool-specific command/workflow files, a stack config, and health-check scripts into an Obsidian vault. It does not hide these components from maintainers, but the installed prompts tell agents to present one coherent intelligence surface to end users.
 
-The installer can also seed packet-owned `gstack` and `g-kade` wrapper skills into the user's home skill roots when you explicitly opt in with `--install-home-skills` or `LLM_WIKI_INSTALL_HOME_SKILLS=1`:
+The installer can also seed packet-owned `kade-hq`, `gstack`, `g-kade`, and `llm-wiki-skills` wrapper skills into the user's home skill roots when you explicitly opt in with `--install-home-skills` or `LLM_WIKI_INSTALL_HOME_SKILLS=1`:
 
 - `~/.agents/skills/`
 - `~/.codex/skills/`
 - `~/.claude/skills/`
+- `~/.pi/agent/skills/`
 
 Those wrappers live in this repo under `skills/home/` and are intentionally light. They are the packet-owned bridge layer, not a vendored copy of the full upstream `gstack` runtime bundle. The richer `gstack` and `g-kade` pieces are expected to arrive from the `deps/pk-skills1` submodule when that bootstrap path is enabled.
+
+## Agent Easy Install
+
+Paste the prompt below directly into Claude Code (or any agent with shell access) to install the full stack and self-configure the agent so it can use the wiki from any future project.
+
+The prompt tells the agent to:
+- run the one-command installer for your platform
+- detect the vault path that was installed to
+- write the vault path into `~/.claude/CLAUDE.md` so every future session knows where the wiki lives
+- copy the global wiki commands to `~/.claude/commands/`
+- run the health check and report status
+
+```
+Install the llm-wiki-memory stack for me. Do the following steps in order:
+
+1. Detect my platform (Windows = PowerShell available, otherwise bash).
+
+   Windows — run:
+     & ([scriptblock]::Create((irm https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1)))
+   When prompted for a vault folder, use the current working directory (or ask me if you are unsure which vault to use).
+
+   macOS/Linux — run:
+     curl -fsSL https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.sh | bash
+   When prompted, use the current working directory as the vault.
+
+2. After the installer finishes, determine the absolute path to the vault that was installed.
+   This is either the path I confirmed during the install prompt or the current working directory.
+   Call this VAULT_PATH.
+
+3. Open ~/.claude/CLAUDE.md (create it if it does not exist). Find the "## LLM Wiki" section.
+   If the section exists, update the "Configured vault:" line to the actual VAULT_PATH.
+   If the section does not exist, append this block:
+
+   ## LLM Wiki
+
+   A persistent knowledge base is available from any project via /wiki-query, /wiki-ingest, /wiki-skill, /wiki-lint.
+
+   First-time setup: clone llm_wiki_prompt_packet, run scripts/setup_llm_wiki_memory.ps1 (Windows) or
+   scripts/setup_llm_wiki_memory.sh (shell), then update the vault path in ~/.claude/commands/wiki-*.md.
+
+   Configured vault: VAULT_PATH
+   (If this path does not exist, the wiki stack is not yet set up — run setup above.)
+
+   Each command auto-detects the current project (basename $(pwd)) and scopes storage and retrieval
+   to wiki/projects/<PROJECT>/.
+   Use these proactively: surface past knowledge before answering research questions, ingest durable
+   findings, create reusable skills.
+
+4. Check whether ~/.claude/commands/ contains wiki-query.md, wiki-ingest.md, wiki-skill.md, and wiki-lint.md.
+   If any are missing, copy them from VAULT_PATH/.claude/commands/ into ~/.claude/commands/.
+   In each copied file, verify the vault root path matches VAULT_PATH and update it if not.
+
+5. Run the health check:
+   Windows: powershell -NoProfile -ExecutionPolicy Bypass -File VAULT_PATH/scripts/check_llm_wiki_memory.ps1
+   macOS/Linux: bash VAULT_PATH/scripts/check_llm_wiki_memory.sh
+
+6. Report: what was installed, the confirmed vault path, which global command files were added or updated,
+   and the health check result. Flag any failures clearly.
+```
 
 ## Architecture
 
@@ -69,9 +129,17 @@ The stack contract baked into this packet is:
 - `.llm-wiki/qmd-embed-state.json`
 - `.llm-wiki/skills-registry.json`
 - `.brv/context-tree/.gitkeep`
+- `scripts/llm_wiki_packet.py`
+- `scripts/llm_wiki_packet.ps1`
+- `scripts/llm_wiki_packet.sh`
+- `scripts/llm_wiki_packet.cmd`
 - `scripts/check_llm_wiki_memory.ps1`
 - `scripts/check_llm_wiki_memory.sh`
 - `scripts/llm_wiki_skill_mcp.py`
+- `scripts/llm_wiki_agent_failure_capture.py`
+- `scripts/run_llm_wiki_agent.ps1`
+- `scripts/run_llm_wiki_agent.sh`
+- `scripts/run_llm_wiki_agent.cmd`
 - `scripts/setup_llm_wiki_memory.ps1`
 - `scripts/setup_llm_wiki_memory.sh`
 - `scripts/qmd_embed_runner.mjs`
@@ -86,12 +154,18 @@ The stack contract baked into this packet is:
 
 ### Home skill roots
 
+- `~/.agents/skills/kade-hq/SKILL.md`
 - `~/.agents/skills/gstack/SKILL.md`
 - `~/.agents/skills/g-kade/SKILL.md`
+- `~/.agents/skills/llm-wiki-skills/SKILL.md`
+- `~/.codex/skills/kade-hq/SKILL.md`
 - `~/.codex/skills/gstack/SKILL.md`
 - `~/.codex/skills/g-kade/SKILL.md`
+- `~/.codex/skills/llm-wiki-skills/SKILL.md`
+- `~/.claude/skills/kade-hq/SKILL.md`
 - `~/.claude/skills/gstack/SKILL.md`
 - `~/.claude/skills/g-kade/SKILL.md`
+- `~/.claude/skills/llm-wiki-skills/SKILL.md`
 
 ### Bootstrapped vault directories
 
@@ -128,6 +202,81 @@ Use the installed helpers from the vault root when you want machine-level setup,
 - `scripts/check_llm_wiki_memory.sh`
 - `scripts/qmd_embed_runner.mjs`
 - `scripts/llm_wiki_skill_mcp.py`
+- `scripts/run_llm_wiki_agent.ps1`
+- `scripts/run_llm_wiki_agent.sh`
+- `scripts/run_llm_wiki_agent.cmd`
+
+## Quickstart
+
+Use this when you already have this packet checked out and want a CLI-style packet toolset that can activate a specific repo for the full harness contract, including `kade-hq`, `g-kade`, `gstack`, Pi-facing home skills, and the Pokemon benchmark surface.
+
+PowerShell:
+
+```powershell
+$packet = "C:\dev\Desktop-Projects\llm_wiki_prompt_packet\llm_wiki_prompt_packet"
+$project = "C:\path\to\target-project"
+
+$env:BYTEROVER_API_KEY = "<optional-key>"
+$env:GEMINI_API_KEY = "<optional-key>"
+
+powershell -NoProfile -ExecutionPolicy Bypass -File "$packet\support\scripts\llm_wiki_packet.ps1" `
+  init `
+  --project-root $project `
+  --targets "claude,antigravity,codex,droid,pi" `
+  --install-scope local `
+  --allow-global-tool-install `
+  --force
+```
+
+That command:
+
+- bootstraps the packet into the target project
+- installs the repo-local packet CLI under `scripts/llm_wiki_packet.*`
+- wires repo-local `kade-hq`, `g-kade`, `gstack`, and `pokemon-benchmark` skill surfaces
+- installs packet-owned home wrappers into `~/.agents`, `~/.codex`, `~/.claude`, and `~/.pi/agent`
+- runs the shared setup/check flow for project-local `pk-qmd` and `brv`
+- skips GitVizz during activation by default so a project can activate before the graph layer is up
+
+When a project is ready to validate GitVizz too, re-run activation with:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File "$packet\support\scripts\llm_wiki_packet.ps1" `
+  init `
+  --project-root $project `
+  --targets "claude,antigravity,codex,droid,pi" `
+  --install-scope local `
+  --allow-global-tool-install `
+  --enable-gitvizz `
+  --force
+```
+
+After activation, the preferred repo-local toolset surface is:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\llm_wiki_packet.ps1 check
+```
+
+Smoke benchmark from the activated repo:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\llm_wiki_packet.ps1 pokemon-benchmark smoke
+```
+
+Framework benchmark from the activated repo:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\llm_wiki_packet.ps1 pokemon-benchmark framework --agent codex
+```
+
+Compatibility note:
+
+- `support/scripts/activate_llm_wiki_project.ps1` still exists, but it now forwards to `llm_wiki_packet.ps1 init`. Prefer the packet CLI surface for new automation and agent instructions.
+
+If you want the direct health helper, this still works from the project root:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\check_llm_wiki_memory.ps1
+```
 
 The setup helper now also wires a second local MCP server:
 
@@ -151,6 +300,11 @@ The pipeline now keeps internal skill-learning artifacts under:
 - `.llm-wiki/skill-pipeline/deltas/`
 - `.llm-wiki/skill-pipeline/validations/`
 - `.llm-wiki/skill-pipeline/packets/`
+
+Failure capture now has two surfaces:
+
+- Claude Code: project-local `.claude/settings.local.json` hooks record `PostToolUseFailure` and `StopFailure` automatically.
+- Claude Code, Codex, Factory Droid, and `pi`: the shared launcher wrapper `scripts/run_llm_wiki_agent.*` records non-zero CLI exits into the same failure collector, which is the intended path for Codex, Droid, and `pi`.
 
 The intended loop is:
 
@@ -301,7 +455,7 @@ bash ./scripts/check_llm_wiki_memory.sh
 Run these from inside the target vault if you want the current directory used automatically. If you omit the vault path, the installers now prompt for it and then run the full setup helper.
 
 Set `LLM_WIKI_SKIP_SETUP=1` if you only want the packet files and plan to run the helper later.
-Home skill install is now opt-in: pass `--install-home-skills` or set `LLM_WIKI_INSTALL_HOME_SKILLS=1` if you want packet-owned wrappers in `~/.agents`, `~/.codex`, or `~/.claude`.
+Home skill install is now opt-in: pass `--install-home-skills` or set `LLM_WIKI_INSTALL_HOME_SKILLS=1` if you want packet-owned wrappers in `~/.agents`, `~/.codex`, `~/.claude`, or `~/.pi/agent`.
 Set `LLM_WIKI_ALLOW_GLOBAL_TOOL_INSTALL=1` if you want setup to fall back to global npm installs after packet-local install paths fail.
 
 PowerShell:
@@ -387,7 +541,7 @@ Default container behavior:
 - `pk-qmd` is exposed on `/mcp`
 - GitVizz backend is exposed on `/graph/*`
 - BRV is exposed through `/memory/status`, `/memory/query`, and `/memory/curate`
-- targets installed into the mounted vault: `claude,codex,droid`
+- targets installed into the mounted vault: `claude,codex,droid,pi`
 - GitVizz checks are skipped by default in-container unless you opt in
 - optional full-stack mode can also wire in-container GitVizz services from a mounted GitVizz checkout
 - local Docker mode does not require auth on these routes because the host bind is loopback-only
@@ -396,7 +550,7 @@ Useful overrides:
 
 - `LLM_WIKI_MCP_BIND_HOST=127.0.0.1`
 - `LLM_WIKI_VAULT_PATH=/absolute/path/to/vault`
-- `LLM_WIKI_TARGETS=claude,codex,droid`
+- `LLM_WIKI_TARGETS=claude,codex,droid,pi`
 - `LLM_WIKI_FORCE_INSTALL=1`
 - `LLM_WIKI_QMD_SOURCE=/path/to/pk-qmd`
 - `LLM_WIKI_ENABLE_GITVIZZ=1`
@@ -512,7 +666,7 @@ Common overrides:
 - `OPEN_PUBLIC_MCP=1`
 - `PUBLIC_MCP_SOURCE_RANGES=203.0.113.0/24`
 - `LLM_WIKI_MCP_PORT=8181`
-- `LLM_WIKI_TARGETS=claude,codex,droid`
+- `LLM_WIKI_TARGETS=claude,codex,droid,pi`
 - `LLM_WIKI_SKIP_GITVIZZ=1`
 - `LLM_WIKI_QMD_SOURCE=/absolute/path/to/local/pk-qmd-main`
 - `LLM_WIKI_QMD_MCP_URL=https://mcp.example.com/mcp`
@@ -715,9 +869,37 @@ Optional flags:
 ```bash
 python3 installers/install_obsidian_agent_memory.py \
   --vault "/path/to/Your Vault" \
-  --targets claude,antigravity,codex,droid \
+  --targets claude,antigravity,codex,droid,pi \
   --force
 ```
+
+### Cross-agent failure wrapper
+
+Use the shared wrapper when you want the packet to capture CLI-level failures for any supported agent:
+
+PowerShell:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run_llm_wiki_agent.ps1 -Agent codex -Arguments exec,"analyze this repo"
+```
+
+Shell:
+
+```bash
+bash ./scripts/run_llm_wiki_agent.sh --agent droid -- exec "analyze this repo"
+```
+
+```bash
+bash ./scripts/run_llm_wiki_agent.sh --agent pi -- -p "review the current diff"
+```
+
+```bash
+bash ./scripts/run_llm_wiki_agent.sh --agent claude -- --print "summarize the changes"
+```
+
+In PowerShell, pass forwarded agent arguments through `-Arguments ...`; bare `--` is shell syntax for bash and `cmd`, not PowerShell.
+
+This wrapper keeps Claude's native hook integration intact and adds process-level failure capture for Codex, Factory Droid, and `pi`, which do not expose a matching failure-event hook surface in the packet today.
 
 Install into a test home directory instead of your real user profile:
 
