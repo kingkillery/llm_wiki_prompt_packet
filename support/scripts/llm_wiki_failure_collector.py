@@ -329,9 +329,10 @@ class FailureCollector:
             return True
         if not any(ensure_bool(event.get("auto_promote"), self.failure_auto_promote) for event in events):
             return False
-        if cluster["count"] < self.promotion_threshold:
+        if len(events) < self.promotion_threshold:
             return False
-        if cluster["unique_sessions"] < self.promotion_min_unique_sessions:
+        pending_sessions = sorted({self._session_key(event) for event in events})
+        if len(pending_sessions) < self.promotion_min_unique_sessions:
             return False
         return True
 

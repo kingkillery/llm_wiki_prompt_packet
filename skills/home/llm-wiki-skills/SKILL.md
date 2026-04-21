@@ -1,6 +1,6 @@
 ---
 name: llm-wiki-skills
-description: Use when the task should consult, capture, validate, evolve, or retire reusable workflow shortcuts through the local `llm-wiki-skills` MCP server. This packet-owned wrapper explains the full tool lifecycle in depth and is installable into ~/.agents/skills, ~/.codex/skills, and ~/.claude/skills.
+description: Use when the task should consult, capture, validate, evolve, or retire reusable workflow shortcuts through the local `llm-wiki-skills` MCP server or its CLI. This packet-owned wrapper explains the full tool lifecycle in depth and is installable into ~/.agents/skills, ~/.codex/skills, ~/.claude/skills, and ~/.pi/agent/skills.
 ---
 
 # llm-wiki-skills
@@ -18,6 +18,127 @@ Use it when the job is not just "answer this once", but "make this reusable, rev
 - `.llm-wiki/skills-registry.json`
 - `.llm-wiki/skill-pipeline/`
 4. If present, prefer the local MCP workflow over inventing an ad hoc skills registry.
+
+## How To Call
+
+Every MCP tool in this skill has an identical CLI subcommand. When MCP is not wired, call the script directly:
+
+```
+python scripts/llm_wiki_skill_mcp.py <subcommand> [options]
+```
+
+The script prints a JSON result to stdout and exits 0 on success, 1 on `blocked` or `missing`.
+
+### Quick reference
+
+| MCP tool | CLI subcommand | Key required args |
+|---|---|---|
+| `skill_lookup` | `lookup` | `--goal` or `--url-pattern` |
+| `skill_reflect` | `reflect` | `--title`, `--kind`, `--goal`, `--evidence` |
+| `skill_validate` | `validate` | `--title`, `--kind`, `--goal`, `--evidence` |
+| `skill_pipeline_run` | `pipeline-run` | `--title`, `--kind`, `--goal`, `--evidence` |
+| `skill_propose` | `propose` | `--title`, `--kind`, `--goal`, `--evidence` |
+| `skill_evolve` | `evolve` | `--title`, `--kind`, `--goal`, `--evidence` |
+| `skill_feedback` | `feedback` | `--skill-id`, `--verdict`, `--reason` |
+| `skill_frontier` | `frontier` | (none required) |
+| `skill_get` | `get` | `--skill-id` |
+| `skill_retire` | `retire` | `--skill-id`, `--reason` |
+
+### Common CLI patterns
+
+Look up before starting work:
+```
+python scripts/llm_wiki_skill_mcp.py lookup --goal "select airport from Google Flights dropdown"
+```
+
+Capture a reusable shortcut in one pass:
+```
+python scripts/llm_wiki_skill_mcp.py pipeline-run \
+  --title "Google Flights airport row click" \
+  --kind ui \
+  --goal "Select the exact airport row from the Google Flights suggestion list" \
+  --trigger "Multiple airport rows appear for one city and require an exact row click" \
+  --fast-path "Type the city, wait for the suggestion list, click the exact airport row" \
+  --evidence "Three sessions confirmed that clicking the exact airport row resolves the ambiguity" \
+  --observation "Pressing Enter commits the first suggestion, not the intended one" \
+  --failure-modes "Pressing Enter too early commits the wrong airport" \
+  --apply "https://www.google.com/travel/flights*"
+```
+
+Run an evolution cycle against an existing skill:
+```
+python scripts/llm_wiki_skill_mcp.py evolve \
+  --title "Google Flights airport row click" \
+  --kind ui \
+  --goal "Select the exact airport row from the Google Flights suggestion list" \
+  --evidence "New evidence from multi-airport regression test" \
+  --target-skill-id skill-google-flights-airport-row-click \
+  --proposal-action edit_skill \
+  --surrogate-verdict pass \
+  --oracle-verdict pass \
+  --benchmark google-flights-regression \
+  --iteration 2
+```
+
+Check the current frontier:
+```
+python scripts/llm_wiki_skill_mcp.py frontier --limit 5
+```
+
+Inspect a skill record with full lineage:
+```
+python scripts/llm_wiki_skill_mcp.py get --skill-id skill-google-flights-airport-row-click
+```
+
+Record feedback after applying a skill:
+```
+python scripts/llm_wiki_skill_mcp.py feedback \
+  --skill-id skill-google-flights-airport-row-click \
+  --verdict upvote \
+  --reason "Saved approximately 8 steps in a repeated Google Flights booking flow"
+```
+
+Retire a stale skill:
+```
+python scripts/llm_wiki_skill_mcp.py retire \
+  --skill-id skill-legacy-google-flights-enter \
+  --reason "Superseded by the click-based airport selection skill"
+```
+
+### Subcommand details
+
+Each subcommand accepts the same fields as the corresponding MCP tool input schema.
+
+Required for most write subcommands: `--title`, `--kind`, `--goal`, `--evidence`.
+
+Common optional flags across write subcommands:
+- `--workspace` — workspace root (default: current directory)
+- `--apply` (repeatable) — URL patterns the skill applies to
+- `--problem`, `--trigger`, `--preconditions` — structured context
+- `--fast-path` — the reusable shortcut
+- `--failure-modes` — what goes wrong without this skill
+- `--observation` (repeatable), `--risk` (repeatable) — supporting detail
+- `--file` (repeatable), `--reference` (repeatable), `--artifact-ref` (repeatable) — durable refs
+- `--route-decision` — one of `complete`, `retry_same_worker`, `reroute_to_sibling`, `escalate_to_parent`, `stop_insufficient_evidence`
+- `--skip-steps-estimate` — how many steps this shortcut avoids
+- `--confidence` — `low`, `medium`, or `high`
+
+Evolve-specific flags:
+- `--target-skill-id` — existing skill to edit
+- `--proposal-action` — `create_skill`, `edit_skill`, or `discard`
+- `--surrogate-verdict` — `pass`, `revise`, or `fail`
+- `--oracle-verdict` — external accept/reject signal
+- `--verification-mode` — `heuristic`, `objective`, or `subjective_pairwise`
+- `--benchmark`, `--iteration`, `--program-id` — tracking fields
+
+Subjective pairwise flags (when `--verification-mode subjective_pairwise`):
+- `--subjective-task` — what the judge evaluates
+- `--baseline-output` — current skill output
+- `--candidate-output` — proposed replacement output
+- `--judge-choice` — `A` or `B`
+- `--judge-summary`, `--judge-finding` (repeatable) — judge rationale
+
+Run `python scripts/llm_wiki_skill_mcp.py <subcommand> --help` for the full flag list.
 
 ## What This Surface Is For
 
@@ -226,6 +347,10 @@ If the shortcut still depends on hidden context in your head, it is not ready.
 - `SKILL_CREATION_AT_EXPERT_LEVEL.md` is the implementation guide for high-quality skill capture.
 - `.llm-wiki/skills-registry.json` is the canonical local registry state.
 - `.llm-wiki/skill-pipeline/` stores briefs, packets, validations, proposals, surrogate reviews, evolution runs, frontier data, and failure artifacts.
+
+## MCP vs CLI
+
+When the MCP server is wired into the agent runtime, use the MCP tools directly. When MCP is not available (plain shell, Codex, Droid CLI, or CI), use the CLI subcommands documented above. Both surfaces accept the same fields and produce the same JSON output. The CLI is the authoritative fallback; MCP is the ergonomic default.
 
 ## Constraints
 

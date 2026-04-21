@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import http from "node:http";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -6,13 +7,28 @@ const listenPort = Number(process.argv[2] || "8181");
 const upstreamPort = Number(process.argv[3] || "18181");
 const upstreamHost = process.argv[4] || "127.0.0.1";
 const bindHost = process.env.LLM_WIKI_AGENT_API_BIND_HOST || "0.0.0.0";
+const hostBindHost = process.env.LLM_WIKI_AGENT_API_HOST_BIND_HOST || "";
 const bodyLimitBytes = Number(process.env.LLM_WIKI_AGENT_API_BODY_LIMIT_BYTES || "1048576");
 const authToken = process.env.LLM_WIKI_AGENT_API_TOKEN || "";
+const allowUnsafeNoAuth = /^(1|true|yes|on)$/i.test(process.env.LLM_WIKI_AGENT_API_UNSAFE_NO_AUTH || "");
 const vaultPath = process.env.LLM_WIKI_VAULT || "/workspace";
 const brvCommand = process.env.LLM_WIKI_BRV_COMMAND || "brv";
 const brvQueryScript = process.env.LLM_WIKI_BRV_QUERY_SCRIPT || path.join(vaultPath, "scripts", "brv_query.sh");
 const brvCurateScript = process.env.LLM_WIKI_BRV_CURATE_SCRIPT || path.join(vaultPath, "scripts", "brv_curate.sh");
 const graphBackendUrl = process.env.LLM_WIKI_GITVIZZ_BACKEND_URL || "";
+
+function isLoopbackBindHost(host) {
+  return ["127.0.0.1", "::1", "localhost"].includes(host);
+}
+
+function assertSafeBindConfiguration() {
+  if (isLoopbackBindHost(bindHost) || isLoopbackBindHost(hostBindHost) || authToken || allowUnsafeNoAuth) {
+    return;
+  }
+  throw new Error(
+    `Refusing to bind ${bindHost}:${listenPort} without auth. Set LLM_WIKI_AGENT_API_TOKEN or explicitly opt in with LLM_WIKI_AGENT_API_UNSAFE_NO_AUTH=1.`
+  );
+}
 
 function json(res, statusCode, payload) {
   res.writeHead(statusCode, { "content-type": "application/json; charset=utf-8" });
@@ -24,11 +40,22 @@ function text(res, statusCode, message) {
   res.end(`${message}\n`);
 }
 
+function timingSafeEqual(a, b) {
+  if (a.length !== b.length) {
+    return false;
+  }
+  return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
+
 function isAuthorized(req) {
   if (!authToken) {
     return true;
   }
-  return req.headers.authorization === `Bearer ${authToken}`;
+  const header = req.headers.authorization || "";
+  if (!header.startsWith("Bearer ")) {
+    return false;
+  }
+  return timingSafeEqual(header.slice(7), authToken);
 }
 
 function stripHopByHopHeaders(headers) {
@@ -271,10 +298,19 @@ async function handleMemoryCommand(req, res, mode) {
   }
 }
 
-function healthPayload() {
-  return {
+function healthPayload(includeDetails) {
+  const base = {
     ok: true,
     auth_enabled: Boolean(authToken),
+  };
+  if (!includeDetails) {
+    return base;
+  }
+  return {
+    ...base,
+    allow_unsafe_no_auth: allowUnsafeNoAuth,
+    bind_host: bindHost,
+    host_bind_host: hostBindHost,
     routes: {
       mcp: true,
       graph: Boolean(graphBackendUrl),
@@ -299,7 +335,7 @@ const server = http.createServer(async (req, res) => {
   const pathname = url.pathname;
 
   if (pathname === "/healthz") {
-    json(res, 200, healthPayload());
+    json(res, 200, healthPayload(isAuthorized(req)));
     return;
   }
 
@@ -356,7 +392,9 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
   });
 }
 
+assertSafeBindConfiguration();
+
 server.listen(listenPort, bindHost, () => {
-  const authMode = authToken ? "bearer-auth enabled" : "loopback/trusted network mode";
+  const authMode = authToken ? "bearer-auth enabled" : allowUnsafeNoAuth ? "unsafe unauthenticated mode" : "loopback/trusted network mode";
   console.error(`Agent gateway listening on ${bindHost}:${listenPort} (${authMode})`);
 });
