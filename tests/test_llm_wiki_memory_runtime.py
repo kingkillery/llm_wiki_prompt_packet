@@ -76,6 +76,54 @@ class RuntimeTests(unittest.TestCase):
         self.assertIn("existing", payload["mcpServers"])
         self.assertEqual(payload["mcpServers"]["pk-qmd"]["args"], ["mcp"])
 
+    def test_update_json_mcp_config_preserves_existing_obsidian_server_when_patching_runtime(self) -> None:
+        settings_path = self.workspace / "settings.json"
+        obsidian_payload = {
+            "command": "npx",
+            "args": ["-y", "@bitbonsai/mcpvault", r"C:\Vaults\Kade-HQ"],
+            "env": {"OBSIDIAN_VAULT_PATH": r"C:\Vaults\Kade-HQ"},
+        }
+        settings_path.write_text(
+            json.dumps(
+                {
+                    "mcpServers": {
+                        "obsidian": obsidian_payload,
+                        "qmd": {"command": "old-qmd", "args": ["mcp"]},
+                    }
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        self.module.update_json_mcp_config(settings_path, "pk-qmd", "pk-qmd", ["mcp"], factory_style=False)
+        self.module.update_json_mcp_config(
+            settings_path,
+            "llm-wiki-skills",
+            "python",
+            ["scripts/llm_wiki_skill_mcp.py", "--workspace", ".", "mcp"],
+            factory_style=False,
+        )
+
+        payload = json.loads(settings_path.read_text(encoding="utf-8"))
+        self.assertEqual(payload["mcpServers"]["obsidian"], obsidian_payload)
+        self.assertEqual(payload["mcpServers"]["pk-qmd"]["args"], ["mcp"])
+        self.assertEqual(payload["mcpServers"]["llm-wiki-skills"]["command"], "python")
+        self.assertNotIn("qmd", payload["mcpServers"])
+
+    def test_workspace_mcp_json_declares_obsidian_plus_required_servers(self) -> None:
+        mcp_path = REPO_ROOT / ".mcp.json"
+
+        payload = json.loads(mcp_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(set(payload.keys()), {"pk-qmd", "llm-wiki-skills", "obsidian", "brv"})
+        self.assertEqual(payload["pk-qmd"]["args"], ["mcp"])
+        self.assertEqual(payload["llm-wiki-skills"]["command"], "python")
+        self.assertEqual(payload["brv"]["args"], ["mcp"])
+        self.assertEqual(payload["obsidian"]["command"], "npx")
+        self.assertIn("@bitbonsai/mcpvault", payload["obsidian"]["args"])
+        self.assertIn("OBSIDIAN_VAULT_PATH", payload["obsidian"]["env"])
+
     def test_update_codex_toml_uses_windows_safe_literal_strings(self) -> None:
         config_path = self.workspace / "config.toml"
 

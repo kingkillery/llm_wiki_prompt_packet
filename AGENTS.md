@@ -1,61 +1,72 @@
-You are working in `llm_wiki_prompt_packet`, the repo that develops and packages the combined `Kade-HQ` + `G-Stack` + `pk-qmd` + `Byterover` + `GitVizz` system.
+# LLM Wiki Memory Agent Guide
 
-Instruction priority:
+Maintain this vault as a persistent markdown wiki built from immutable raw sources.
 
-1. System
-2. Developer
-3. Repo-local instructions and adjacent docs
-4. User task
-5. Default behavior
+## Startup
 
-Operating mode:
+Before substantive work:
 
-- Be execution-first.
-- Read before editing.
-- Keep local and hosted responsibilities clearly separated.
-- Treat memory maintenance as implementation work, not commentary.
-- Make targeted edits only; do not rewrite unrelated sections.
-- Do not revert unrelated changes you did not make.
+1. Read this file.
+2. Read `LLM_WIKI_MEMORY.md` if present.
+3. Read `SKILL_CREATION_AT_EXPERT_LEVEL.md` if present when the task touches reusable skill authoring or review.
+4. Read `.llm-wiki/config.json` if present.
+5. If `pk-qmd`, `brv`, or GitVizz are missing, run the installed setup helper before deeper work:
+   - PowerShell: `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup_llm_wiki_memory.ps1`
+   - Shell: `bash ./scripts/setup_llm_wiki_memory.sh`
+6. Read `wiki/index.md`.
+7. Read recent `wiki/log.md`.
+8. Search for existing related pages.
 
-Durable system contract:
+## MCP Servers
 
-- `Kade-HQ` and `G-Stack` are the harness layer.
-- The richer repo-owned harness runtime lives under `deps/pk-skills1`.
-- Packet-owned launcher wrappers live under `skills/home/kade-hq`, `skills/home/g-kade`, and `skills/home/gstack`, and optional home skill installs remain the launcher surface.
-- `pk-qmd` is the source-grounded retrieval and embeddings plane.
-- `Byterover` (`brv`) is the durable memory plane.
-- `GitVizz` is the graph and web surface.
-- Local Docker exposes a single loopback gateway on `127.0.0.1:8181`:
-  - `/mcp` -> `pk-qmd`
-  - `/graph/*` -> GitVizz backend
-  - `/memory/*` -> narrow BRV adapter
-- Local Docker intentionally does not require auth on that gateway because it binds to loopback only.
-- Hosted or tunnelled access should add an auth layer and must not expose raw BRV credentials or internal GitVizz services.
+Four MCP servers are wired via `.mcp.json` for stdio access:
 
-Intentional memory loop:
+| Server | Purpose | Required? |
+|--------|---------|----------|
+| `pk-qmd` | Source evidence, docs, prompts, notes retrieval | **Always** |
+| `llm-wiki-skills` | Skill lifecycle (lookup, reflect, validate, evolve, retire) | **Always** |
+| `obsidian` | Vault read/write — the scribing surface for wiki notes | **Pivotal but optional** |
+| `brv` | Durable memory, preferences, workflow quirks | Optional |
 
-1. Read this file, `.factory/memories.md`, and `kade/AGENTS.md` plus `kade/KADE.md` when present.
-2. Use `qmd` first when you need repo-derived memory or history; use GitVizz when topology or route relationships matter.
-3. Treat Obsidian as the durable source of truth for intentional memory:
-   - `C:\dev\Desktop-Projects\Helpful-Docs-Prompts\VAULTS-OBSIDIAN\Kade-HQ\llm_wiki_prompt_packet System Map.md`
-   - official vault name: `kade-hq`
-   - official vault id: `fd8411f00d3a9d21`
-4. Mirror durable decisions back into repo memory files so the same intent is not represented differently across layers.
-5. Keep launcher-wrapper expectations, repo-owned runtime expectations, and local-vs-hosted security expectations consistent.
+### Obsidian: pivotal but optional
 
-Working rules:
+The `obsidian` MCP server connects to the Kade-HQ vault and provides `read_note`, `write_note`, `search_notes`, `manage_tags`, and `move_note` tools. It is the **preferred path** for all wiki scribing — creating, updating, and organizing notes.
 
-- Prefer the underlying installers and setup helpers over stale wrapper assumptions.
-- Treat thin wrappers as launcher surfaces, not proof that the richer runtime is installed.
-- `g-kade` mode should keep installing `kade-hq`, `g-kade`, and `gstack` launchers into home skill roots by default because that is the entry surface trio.
-- `g-kade` is only the bridge skill; it does not replace `kade-hq`.
-- `installers/install_g_kade_workspace.py` should seed `~/.kade/HUMAN.md` from the packaged `kade-headquarters` profile only when the file is missing or still the exact legacy stub; do not overwrite a real existing Layer 1 profile.
-- The install surfaces should keep supporting local project bootstrap and explicit global installs via `-g` or `--global-install`.
-- Keep the project-local `kade/` overlay aligned with the packet contract instead of replacing it.
+When `obsidian` is unavailable (desktop app not running, vault not mounted, MCP connection refused):
 
-Definition of done:
+1. Fall back to direct file I/O against the vault path.
+2. Log that the fallback was used (append to `wiki/log.md`).
+3. Note any link-integrity risk — Obsidian-aware moves preserve backlinks; raw file moves do not.
+4. If the task is a rename or move, prefer pausing and asking the user to open Obsidian rather than risking broken links.
 
-- Obsidian intentional memory is updated when durable intent changes.
-- Repo memory mirrors are aligned with that update.
-- `qmd` or GitVizz was used when retrieval or history grounding was needed.
-- No unrelated files were changed.
+### BRV: skip gracefully
+
+If `brv` has no connected provider, do not rely on `brv query` or `brv curate` for task completion.
+
+## Tool routing
+
+- Use `pk-qmd` for repo-specific source evidence.
+- Use `pk-qmd` first when the target file, folder, prompt, or note is not yet known.
+- Use `pk-qmd` first when the right existing skill page or feedback note is not yet known.
+- Use `obsidian` MCP tools for all vault reads and writes when available.
+- Use `brv` only for durable preferences, decisions, and workflow quirks.
+- Prefer current source evidence over `brv` memory when they conflict.
+- If BRV has no connected provider, do not rely on `brv query` or `brv curate` for task completion.
+- Use configured `GitVizz` URLs for local graph and web access.
+- Use `GitVizz` when you need repo topology, API surface, route relationships, or to hone in after `pk-qmd` found the likely area.
+- Do not surface raw tool choices to end users unless asked.
+
+## Rules
+
+- Never edit `raw/` unless explicitly asked.
+- Prefer updating existing pages over creating duplicates.
+- Prefer `obsidian` MCP tools over direct file I/O for vault mutations.
+- When `obsidian` is unavailable, direct file I/O is acceptable but note the fallback in `wiki/log.md`.
+- Maintain links, contradictions, and open questions.
+- Treat reusable skills as first-class wiki artifacts, not ad hoc notes.
+- Make small, reversible edits by default.
+- Ask before deletions, large renames, or restructures.
+
+## Done when
+
+A task is complete only when relevant pages are updated, `index.md` is updated if needed, and `log.md` is updated if needed.

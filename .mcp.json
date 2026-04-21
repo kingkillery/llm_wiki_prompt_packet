@@ -1,0 +1,30 @@
+{
+  "pk-qmd": {
+    "command": "pk-qmd",
+    "args": ["mcp"]
+  },
+  "llm-wiki-skills": {
+    "command": "python",
+    "args": [
+      "${CLAUDE_PLUGIN_ROOT}/support/scripts/llm_wiki_skill_mcp.py",
+      "mcp",
+      "--workspace",
+      "${CLAUDE_PLUGIN_ROOT}"
+    ]
+  },
+  "obsidian": {
+    "command": "npx",
+    "args": [
+      "-y",
+      "@bitbonsai/mcpvault",
+      "C:\\dev\\Desktop-Projects\\Helpful-Docs-Prompts\\VAULTS-OBSIDIAN\\Kade-HQ"
+    ],
+    "env": {
+      "OBSIDIAN_VAULT_PATH": "C:\\dev\\Desktop-Projects\\Helpful-Docs-Prompts\\VAULTS-OBSIDIAN\\Kade-HQ"
+    }
+  },
+  "brv": {
+    "command": "brv",
+    "args": ["mcp"]
+  }
+}
