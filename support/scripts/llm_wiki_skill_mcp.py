@@ -582,6 +582,8 @@ class SkillStore:
         oracle_verdict = ensure_text(payload.get("oracle_verdict")).lower()
         verification_mode = ensure_text(payload.get("verification_mode")).lower()
         judge_choice_raw = ensure_text(payload.get("judge_choice") or payload.get("selected_option") or payload.get("subjective_winner"))
+        iteration_raw = payload.get("iteration")
+        baseline_validation_raw = payload.get("baseline_validation_score")
 
         return {
             "skill_id": ensure_text(payload.get("skill_id")),
@@ -629,8 +631,8 @@ class SkillStore:
             "proposal_reason": ensure_text(payload.get("proposal_reason")),
             "failure_summary": ensure_text(payload.get("failure_summary")),
             "benchmark": ensure_text(payload.get("benchmark")),
-            "iteration": max(0, ensure_int(payload.get("iteration"), 0)),
-            "baseline_validation_score": ensure_int(payload.get("baseline_validation_score"), 0),
+            "iteration": None if iteration_raw in (None, "") else max(0, ensure_int(iteration_raw, 0)),
+            "baseline_validation_score": None if baseline_validation_raw in (None, "") else ensure_int(baseline_validation_raw, 0),
             "surrogate_verdict": surrogate_verdict,
             "surrogate_summary": ensure_text(payload.get("surrogate_summary")),
             "surrogate_findings": unique_list(ensure_list(payload.get("surrogate_findings"))),
@@ -2784,8 +2786,8 @@ def main(argv: list[str] | None = None) -> int:
     evolve.add_argument("--proposal-reason", default="")
     evolve.add_argument("--failure-summary", default="")
     evolve.add_argument("--benchmark", default="")
-    evolve.add_argument("--iteration", type=int, default=0)
-    evolve.add_argument("--baseline-validation-score", type=int, default=0)
+    evolve.add_argument("--iteration", type=int, default=None)
+    evolve.add_argument("--baseline-validation-score", type=int, default=None)
     evolve.add_argument("--surrogate-verdict", choices=sorted(SURROGATE_VERDICTS))
     evolve.add_argument("--surrogate-summary", default="")
     evolve.add_argument("--surrogate-finding", dest="surrogate_findings", action="append")

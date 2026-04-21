@@ -264,6 +264,37 @@ class SkillPipelineTests(unittest.TestCase):
         self.assertTrue((self.workspace / result["evolution_run_path"]).exists())
         self.assertEqual(result["frontier_entry"]["status"], "discarded")
 
+    def test_evolve_defaults_iteration_and_baseline_from_existing_skill(self) -> None:
+        store = self.make_store()
+        first = store.pipeline_run(self.base_payload())
+        skill_id = first["skill"]["id"]
+        baseline_score = first["skill"]["validation_score"]
+
+        evolve_payload = self.base_payload()
+        evolve_payload["skill_id"] = skill_id
+        evolve_payload["target_skill_id"] = skill_id
+        evolve_payload["proposal_action"] = "edit_skill"
+        evolve_payload["proposal_reason"] = "Refine the existing skill without supplying explicit iteration or baseline."
+        evolve_payload["route_decision"] = "complete"
+        evolve_payload["surrogate_verdict"] = "pass"
+        evolve_payload["oracle_verdict"] = "pass"
+        evolve_payload["observations"] = evolve_payload["observations"] + [
+            "A later run confirmed the same dropdown pattern under a slightly slower render path."
+        ]
+        evolve_payload["evidence"] = (
+            evolve_payload["evidence"]
+            + "\nA later run confirmed the same reusable fix under a slower render path."
+        )
+
+        result = store.evolve(evolve_payload)
+
+        self.assertEqual(result["status"], "accepted")
+        self.assertEqual(result["proposal"]["iteration"], 1)
+        self.assertEqual(result["frontier_entry"]["run_iteration"], 1)
+        self.assertEqual(result["evolution_run"]["iteration"], 1)
+        self.assertEqual(result["evolution_run"]["baseline_validation_score"], baseline_score)
+        self.assertEqual(result["frontier_entry"]["baseline_score"], baseline_score)
+
     def test_evolve_uses_subjective_pairwise_verifier_for_candidate_win(self) -> None:
         store = self.make_store()
         first = store.pipeline_run(self.base_payload())
