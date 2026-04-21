@@ -33,6 +33,33 @@ The prompt tells the agent to:
 - run the health check and report status
 
 ```
+## What this repo does and how to install it from GitHub
+
+llm_wiki_prompt_packet is a prompt packet and vault installer for the llm-wiki-memory stack — a multi-agent
+persistent memory system. It combines five components into one unified intelligence surface:
+
+- pk-qmd: semantic/keyword search over your local docs, notes, and prompts (source-evidence retrieval)
+- Byterover (brv): durable memory for preferences, decisions, and workflow quirks
+- Kade-HQ / G-Stack: agent harness layer
+- GitVizz: repo graph and web surface
+- llm-wiki-skills: local-first reusable skill lifecycle
+
+It installs guidance files, agent command files, a stack config, and health-check scripts into an Obsidian
+vault. From any future project, agents can then query, curate, and build on that persistent knowledge base.
+
+Install from GitHub with a single command — no manual clone required:
+
+  Windows (PowerShell):
+    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1)))
+
+  macOS/Linux:
+    curl -fsSL https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.sh | bash
+
+The installer will prompt for a vault folder (or use the current directory), lay down all packet files,
+and run the full setup helper automatically.
+
+---
+
 Install the llm-wiki-memory stack for me. Do the following steps in order:
 
 1. Detect my platform (Windows = PowerShell available, otherwise bash).
