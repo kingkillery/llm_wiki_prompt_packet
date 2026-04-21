@@ -26,6 +26,25 @@ The canonical stack settings live in `.llm-wiki/config.json`.
 The local dependency manifest for packet-managed installs lives in `.llm-wiki/package.json`.
 The current repo may only ship thin wrappers for some harness pieces; bootstrap is responsible for surfacing the expected dependency or submodule paths when present.
 
+## wiki/ vs brv routing
+
+Use this table to decide where new knowledge belongs:
+
+| What you have | Write to |
+|---|---|
+| Durable repo fact, concept, or synthesis | `wiki/concepts/`, `wiki/syntheses/`, etc. |
+| Reusable task shortcut (procedural) | `wiki/skills/active/` via skill pipeline |
+| Stable user preference or repeated workflow quirk | `brv` (curate) |
+| Prior architecture or tooling decision | `wiki/` if it affects future agents; `brv` if it is a personal/workflow preference |
+| Session transcript or raw run evidence | `.llm-wiki/skill-pipeline/` as a reducer packet — do NOT write directly to wiki or brv |
+| Contradicted or outdated content | Update/retire the existing wiki page or skill; use `brv curate` only for the preference delta |
+
+Rules:
+- `wiki/` is for knowledge that future agents should find via `pk-qmd` search.
+- `brv` is for preferences and decisions that only matter at runtime and should survive project boundaries.
+- Do not write to both for the same fact — pick one based on the table above.
+- When `brv` has no connected provider, write preference-class knowledge to `wiki/concepts/` temporarily and note it should be migrated to `brv` once the provider is connected.
+
 ## Modern memory layering
 
 Adopt a modular memory stack instead of treating all memory as one bucket:

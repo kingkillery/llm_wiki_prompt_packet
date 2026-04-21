@@ -1,4 +1,5 @@
 .omx/
+.omc/
 __pycache__/
 .brv/
 .claude/settings.local.json
@@ -6,4 +7,5 @@ __pycache__/
 node_modules/
 npm-debug.log*
 .llm-wiki/tools/
+support/scripts/.llm-wiki/
 .artifacts/pokemon-benchmark/

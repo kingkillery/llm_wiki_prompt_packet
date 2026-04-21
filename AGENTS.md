@@ -43,6 +43,12 @@ When `obsidian` is unavailable (desktop app not running, vault not mounted, MCP 
 
 If `brv` has no connected provider, do not rely on `brv query` or `brv curate` for task completion.
 
+## Script locations
+
+- `support/scripts/` — source tree for all Python and shell scripts; read this for code review, debugging, or test authoring.
+- `scripts/` — installer-deployed surface in an activated project vault; invoke scripts from here during normal vault operations.
+- When KADE.md or handoff logs mention `support/scripts/`, they are referencing the source. When AGENTS.md, CLAUDE.md, or config reference `scripts/`, they mean the deployed copy.
+
 ## Tool routing
 
 - Use `pk-qmd` for repo-specific source evidence.

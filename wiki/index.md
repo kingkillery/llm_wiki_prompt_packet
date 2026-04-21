@@ -1,5 +1,10 @@
 # Wiki Index
 
+## Concepts
+
+- [Memory Layering](concepts/memory-layering.md) — five-layer memory model and promotion flow
+- [Script Location Convention](concepts/script-location-convention.md) — `support/scripts/` (source) vs `scripts/` (deployed)
+
 ## Syntheses
 
 - [Agentic Memory Skill Stack Upgrade (2026)](syntheses/agentic-memory-skill-stack-upgrade-2026.md)

@@ -1,0 +1,120 @@
+{
+  "version": 1,
+  "stack": {
+    "retrieval": {
+      "primary": "pk-qmd",
+      "memory": "byterover",
+      "graph": "gitvizz"
+    },
+    "policy": {
+      "hide_tool_names_from_end_users": true,
+      "prefer_source_evidence_over_memory": true,
+      "qmd_for_repo_specific_tasks": true,
+      "brv_for_durable_preferences_and_decisions": true,
+      "skills_for_reusable_execution_shortcuts": true
+    }
+  },
+  "pk_qmd": {
+    "command": "pk-qmd",
+    "local_command_candidates": [
+      ".llm-wiki/node_modules/.bin/pk-qmd",
+      ".llm-wiki/node_modules/.bin/pk-qmd.cmd",
+      ".llm-wiki/node_modules/.bin/pk-qmd.ps1"
+    ],
+    "repo_url": "https://github.com/kingkillery/pk-qmd",
+    "manual_install_required": true,
+    "mcp_url": "http://localhost:8181/mcp",
+    "collection_name": "llm_wiki_prompt_packet",
+    "context": "Primary llm-wiki-memory vault for C:\\dev\\Desktop-Projects\\llm_wiki_prompt_packet\\llm_wiki_prompt_packet",
+    "local_dependency_manifest": ".llm-wiki/package.json"
+  },
+  "byterover": {
+    "command": "brv",
+    "api_key_env": "BYTEROVER_API_KEY",
+    "working_dir": ".brv",
+    "context_tree_dir": ".brv/context-tree",
+    "default_provider": "openrouter",
+    "default_model": "google/gemini-3.1-flash-lite-preview",
+    "query_experiment_provider": "google",
+    "query_experiment_model": "google/gemini-3.1-flash-lite-preview",
+    "curate_preferred_provider": "openrouter",
+    "curate_preferred_model": "google/gemini-3.1-flash-lite-preview",
+    "candidate_models": [
+      "google/gemini-3.1-flash-lite-preview",
+      "openai/gpt-oss-safeguard-20b",
+      "x-ai/grok-4.20-multi-agent",
+      "liquid/lfm-2.5-1.2b-thinking:free",
+      "openai/gpt-5-nano",
+      "arcee-ai/trinity-large-thinking"
+    ],
+    "query_format": "json",
+    "curate_format": "json"
+  },
+  "gitvizz": {
+    "frontend_url": "http://localhost:3000",
+    "backend_url": "http://localhost:8003",
+    "api_base_url": "http://localhost:8003/api",
+    "homepage_url": "http://localhost:3000/",
+    "setup_url": "http://localhost:3000/",
+    "github_callback_url": "http://localhost:3000/api/auth/callback/github",
+    "repo_path": null
+  },
+  "skills": {
+    "mcp_server_key": "llm-wiki-skills",
+    "script_path": "scripts/llm_wiki_skill_mcp.py",
+    "failure_collector_script_path": "scripts/llm_wiki_failure_collector.py",
+    "failure_hook_script_path": "scripts/llm_wiki_failure_hook.py",
+    "registry_path": ".llm-wiki/skills-registry.json",
+    "index_path": "wiki/skills/index.md",
+    "log_path": "wiki/log.md",
+    "active_dir": "wiki/skills/active",
+    "feedback_dir": "wiki/skills/feedback",
+    "retired_dir": "wiki/skills/retired",
+    "retire_below_score": -3,
+    "pipeline": {
+      "pipeline_dir": ".llm-wiki/skill-pipeline",
+      "brief_dir": ".llm-wiki/skill-pipeline/briefs",
+      "delta_dir": ".llm-wiki/skill-pipeline/deltas",
+      "validation_dir": ".llm-wiki/skill-pipeline/validations",
+      "packet_dir": ".llm-wiki/skill-pipeline/packets",
+      "proposal_dir": ".llm-wiki/skill-pipeline/proposals",
+      "surrogate_review_dir": ".llm-wiki/skill-pipeline/surrogate-reviews",
+      "evolution_run_dir": ".llm-wiki/skill-pipeline/evolution-runs",
+      "frontier_path": ".llm-wiki/skill-pipeline/frontier.json",
+      "failure_dir": ".llm-wiki/skill-pipeline/failures",
+      "failure_event_dir": ".llm-wiki/skill-pipeline/failures/events",
+      "failure_cluster_dir": ".llm-wiki/skill-pipeline/failures/clusters",
+      "failure_benchmark_dir": ".llm-wiki/skill-pipeline/failures/benchmarks",
+      "min_validation_score": 7,
+      "dedupe_similarity_threshold": 0.72,
+      "auto_merge_duplicates": true,
+      "long_task_brief_min_chars": 280,
+      "max_hops_default": 2,
+      "max_retries_default": 1,
+      "enforce_summary_only": true,
+      "frontier_size": 3,
+      "min_frontier_delta": 1,
+      "surrogate_fail_blocks": true,
+      "failure_auto_promote": true,
+      "failure_promotion_threshold": 3,
+      "failure_promotion_window_hours": 168,
+      "failure_promotion_min_unique_sessions": 2
+    }
+  },
+  "agent_failure_capture": {
+    "script_path": "scripts/llm_wiki_agent_failure_capture.py",
+    "launcher_paths": {
+      "powershell": "scripts/run_llm_wiki_agent.ps1",
+      "shell": "scripts/run_llm_wiki_agent.sh",
+      "cmd": "scripts/run_llm_wiki_agent.cmd"
+    },
+    "wrapper_supported_agents": ["claude", "codex", "droid", "pi"],
+    "native_hook_agents": ["claude"],
+    "commands": {
+      "claude": "claude",
+      "codex": "codex",
+      "droid": "droid",
+      "pi": "pi"
+    }
+  }
+}

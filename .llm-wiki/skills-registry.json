@@ -1,5 +1,20 @@
 {
-  "skills": {},
+  "skills": {
+    "skill-submodule-commit-and-parent-pointer-bump": {
+      "id": "skill-submodule-commit-and-parent-pointer-bump",
+      "title": "Submodule commit + parent repo pointer bump",
+      "kind": "workflow",
+      "memory_scope": "procedural",
+      "memory_strategy": "hierarchical",
+      "update_strategy": "merge_append",
+      "confidence": "high",
+      "applies_to": ["*/llm_wiki_prompt_packet*", "*/pk-skills1*", "git submodule*"],
+      "path": "wiki/skills/active/submodule-commit-and-parent-pointer-bump.md",
+      "created_at": "2026-04-21T00:00:00Z",
+      "updated_at": "2026-04-21T00:00:00Z",
+      "feedback_score": 0
+    }
+  },
   "feedback": [],
   "briefs": [],
   "deltas": [],
