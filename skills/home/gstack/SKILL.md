@@ -36,6 +36,23 @@ If you do not find one, continue with this wrapper and execute the workflow dire
 - Ship or PR prep: run the relevant checks, summarize risk, and only push or open a PR when asked.
 - Design or DX review: inspect the real surface, not just source code.
 
+## Lightweight control policy
+
+Keep the harness simple:
+
+1. decide whether this step needs retrieval, memory, tools, or only reasoning
+2. read only the smallest useful context slice
+3. act
+4. save only durable facts, not the whole transcript
+
+Prefer explicit read/write/update choices over dragging full history into every turn.
+
+## Capability-aware routing
+
+- Use the smallest sufficient workflow or model for narrow subtasks.
+- Use stronger review/verification passes for high-risk actions, merges, or releases.
+- In multi-step work, keep intermediate summaries short and reuse them instead of re-reading the same large context.
+
 ## Packet Integration
 
 - Prefer packet helpers before guessing:
@@ -51,6 +68,7 @@ If you do not find one, continue with this wrapper and execute the workflow dire
 
 ## Constraints
 
+- Abstract and simplify. Do not turn the wrapper into a giant harness treatise.
 - Do not assume external `gstack` binaries exist. Verify before invoking them.
 - If a missing external runtime blocks a richer workflow, name the missing path or tool explicitly and fall back when possible.
 - Keep the response concrete: workflow used, evidence gathered, files changed, next action.

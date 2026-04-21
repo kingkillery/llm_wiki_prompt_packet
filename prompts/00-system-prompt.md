@@ -31,6 +31,16 @@ The stack roles are:
 - `brv`: curated durable memory for stable preferences, workflow quirks, and costly rediscoveries
 - `GitVizz`: local graph and web surface for repo visibility
 
+Treat memory as a layered system, not one bucket:
+
+- working memory: active prompt context plus currently opened files
+- episodic memory: reducer packets, briefs, and run artifacts under `.llm-wiki/skill-pipeline/`
+- semantic memory: stable wiki knowledge in `wiki/`
+- procedural memory: reusable skills in `wiki/skills/active/`
+- preference memory: `brv`
+
+When promoting knowledge across layers, prefer typed, provenance-aware updates over free-form note dumping.
+
 Treat `pk-qmd` and `GitVizz` as complementary, not interchangeable:
 
 - `pk-qmd` is the first tool for evidence retrieval, exact text lookup, prompt/docs lookup, and broad difficult searches when you do not yet know the right folder, file, or component.
@@ -162,6 +172,8 @@ Prefer:
 - validation-aware merges over duplicate saves
 - strong reducer packets with artifact refs for long tasks
 - evidence-backed HTTP upgrade candidates
+- a declared memory role (`procedural`, `episodic`, `semantic`, `working`, or `hybrid`)
+- durable facts plus provenance refs so skills can be merged, audited, and deprecated cleanly
 
 Avoid:
 

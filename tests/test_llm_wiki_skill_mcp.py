@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -61,6 +64,12 @@ class SkillPipelineTests(unittest.TestCase):
         self.assertEqual(result["status"], "saved")
         skill = result["skill"]
         self.assertEqual(skill["validation_status"], "validated")
+        self.assertEqual(skill["memory_scope"], "procedural")
+        self.assertEqual(skill["memory_strategy"], "hierarchical")
+        self.assertEqual(skill["update_strategy"], "merge_append")
+        self.assertTrue(skill["durable_facts"])
+        self.assertTrue(skill["retrieval_hints"])
+        self.assertTrue(skill["canonical_keys"])
         self.assertTrue(skill["brief_refs"])
         self.assertTrue((self.workspace / result["reflection"]["brief_path"]).exists())
         self.assertTrue((self.workspace / result["packet_path"]).exists())
@@ -74,8 +83,13 @@ class SkillPipelineTests(unittest.TestCase):
 
         log_text = (self.workspace / "wiki" / "log.md").read_text(encoding="utf-8")
         index_text = (self.workspace / "wiki" / "skills" / "index.md").read_text(encoding="utf-8")
+        skill_text = (self.workspace / "wiki" / "skills" / "active" / f"{skill['id']}.md").read_text(encoding="utf-8")
         self.assertIn("saved", log_text)
         self.assertIn(skill["id"], index_text)
+        self.assertIn("memory_scope:", skill_text)
+        self.assertIn("## Durable Facts", skill_text)
+        self.assertIn("## Retrieval Hints", skill_text)
+        self.assertIn("## Reconciliation Keys", skill_text)
         self.assertIn("packets", store.data)
         self.assertEqual(len(store.data["packets"]), 1)
 
@@ -181,6 +195,207 @@ class SkillPipelineTests(unittest.TestCase):
         route_checks = {check["name"]: check for check in result["checks"]}
         self.assertEqual(route_checks["hop_budget"]["status"], "fail")
         self.assertEqual(route_checks["retry_budget"]["status"], "fail")
+
+    def test_evolve_updates_existing_skill_and_frontier(self) -> None:
+        store = self.make_store()
+        first = store.pipeline_run(self.base_payload())
+
+        evolve_payload = self.base_payload()
+        evolve_payload["skill_id"] = first["skill"]["id"]
+        evolve_payload["target_skill_id"] = first["skill"]["id"]
+        evolve_payload["proposal_action"] = "edit_skill"
+        evolve_payload["proposal_reason"] = "Fold the multi-airport fix into the reusable skill."
+        evolve_payload["failure_summary"] = "The agent still hesitated when multiple airport suggestions appeared."
+        evolve_payload["route_decision"] = "complete"
+        evolve_payload["surrogate_verdict"] = "pass"
+        evolve_payload["surrogate_findings"] = ["The fix is reusable across Google Flights airport selection flows."]
+        evolve_payload["oracle_verdict"] = "pass"
+        evolve_payload["benchmark"] = "google-flights-regression"
+        evolve_payload["iteration"] = 2
+        evolve_payload["program_id"] = "program/iter-2"
+        evolve_payload["parent_program_id"] = "program/baseline"
+        evolve_payload["observations"] = evolve_payload["observations"] + [
+            "When multiple airport rows appear, clicking the exact airport row avoids ambiguous selection."
+        ]
+        evolve_payload["failure_modes"] = (
+            evolve_payload["failure_modes"]
+            + "\n- Multiple airport rows can appear for one city and require an exact row click."
+        )
+        evolve_payload["evidence"] = (
+            evolve_payload["evidence"]
+            + "\nA later failure showed that selecting the exact airport row fixes the multi-airport variant."
+        )
+
+        result = store.evolve(evolve_payload)
+
+        self.assertEqual(result["status"], "accepted")
+        self.assertEqual(result["skill"]["id"], first["skill"]["id"])
+        self.assertEqual(result["frontier_entry"]["status"], "accepted")
+        self.assertEqual(len(result["frontier"]), 1)
+        self.assertTrue((self.workspace / result["proposal_path"]).exists())
+        self.assertTrue((self.workspace / result["surrogate_review_path"]).exists())
+        self.assertTrue((self.workspace / result["evolution_run_path"]).exists())
+        self.assertTrue((self.workspace / ".llm-wiki" / "skill-pipeline" / "frontier.json").exists())
+
+        skill = store.get_skill(first["skill"]["id"])
+        assert skill is not None
+        self.assertEqual(skill["frontier_status"], "accepted")
+        self.assertEqual(skill["evolution_count"], 1)
+        self.assertTrue(skill["proposal_refs"])
+        self.assertTrue(skill["evolution_run_refs"])
+        self.assertTrue(skill["lineage"])
+
+    def test_evolve_discards_when_surrogate_fails(self) -> None:
+        store = self.make_store()
+        payload = self.base_payload()
+        payload["proposal_action"] = "create_skill"
+        payload["surrogate_verdict"] = "fail"
+        payload["surrogate_summary"] = "The proposed shortcut is too brittle to promote."
+        payload["surrogate_findings"] = ["The evidence only covers one narrow timing condition."]
+
+        result = store.evolve(payload)
+
+        self.assertEqual(result["status"], "discarded")
+        self.assertIsNone(result["skill"])
+        self.assertEqual(store.data["skills"], {})
+        self.assertEqual(store.list_frontier(), [])
+        self.assertTrue((self.workspace / result["proposal_path"]).exists())
+        self.assertTrue((self.workspace / result["surrogate_review_path"]).exists())
+        self.assertTrue((self.workspace / result["evolution_run_path"]).exists())
+        self.assertEqual(result["frontier_entry"]["status"], "discarded")
+
+    def test_evolve_uses_subjective_pairwise_verifier_for_candidate_win(self) -> None:
+        store = self.make_store()
+        first = store.pipeline_run(self.base_payload())
+        skill_id = first["skill"]["id"]
+        title = "Google Flights dropdown ambiguity pairwise"
+        benchmark = "google-flights-subjective"
+        iteration = 3
+        program_id = "program/subjective"
+        baseline_first = self.module.deterministic_coin_flip(title, benchmark, iteration, program_id, skill_id, skill_id)
+        judge_choice = "B" if baseline_first else "A"
+
+        evolve_payload = self.base_payload()
+        evolve_payload["skill_id"] = skill_id
+        evolve_payload["target_skill_id"] = skill_id
+        evolve_payload["title"] = title
+        evolve_payload["proposal_action"] = "edit_skill"
+        evolve_payload["proposal_reason"] = "Compare the revised guidance against the baseline on a subjective UX task."
+        evolve_payload["benchmark"] = benchmark
+        evolve_payload["iteration"] = iteration
+        evolve_payload["program_id"] = program_id
+        evolve_payload["verification_mode"] = "subjective_pairwise"
+        evolve_payload["subjective_task"] = "Choose the better Google Flights guidance for a human operator who needs the clearer workflow."
+        evolve_payload["baseline_output"] = "Type the city and press Enter until the airport appears."
+        evolve_payload["candidate_output"] = "Type the city, wait for the suggestion list, then click the exact airport row instead of pressing Enter early."
+        evolve_payload["judge_choice"] = judge_choice
+        evolve_payload["judge_summary"] = "The candidate is more explicit about the ambiguous dropdown and resolves the user intent faster."
+
+        result = store.evolve(evolve_payload)
+
+        self.assertEqual(result["status"], "accepted")
+        self.assertEqual(result["surrogate_review"]["verification_mode"], "subjective_pairwise")
+        self.assertEqual(result["surrogate_review"]["verifier_process"], "vmr_pairwise_adapted")
+        self.assertEqual(result["surrogate_review"]["winner_source"], "candidate")
+        self.assertEqual(result["surrogate_review"]["judge_choice"], judge_choice)
+        self.assertIn("return only `A` or `B`", result["surrogate_review"]["judge_prompt"])
+        self.assertEqual(len(result["surrogate_review"]["options"]), 2)
+        self.assertEqual(result["frontier_entry"]["verification_mode"], "subjective_pairwise")
+        self.assertEqual(result["evolution_run"]["verification_mode"], "subjective_pairwise")
+
+    def test_evolve_subjective_pairwise_requires_adjudication_when_no_judge_choice(self) -> None:
+        store = self.make_store()
+        first = store.pipeline_run(self.base_payload())
+        skill_id = first["skill"]["id"]
+
+        evolve_payload = self.base_payload()
+        evolve_payload["skill_id"] = skill_id
+        evolve_payload["target_skill_id"] = skill_id
+        evolve_payload["title"] = "Google Flights dropdown ambiguity pending pairwise"
+        evolve_payload["proposal_action"] = "edit_skill"
+        evolve_payload["proposal_reason"] = "Stage a subjective verifier packet before accepting the new guidance."
+        evolve_payload["verification_mode"] = "subjective_pairwise"
+        evolve_payload["subjective_task"] = "Choose the better airport-selection guidance for a human operator."
+        evolve_payload["baseline_output"] = "Press Enter after typing the city."
+        evolve_payload["candidate_output"] = "Wait for the suggestion list, then click the exact airport row."
+
+        result = store.evolve(evolve_payload)
+
+        self.assertEqual(result["status"], "needs_revision")
+        self.assertEqual(result["surrogate_review"]["verification_mode"], "subjective_pairwise")
+        self.assertEqual(result["surrogate_review"]["verdict"], "revise")
+        self.assertEqual(result["surrogate_review"]["winner_source"], "")
+        self.assertIn("pairwise verifier packet", result["surrogate_review"]["summary"].lower())
+
+    def test_mcp_stdio_initialize_and_tools_list(self) -> None:
+        proc = subprocess.Popen(
+            [sys.executable, str(MODULE_PATH), "--workspace", str(self.workspace), "mcp"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=False,
+        )
+
+        def send(message: dict[str, object]) -> None:
+            assert proc.stdin is not None
+            raw = json.dumps(message).encode("utf-8")
+            proc.stdin.write(f"Content-Length: {len(raw)}\r\n\r\n".encode("ascii"))
+            proc.stdin.write(raw)
+            proc.stdin.flush()
+
+        def receive() -> dict[str, object] | None:
+            assert proc.stdout is not None
+            headers: dict[str, str] = {}
+            while True:
+                line = proc.stdout.readline()
+                if not line:
+                    return None
+                if line in (b"\r\n", b"\n"):
+                    break
+                name, value = line.decode("ascii").split(":", 1)
+                headers[name.lower()] = value.strip()
+            content_length = int(headers["content-length"])
+            body = proc.stdout.read(content_length)
+            return json.loads(body.decode("utf-8"))
+
+        try:
+            send(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {},
+                        "clientInfo": {"name": "pytest-smoke", "version": "1.0"},
+                    },
+                }
+            )
+            initialize = receive()
+            self.assertIsNotNone(initialize)
+            assert initialize is not None
+            self.assertEqual(initialize["result"]["serverInfo"]["name"], "llm-wiki-skills")
+
+            send({"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}})
+            send({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
+            tools = receive()
+            self.assertIsNotNone(tools)
+            assert tools is not None
+            tool_names = [tool["name"] for tool in tools["result"]["tools"]]
+            self.assertIn("skill_lookup", tool_names)
+            self.assertIn("skill_pipeline_run", tool_names)
+        finally:
+            if proc.stdin is not None:
+                proc.stdin.close()
+            proc.terminate()
+            try:
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=3)
+
+        stderr = proc.stderr.read().decode("utf-8", errors="replace").strip() if proc.stderr is not None else ""
+        self.assertEqual(stderr, "")
 
 
 if __name__ == "__main__":

@@ -18,5 +18,6 @@
 - Prefer targeted edits.
 - Avoid duplicate pages.
 - Apply a privacy gate before saving reusable skills.
+- Treat saved skills as typed memory objects: prefer explicit memory scope, durable facts, provenance refs, and non-flat memory strategy for long tasks.
 - Store active skills, feedback, and retired skills in their dedicated wiki folders.
 - Ask before destructive or high-blast-radius changes.

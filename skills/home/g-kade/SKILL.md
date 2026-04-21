@@ -40,10 +40,17 @@ If you do not find one, continue with this wrapper.
 
 ## Install Flow
 
+Preferred packet toolset surface when the packet checkout is available:
+
+- `powershell -NoProfile -ExecutionPolicy Bypass -File <llm_wiki_prompt_packet>\support\scripts\llm_wiki_packet.ps1 init --project-root <repo-root>`
+- `python <llm_wiki_prompt_packet>\support\scripts\llm_wiki_packet.py init --project-root <repo-root>`
+
 Use the current invoked folder as the workspace root unless deeper repo instructions say otherwise.
 
 Fastest local path when the packet checkout is present:
 
+- `powershell -NoProfile -ExecutionPolicy Bypass -File .\support\scripts\llm_wiki_packet.ps1 init --project-root <repo-root>`
+- `python .\support\scripts\llm_wiki_packet.py init --project-root <repo-root>`
 - `python installers/install_g_kade_workspace.py --workspace <repo-root>`
 - `powershell -NoProfile -ExecutionPolicy Bypass -File .\installers\install_g_kade_workspace.ps1 --workspace <repo-root>`
 - `bash ./installers/install_g_kade_workspace.sh --workspace <repo-root>`
@@ -75,6 +82,8 @@ After install, verify these surfaces:
 
 For first-run setup, prefer the installed helper from the target vault:
 
+- `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\llm_wiki_packet.ps1 setup`
+- `python .\scripts\llm_wiki_packet.py setup`
 - `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup_llm_wiki_memory.ps1`
 - `bash ./scripts/setup_llm_wiki_memory.sh`
 
@@ -94,9 +103,9 @@ Treat packet instructions as the base contract. Layer KADE guidance on top inste
 
 ## Fastest Successful Install
 
-1. Run `python installers/install_g_kade_workspace.py --workspace <repo-root>`.
+1. Run `powershell -NoProfile -ExecutionPolicy Bypass -File .\support\scripts\llm_wiki_packet.ps1 init --project-root <repo-root>`.
 2. Let it install the packet into the repo root.
-3. Let it scaffold repo-local `.agents/.codex/.claude` skill surfaces for both `g-kade` and `gstack`.
+3. Let it scaffold repo-local `.agents/.codex/.claude` skill surfaces for `kade-hq`, `g-kade`, `gstack`, and `pokemon-benchmark`.
 4. Let it run `scripts/setup_llm_wiki_memory.ps1` or `.sh` with GitVizz skipped unless a real GitVizz repo path is configured.
 5. Confirm the workspace has packet files, local skill files, and a valid health-helper path.
 
@@ -115,7 +124,7 @@ Treat packet instructions as the base contract. Layer KADE guidance on top inste
 
 - `xyz`: a successful `/g-kade install` is not "copy the wrapper skill". It is "bootstrap the repo into a layered workspace".
 - `xyz`: the repo root is the workspace target; `~/.agents/skills/g-kade` by itself is not enough.
-- `xyz`: the fastest reliable path is the dedicated `install_g_kade_workspace.py` entrypoint because it already handles packet install, repo-local skill scaffolding, KADE overlays, setup, and verification in one place.
+- `xyz`: the fastest reliable path is the packet CLI `init` entrypoint because it delegates to the workspace installer, keeps the surface stable, and leaves a repo-local toolset behind for setup, checks, and benchmarks.
 
 ## Session Flow
 
@@ -125,11 +134,24 @@ Treat packet instructions as the base contract. Layer KADE guidance on top inste
 - Route execution to the right workflow: investigate, review, QA, ship, design, docs, or deployment.
 - End by appending a concise handoff entry with changed files, why, verification, and next action.
 
+## Simple memory routing
+
+Keep the bridge easy to reason about:
+
+- `HUMAN.md` = personal layer
+- `kade/KADE.md` = episodic session layer
+- `wiki/` = semantic repo layer
+- `wiki/skills/active/` = procedural shortcut layer
+- `brv` = durable preference layer
+
+When in doubt, summarize upward instead of copying raw detail forward.
+
 ## Constraints
 
 - Preserve the separation of concerns:
   - the packet owns search, memory, MCP wiring, and workspace scaffolding
   - KADE owns user profile, handoff state, and session structure
   - gstack-style workflows own execution tactics
+- Abstract and simplify while maintaining the Kade homage.
 - Do not claim the full upstream `g-kade` runtime is installed unless you verified it.
 - Report whether you used this packet wrapper or a richer external install.

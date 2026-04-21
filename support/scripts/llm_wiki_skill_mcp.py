@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import hashlib
 import json
 import re
 import sys
@@ -16,6 +17,9 @@ SERVER_NAME = "llm-wiki-skills"
 SERVER_VERSION = "0.3.0"
 DEFAULT_KINDS = {"ui", "http", "workflow", "prompt"}
 CONFIDENCE_ORDER = {"low": 1, "medium": 2, "high": 3}
+MEMORY_SCOPES = {"working", "episodic", "semantic", "procedural", "hybrid"}
+MEMORY_STRATEGIES = {"flat", "hierarchical", "knowledge_object"}
+UPDATE_STRATEGIES = {"append_only", "merge_append", "replace_on_validation", "deprecate_on_conflict"}
 ROUTE_DECISIONS = {
     "complete",
     "retry_same_worker",
@@ -23,6 +27,18 @@ ROUTE_DECISIONS = {
     "escalate_to_parent",
     "stop_insufficient_evidence",
 }
+EVOLUTION_ACTIONS = {"create_skill", "edit_skill", "discard"}
+SURROGATE_VERDICTS = {"pass", "revise", "fail"}
+FRONTIER_ACCEPTED_ORACLE_VERDICTS = {"pass", "accepted", "improved", "win", "better"}
+VERIFICATION_MODES = {"heuristic", "objective", "subjective_pairwise"}
+PAIRWISE_OPTION_CHOICES = {"a", "b"}
+DEFAULT_SUBJECTIVE_RUBRIC = [
+    "Honor the user's explicit constraints, required format, and completion criteria.",
+    "Any core-fact or safety-critical error loses immediately, even if the rest is stronger.",
+    "Prefer the response with clearer structure, stronger logical sequence, and easier scanability.",
+    "Prefer more supporting detail only when it adds informational value without redundancy.",
+    "Prefer the response that better matches the user's likely implicit intent, not just the literal wording.",
+]
 
 
 def utc_now() -> str:
@@ -111,6 +127,83 @@ def safe_stem(value: str) -> str:
     return base[:80]
 
 
+def normalize_ab_choice(value: Any) -> str:
+    text = ensure_text(value).lower()
+    aliases = {
+        "a": "a",
+        "option a": "a",
+        "option_a": "a",
+        "response a": "a",
+        "response_a": "a",
+        "first": "a",
+        "1": "a",
+        "b": "b",
+        "option b": "b",
+        "option_b": "b",
+        "response b": "b",
+        "response_b": "b",
+        "second": "b",
+        "2": "b",
+    }
+    return aliases.get(text, "")
+
+
+def deterministic_coin_flip(*parts: Any) -> bool:
+    seed = "||".join(ensure_text(part) for part in parts if ensure_text(part))
+    if not seed:
+        return True
+    digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()
+    return int(digest[:2], 16) % 2 == 0
+
+
+def infer_memory_scope(kind: str, source_type: str, long_task: bool) -> str:
+    kind_key = ensure_text(kind).lower()
+    source_key = ensure_text(source_type).lower()
+    if kind_key == "prompt":
+        return "semantic"
+    if kind_key in {"ui", "http"}:
+        return "procedural"
+    if long_task and source_key == "trajectory":
+        return "hybrid"
+    if kind_key == "workflow":
+        return "episodic" if source_key == "trajectory" else "procedural"
+    return "episodic" if long_task else "procedural"
+
+
+def derive_durable_facts(
+    trigger: str,
+    outcome: str,
+    observations: list[str],
+    risks: list[str],
+    limit: int = 6,
+) -> list[str]:
+    facts = unique_list(
+        ([f"Trigger: {trigger}"] if ensure_text(trigger) else [])
+        + ([f"Outcome: {outcome}"] if ensure_text(outcome) else [])
+        + observations[:3]
+        + [f"Risk: {item}" for item in risks[:2]]
+    )
+    return facts[: max(1, limit)]
+
+
+def derive_retrieval_hints(title: str, kind: str, applies_to: list[str], trigger: str, limit: int = 8) -> list[str]:
+    hints = unique_list(
+        [f"kind:{ensure_text(kind).lower()}"]
+        + [f"applies:{item}" for item in applies_to[:3]]
+        + [f"term:{token.lower()}" for token in re.findall(r"[A-Za-z0-9]{4,}", f"{title} {trigger}")[:4]]
+    )
+    return hints[: max(1, limit)]
+
+
+def derive_canonical_keys(title: str, kind: str, applies_to: list[str], trigger: str, limit: int = 6) -> list[str]:
+    base = slugify(title)
+    keys = [f"skill:{base}", f"kind:{ensure_text(kind).lower()}"]
+    keys.extend(f"applies:{item}" for item in applies_to[:2])
+    trigger_tokens = [token.lower() for token in re.findall(r"[A-Za-z0-9]{5,}", trigger)[:2]]
+    keys.extend(f"trigger:{token}" for token in trigger_tokens)
+    return unique_list(keys)[: max(1, limit)]
+
+
 def file_stamp(timestamp: str) -> str:
     return timestamp.replace(":", "").replace("-", "").replace("T", "-").replace("Z", "")
 
@@ -178,6 +271,10 @@ class SkillStore:
         self.delta_dir = self.workspace / pipeline_cfg.get("delta_dir", ".llm-wiki/skill-pipeline/deltas")
         self.validation_dir = self.workspace / pipeline_cfg.get("validation_dir", ".llm-wiki/skill-pipeline/validations")
         self.packet_dir = self.workspace / pipeline_cfg.get("packet_dir", ".llm-wiki/skill-pipeline/packets")
+        self.proposal_dir = self.workspace / pipeline_cfg.get("proposal_dir", ".llm-wiki/skill-pipeline/proposals")
+        self.surrogate_review_dir = self.workspace / pipeline_cfg.get("surrogate_review_dir", ".llm-wiki/skill-pipeline/surrogate-reviews")
+        self.evolution_run_dir = self.workspace / pipeline_cfg.get("evolution_run_dir", ".llm-wiki/skill-pipeline/evolution-runs")
+        self.frontier_path = self.workspace / pipeline_cfg.get("frontier_path", ".llm-wiki/skill-pipeline/frontier.json")
         self.min_validation_score = int(pipeline_cfg.get("min_validation_score", 7))
         self.dedupe_similarity_threshold = float(pipeline_cfg.get("dedupe_similarity_threshold", 0.72))
         self.auto_merge_duplicates = bool(pipeline_cfg.get("auto_merge_duplicates", True))
@@ -185,6 +282,9 @@ class SkillStore:
         self.max_hops_default = int(pipeline_cfg.get("max_hops_default", 2))
         self.max_retries_default = int(pipeline_cfg.get("max_retries_default", 1))
         self.enforce_summary_only = bool(pipeline_cfg.get("enforce_summary_only", True))
+        self.frontier_size = int(pipeline_cfg.get("frontier_size", 3))
+        self.min_frontier_delta = int(pipeline_cfg.get("min_frontier_delta", 1))
+        self.surrogate_fail_blocks = bool(pipeline_cfg.get("surrogate_fail_blocks", True))
 
         for path in [
             self.registry_path.parent,
@@ -198,10 +298,15 @@ class SkillStore:
             self.delta_dir,
             self.validation_dir,
             self.packet_dir,
+            self.proposal_dir,
+            self.surrogate_review_dir,
+            self.evolution_run_dir,
+            self.frontier_path.parent,
         ]:
             path.mkdir(parents=True, exist_ok=True)
 
         self.data = self._load_registry()
+        self._write_frontier_snapshot()
 
     def _load_config(self) -> dict[str, Any]:
         config_path = self.workspace / ".llm-wiki" / "config.json"
@@ -220,11 +325,16 @@ class SkillStore:
         loaded.setdefault("deltas", [])
         loaded.setdefault("validations", [])
         loaded.setdefault("packets", [])
+        loaded.setdefault("proposals", [])
+        loaded.setdefault("surrogate_reviews", [])
+        loaded.setdefault("evolution_runs", [])
+        loaded.setdefault("frontier", [])
         loaded.setdefault("events", [])
         return loaded
 
     def _save(self) -> None:
         self.registry_path.write_text(json.dumps(self.data, indent=2) + "\n", encoding="utf-8")
+        self._write_frontier_snapshot()
 
     def _relative(self, path: Path) -> str:
         return path.relative_to(self.workspace).as_posix()
@@ -253,11 +363,46 @@ class SkillStore:
     def list_packets(self, skill_id: str) -> list[dict[str, Any]]:
         return [row for row in self.data["packets"] if row.get("skill_id") == skill_id or skill_id in row.get("related_skill_ids", [])]
 
+    def list_proposals(self, skill_id: str) -> list[dict[str, Any]]:
+        return [
+            row
+            for row in self.data["proposals"]
+            if row.get("skill_id") == skill_id
+            or row.get("candidate_skill_id") == skill_id
+            or skill_id in row.get("related_skill_ids", [])
+        ]
+
+    def list_surrogate_reviews(self, skill_id: str) -> list[dict[str, Any]]:
+        return [
+            row
+            for row in self.data["surrogate_reviews"]
+            if row.get("skill_id") == skill_id or skill_id in row.get("related_skill_ids", [])
+        ]
+
+    def list_evolution_runs(self, skill_id: str) -> list[dict[str, Any]]:
+        return [
+            row
+            for row in self.data["evolution_runs"]
+            if row.get("skill_id") == skill_id
+            or row.get("target_skill_id") == skill_id
+            or skill_id in row.get("related_skill_ids", [])
+        ]
+
+    def list_frontier(self, limit: int = 5, skill_id: str = "") -> list[dict[str, Any]]:
+        rows = self.data["frontier"]
+        if skill_id:
+            rows = [row for row in rows if row.get("skill_id") == skill_id or skill_id in row.get("related_skill_ids", [])]
+        return rows[: max(0, limit)]
+
+    def _write_frontier_snapshot(self) -> None:
+        self.frontier_path.write_text(json.dumps(self.data.get("frontier", []), indent=2) + "\n", encoding="utf-8")
+
     def _build_similarity_matches(self, candidate: dict[str, Any], exclude_id: str | None = None) -> list[dict[str, Any]]:
         matches: list[dict[str, Any]] = []
         cand_meta = tokenize(candidate.get("title", ""), candidate.get("problem", ""), candidate.get("trigger", ""))
         cand_fast = tokenize(candidate.get("fast_path", ""), candidate.get("failure_modes", ""), candidate.get("evidence", ""))
         cand_apply = {item.lower() for item in candidate.get("applies_to", [])}
+        cand_keys = {item.lower() for item in ensure_list(candidate.get("canonical_keys"))}
 
         for skill in self.data["skills"].values():
             if skill.get("status") != "active":
@@ -268,6 +413,7 @@ class SkillStore:
             skill_meta = tokenize(skill.get("title", ""), skill.get("problem", ""), skill.get("trigger", ""))
             skill_fast = tokenize(skill.get("fast_path", ""), skill.get("failure_modes", ""), skill.get("evidence", ""))
             skill_apply = {item.lower() for item in skill.get("applies_to", [])}
+            skill_keys = {item.lower() for item in ensure_list(skill.get("canonical_keys"))}
 
             apply_overlap = 0.0
             if cand_apply and skill_apply:
@@ -281,12 +427,14 @@ class SkillStore:
                             if right.rstrip("*") and right.rstrip("*") in left:
                                 apply_overlap = max(apply_overlap, 0.75)
 
+            canonical_overlap = 1.0 if cand_keys and skill_keys and (cand_keys & skill_keys) else 0.0
             kind_match = 1.0 if candidate.get("kind", "").lower() == skill.get("kind", "").lower() else 0.0
             similarity = (
-                0.35 * jaccard(cand_meta, skill_meta)
-                + 0.25 * jaccard(cand_fast, skill_fast)
-                + 0.25 * apply_overlap
+                0.30 * jaccard(cand_meta, skill_meta)
+                + 0.20 * jaccard(cand_fast, skill_fast)
+                + 0.20 * apply_overlap
                 + 0.15 * kind_match
+                + 0.15 * canonical_overlap
             )
             if similarity >= 0.45:
                 matches.append(
@@ -297,6 +445,7 @@ class SkillStore:
                         "kind": skill["kind"],
                         "applies_to": skill["applies_to"],
                         "score": skill["score"],
+                        "canonical_keys": ensure_list(skill.get("canonical_keys")),
                     }
                 )
 
@@ -399,8 +548,45 @@ class SkillStore:
         if not route_decision and not long_task:
             route_decision = "complete"
 
+        memory_scope = ensure_text(payload.get("memory_scope")).lower() or infer_memory_scope(kind, ensure_text(payload.get("source_type") or ("trajectory" if observations else "summary")), long_task)
+        memory_strategy = ensure_text(payload.get("memory_strategy")).lower() or ("knowledge_object" if ensure_text(payload.get("source_type") or ("trajectory" if observations else "summary")).lower() == "summary" else "hierarchical")
+        update_strategy = ensure_text(payload.get("update_strategy")).lower() or "merge_append"
+        durable_facts = unique_list(ensure_list(payload.get("durable_facts"))) or derive_durable_facts(
+            ensure_text(payload.get("trigger") or payload.get("goal") or title),
+            outcome,
+            observations,
+            risks,
+        )
+        provenance_refs = unique_list(
+            ensure_list(payload.get("provenance_refs"))
+            + files
+            + references
+            + ensure_list(payload.get("brief_refs"))
+            + ensure_list(payload.get("artifact_refs"))
+        )
+        retrieval_hints = unique_list(ensure_list(payload.get("retrieval_hints"))) or derive_retrieval_hints(
+            title,
+            kind,
+            applies_to,
+            ensure_text(payload.get("trigger") or payload.get("goal") or title),
+        )
+        canonical_keys = unique_list(ensure_list(payload.get("canonical_keys"))) or derive_canonical_keys(
+            title,
+            kind,
+            applies_to,
+            ensure_text(payload.get("trigger") or payload.get("goal") or title),
+        )
+
+        proposal_action = ensure_text(payload.get("proposal_action")).lower()
+        surrogate_verdict = ensure_text(payload.get("surrogate_verdict")).lower()
+        oracle_verdict = ensure_text(payload.get("oracle_verdict")).lower()
+        verification_mode = ensure_text(payload.get("verification_mode")).lower()
+        judge_choice_raw = ensure_text(payload.get("judge_choice") or payload.get("selected_option") or payload.get("subjective_winner"))
+
         return {
             "skill_id": ensure_text(payload.get("skill_id")),
+            "target_skill_id": ensure_text(payload.get("target_skill_id")),
+            "parent_skill_id": ensure_text(payload.get("parent_skill_id")),
             "title": title,
             "kind": kind,
             "applies_to": applies_to,
@@ -412,6 +598,13 @@ class SkillStore:
             "evidence": evidence_text,
             "http_candidate": bool(payload.get("http_candidate", False)),
             "source_type": ensure_text(payload.get("source_type") or ("trajectory" if observations else "summary")),
+            "memory_scope": memory_scope,
+            "memory_strategy": memory_strategy,
+            "update_strategy": update_strategy,
+            "durable_facts": durable_facts,
+            "provenance_refs": provenance_refs,
+            "retrieval_hints": retrieval_hints,
+            "canonical_keys": canonical_keys,
             "skip_steps_estimate": int(skip_steps_estimate or 0),
             "confidence": ensure_text(payload.get("confidence") or ("high" if len(observations) >= 4 else "medium")).lower(),
             "last_validated": ensure_text(payload.get("last_validated")),
@@ -432,6 +625,31 @@ class SkillStore:
             "hop_count": max(0, ensure_int(payload.get("hop_count"), 0)),
             "retry_count": max(0, ensure_int(payload.get("retry_count"), 0)),
             "long_task": long_task,
+            "proposal_action": proposal_action,
+            "proposal_reason": ensure_text(payload.get("proposal_reason")),
+            "failure_summary": ensure_text(payload.get("failure_summary")),
+            "benchmark": ensure_text(payload.get("benchmark")),
+            "iteration": max(0, ensure_int(payload.get("iteration"), 0)),
+            "baseline_validation_score": ensure_int(payload.get("baseline_validation_score"), 0),
+            "surrogate_verdict": surrogate_verdict,
+            "surrogate_summary": ensure_text(payload.get("surrogate_summary")),
+            "surrogate_findings": unique_list(ensure_list(payload.get("surrogate_findings"))),
+            "oracle_verdict": oracle_verdict,
+            "history_refs": unique_list(ensure_list(payload.get("history_refs"))),
+            "program_id": ensure_text(payload.get("program_id")),
+            "parent_program_id": ensure_text(payload.get("parent_program_id")),
+            "verification_mode": verification_mode,
+            "subjective_task": ensure_text(payload.get("subjective_task") or payload.get("evaluation_prompt") or payload.get("goal") or payload.get("problem") or title),
+            "subjective_rubric": unique_list(ensure_list(payload.get("subjective_rubric"))),
+            "baseline_output": ensure_text(payload.get("baseline_output") or payload.get("baseline_response") or payload.get("control_output")),
+            "candidate_output": ensure_text(payload.get("candidate_output") or payload.get("candidate_response") or payload.get("mutated_output")),
+            "judge_choice_raw": judge_choice_raw,
+            "judge_choice": normalize_ab_choice(judge_choice_raw),
+            "judge_summary": ensure_text(payload.get("judge_summary") or payload.get("subjective_summary")),
+            "judge_findings": unique_list(
+                ensure_list(payload.get("judge_findings"))
+                + ensure_list(payload.get("subjective_findings"))
+            ),
         }
 
     def _build_executive_summary(self, candidate: dict[str, Any], goal: str) -> str:
@@ -440,6 +658,194 @@ class SkillStore:
             f"Outcome: {candidate['outcome'] or 'pending'}. "
             f"Future agent shortcut: solve in {max(candidate['skip_steps_estimate'], 1)} fewer steps by reusing the fast path."
         ).strip()
+
+    def _resolve_verification_mode(self, candidate: dict[str, Any]) -> str:
+        requested = ensure_text(candidate.get("verification_mode")).lower()
+        if requested in VERIFICATION_MODES:
+            return requested
+        if ensure_text(candidate.get("oracle_verdict")):
+            return "objective"
+        if ensure_text(candidate.get("baseline_output")) and ensure_text(candidate.get("candidate_output")):
+            return "subjective_pairwise"
+        return "heuristic"
+
+    def _default_subjective_rubric(self, candidate: dict[str, Any]) -> list[str]:
+        rubric = unique_list(candidate.get("subjective_rubric", []))
+        if rubric:
+            return rubric
+        custom_rules: list[str] = []
+        if ensure_text(candidate.get("trigger")):
+            custom_rules.append("Favor the option that more directly resolves the repeated failure or trigger condition.")
+        if ensure_text(candidate.get("outcome")):
+            custom_rules.append("Favor the option that better reaches the intended outcome with fewer unnecessary steps.")
+        return unique_list(DEFAULT_SUBJECTIVE_RUBRIC + custom_rules)
+
+    def _build_subjective_judge_prompt(self, task: str, rubric: list[str], options: list[dict[str, str]]) -> str:
+        rubric_text = "\n".join(f"- {item}" for item in rubric)
+        option_blocks = "\n\n".join(
+            f"Option {option['label']} ({option['source']}):\n{option['content']}"
+            for option in options
+        )
+        return (
+            "You are an expert evaluator. Given a task and two candidate outputs, decide which option is better.\n\n"
+            f"Task:\n{task}\n\n"
+            f"Rubric:\n{rubric_text}\n\n"
+            f"{option_blocks}\n\n"
+            "Output requirement: return only `A` or `B`."
+        )
+
+    def _build_subjective_surrogate_review(
+        self,
+        candidate: dict[str, Any],
+        proposal: dict[str, Any],
+        validation: dict[str, Any],
+        now: str,
+    ) -> dict[str, Any]:
+        baseline_output = ensure_text(candidate.get("baseline_output"))
+        candidate_output = ensure_text(candidate.get("candidate_output"))
+        task = ensure_text(candidate.get("subjective_task") or candidate.get("problem") or candidate.get("title"))
+        baseline_first = deterministic_coin_flip(
+            candidate.get("title"),
+            candidate.get("benchmark"),
+            candidate.get("iteration"),
+            candidate.get("program_id"),
+            candidate.get("target_skill_id"),
+            candidate.get("skill_id"),
+        )
+        if baseline_first:
+            options = [
+                {"label": "A", "source": "baseline", "content": baseline_output},
+                {"label": "B", "source": "candidate", "content": candidate_output},
+            ]
+            baseline_option = "A"
+            candidate_option = "B"
+        else:
+            options = [
+                {"label": "A", "source": "candidate", "content": candidate_output},
+                {"label": "B", "source": "baseline", "content": baseline_output},
+            ]
+            baseline_option = "B"
+            candidate_option = "A"
+
+        judge_choice = normalize_ab_choice(candidate.get("judge_choice"))
+        winner_source = next(
+            (option["source"] for option in options if option["label"].lower() == judge_choice),
+            "",
+        )
+        provided_surrogate_verdict = ensure_text(candidate.get("surrogate_verdict")).lower()
+        if winner_source == "candidate":
+            verdict = "pass"
+        elif winner_source == "baseline":
+            verdict = "fail"
+        elif provided_surrogate_verdict in SURROGATE_VERDICTS:
+            verdict = provided_surrogate_verdict
+        else:
+            verdict = "revise"
+
+        rubric = self._default_subjective_rubric(candidate)
+        findings = unique_list(
+            candidate.get("judge_findings", [])
+            + candidate.get("surrogate_findings", [])
+            + validation.get("blockers", [])
+            + validation.get("warnings", [])
+        )
+        findings.append(f"Candidate output was presented as option {candidate_option}; baseline output was presented as option {baseline_option}.")
+        if judge_choice and winner_source:
+            findings.append(f"Judge selected option {judge_choice.upper()}, which maps to the {winner_source} variant.")
+        else:
+            findings.append("Awaiting an A/B decision from the subjective verifier.")
+        summary = ensure_text(candidate.get("judge_summary") or candidate.get("surrogate_summary"))
+        if not summary:
+            if winner_source == "candidate":
+                summary = "The adapted VMR-style verifier preferred the candidate output over the baseline."
+            elif winner_source == "baseline":
+                summary = "The adapted VMR-style verifier preferred the baseline output over the candidate."
+            else:
+                summary = "Built a VMR-style pairwise verifier packet for this subjective task; no A/B decision has been recorded yet."
+
+        return {
+            "id": f"surrogate-{slugify(candidate['title'])}-{uuid.uuid4().hex[:8]}",
+            "title": candidate["title"],
+            "proposal_id": proposal["id"],
+            "skill_id": ensure_text(proposal.get("skill_id")),
+            "related_skill_ids": proposal["related_skill_ids"],
+            "verdict": verdict,
+            "summary": summary,
+            "findings": unique_list(findings),
+            "validation_status": validation["status"],
+            "validation_score": validation["score"],
+            "created_at": now,
+            "verification_mode": "subjective_pairwise",
+            "verifier_process": "vmr_pairwise_adapted",
+            "task": task,
+            "rubric": rubric,
+            "randomized_option_order": True,
+            "candidate_option": candidate_option,
+            "baseline_option": baseline_option,
+            "judge_choice": judge_choice.upper() if judge_choice else "",
+            "winner_source": winner_source,
+            "judge_prompt": self._build_subjective_judge_prompt(task, rubric, options),
+            "options": options,
+        }
+
+    def _build_surrogate_review(
+        self,
+        candidate: dict[str, Any],
+        proposal: dict[str, Any],
+        validation: dict[str, Any],
+        now: str,
+    ) -> dict[str, Any]:
+        verification_mode = self._resolve_verification_mode(candidate)
+        if verification_mode == "subjective_pairwise":
+            return self._build_subjective_surrogate_review(candidate, proposal, validation, now)
+
+        provided_surrogate_verdict = ensure_text(candidate.get("surrogate_verdict")).lower()
+        oracle_verdict = ensure_text(candidate.get("oracle_verdict")).lower()
+        if verification_mode == "objective" and oracle_verdict:
+            surrogate_verdict = "pass" if oracle_verdict in FRONTIER_ACCEPTED_ORACLE_VERDICTS else "fail"
+        elif provided_surrogate_verdict in SURROGATE_VERDICTS:
+            surrogate_verdict = provided_surrogate_verdict
+        elif validation["status"] == "blocked":
+            surrogate_verdict = "fail"
+        elif validation["status"] in {"needs_revision", "merge_recommended"}:
+            surrogate_verdict = "revise"
+        else:
+            surrogate_verdict = "pass"
+
+        surrogate_findings = unique_list(
+            candidate.get("surrogate_findings", [])
+            + validation.get("blockers", [])
+            + validation.get("warnings", [])
+        )
+        surrogate_summary = ensure_text(candidate.get("surrogate_summary"))
+        if not surrogate_summary:
+            if verification_mode == "objective" and oracle_verdict:
+                if surrogate_verdict == "pass":
+                    surrogate_summary = "The objective verifier accepted the candidate against the supplied oracle signal."
+                else:
+                    surrogate_summary = "The objective verifier rejected the candidate against the supplied oracle signal."
+            elif surrogate_verdict == "fail":
+                surrogate_summary = "The surrogate verifier found blocking issues in the proposed mutation."
+            elif surrogate_verdict == "revise":
+                surrogate_summary = "The surrogate verifier found a plausible mutation, but it still needs refinement."
+            else:
+                surrogate_summary = "The surrogate verifier found the mutation reusable enough to test against the frontier."
+        return {
+            "id": f"surrogate-{slugify(candidate['title'])}-{uuid.uuid4().hex[:8]}",
+            "title": candidate["title"],
+            "proposal_id": proposal["id"],
+            "skill_id": ensure_text(proposal.get("skill_id")),
+            "related_skill_ids": proposal["related_skill_ids"],
+            "verdict": surrogate_verdict,
+            "summary": surrogate_summary,
+            "findings": surrogate_findings,
+            "validation_status": validation["status"],
+            "validation_score": validation["score"],
+            "created_at": now,
+            "verification_mode": verification_mode,
+            "verifier_process": "oracle_gate" if verification_mode == "objective" else "heuristic_gate",
+            "oracle_verdict": oracle_verdict,
+        }
 
     def _build_packet(self, candidate: dict[str, Any], payload: dict[str, Any], created_at: str) -> dict[str, Any]:
         goal = ensure_text(payload.get("goal") or candidate.get("problem"))
@@ -640,6 +1046,7 @@ related_skill_ids: {json.dumps(brief["related_skill_ids"])}
             candidate["skill_id"] = skill_id
         else:
             candidate = self._normalize_candidate(payload)
+        candidate["verification_mode"] = self._resolve_verification_mode(candidate)
         packet = payload.get("packet") if isinstance(payload.get("packet"), dict) else self._build_packet(candidate, payload, utc_now())
 
         blockers: list[str] = []
@@ -671,14 +1078,58 @@ related_skill_ids: {json.dumps(brief["related_skill_ids"])}
         add_check("privacy", not pii_hits, "No obvious PII detected." if not pii_hits else f"Potential PII detected: {', '.join(pii_hits)}", weight=2, blocker=bool(pii_hits))
         add_check("title", len(candidate["title"].split()) >= 2, "Skill title is specific enough." if len(candidate["title"].split()) >= 2 else "Skill title is too terse.", warning=True)
         add_check("kind", candidate["kind"] in DEFAULT_KINDS, f"Kind `{candidate['kind']}` matches the recommended taxonomy." if candidate["kind"] in DEFAULT_KINDS else f"Kind `{candidate['kind']}` is allowed but outside the recommended set {sorted(DEFAULT_KINDS)}.", warning=True)
+        add_check("memory_scope", candidate["memory_scope"] in MEMORY_SCOPES, f"memory_scope `{candidate['memory_scope']}` is supported." if candidate["memory_scope"] in MEMORY_SCOPES else f"memory_scope must be one of {sorted(MEMORY_SCOPES)}.", weight=1, blocker=candidate["memory_scope"] not in MEMORY_SCOPES)
+        add_check("memory_strategy", candidate["memory_strategy"] in MEMORY_STRATEGIES, f"memory_strategy `{candidate['memory_strategy']}` is supported." if candidate["memory_strategy"] in MEMORY_STRATEGIES else f"memory_strategy must be one of {sorted(MEMORY_STRATEGIES)}.", weight=1, blocker=candidate["memory_strategy"] not in MEMORY_STRATEGIES)
+        add_check("update_strategy", candidate["update_strategy"] in UPDATE_STRATEGIES, f"update_strategy `{candidate['update_strategy']}` is supported." if candidate["update_strategy"] in UPDATE_STRATEGIES else f"update_strategy must be one of {sorted(UPDATE_STRATEGIES)}.", weight=1, blocker=candidate["update_strategy"] not in UPDATE_STRATEGIES)
         add_check("applies_to", bool(candidate["applies_to"]), "Applies-to patterns supplied." if candidate["applies_to"] else "At least one applies-to pattern is required.", weight=1, blocker=not candidate["applies_to"])
         add_check("trigger", len(candidate["trigger"]) >= 18, "Trigger is concrete." if len(candidate["trigger"]) >= 18 else "Trigger needs to be more explicit.", weight=1, blocker=len(candidate["trigger"]) < 18)
         add_check("problem", len(candidate["problem"]) >= 24, "Problem statement is grounded." if len(candidate["problem"]) >= 24 else "Problem statement is too thin.", weight=1, warning=True)
         add_check("preconditions", len(candidate["preconditions"]) >= 16, "Preconditions captured." if len(candidate["preconditions"]) >= 16 else "Preconditions are missing or too short.", weight=1, warning=True)
+        add_check(
+            "proposal_action",
+            (not candidate["proposal_action"]) or candidate["proposal_action"] in EVOLUTION_ACTIONS,
+            "Proposal action is valid." if (not candidate["proposal_action"]) or candidate["proposal_action"] in EVOLUTION_ACTIONS else f"proposal_action must be one of {sorted(EVOLUTION_ACTIONS)}.",
+            weight=1,
+            blocker=bool(candidate["proposal_action"]) and candidate["proposal_action"] not in EVOLUTION_ACTIONS,
+        )
+        add_check(
+            "surrogate_verdict",
+            (not candidate["surrogate_verdict"]) or candidate["surrogate_verdict"] in SURROGATE_VERDICTS,
+            "Surrogate verdict is valid." if (not candidate["surrogate_verdict"]) or candidate["surrogate_verdict"] in SURROGATE_VERDICTS else f"surrogate_verdict must be one of {sorted(SURROGATE_VERDICTS)}.",
+            weight=1,
+            blocker=bool(candidate["surrogate_verdict"]) and candidate["surrogate_verdict"] not in SURROGATE_VERDICTS,
+        )
+        add_check(
+            "verification_mode",
+            candidate["verification_mode"] in VERIFICATION_MODES,
+            f"Verification mode `{candidate['verification_mode']}` is supported." if candidate["verification_mode"] in VERIFICATION_MODES else f"verification_mode must be one of {sorted(VERIFICATION_MODES)}.",
+            weight=1,
+            blocker=candidate["verification_mode"] not in VERIFICATION_MODES,
+        )
+        add_check(
+            "judge_choice",
+            (not candidate["judge_choice_raw"]) or bool(candidate["judge_choice"]),
+            "Judge choice is normalized to A/B." if (not candidate["judge_choice_raw"]) or bool(candidate["judge_choice"]) else "judge_choice must be `A` or `B` when supplied.",
+            weight=1,
+            blocker=bool(candidate["judge_choice_raw"]) and not bool(candidate["judge_choice"]),
+        )
         add_check("fast_path", len(candidate["fast_path"]) >= 24, "Fast path is present." if len(candidate["fast_path"]) >= 24 else "Fast path is required and should be reusable.", weight=2, blocker=len(candidate["fast_path"]) < 24)
         add_check("failure_modes", len(candidate["failure_modes"]) >= 16, "Failure modes captured." if len(candidate["failure_modes"]) >= 16 else "Failure modes need more detail.", weight=1, warning=True)
         add_check("evidence", len(candidate["evidence"]) >= 40, "Evidence is substantive." if len(candidate["evidence"]) >= 40 else "Evidence is too short to validate the skill.", weight=2, blocker=len(candidate["evidence"]) < 40)
+        add_check("durable_facts", bool(candidate.get("durable_facts")), "Durable facts were extracted for the skill memory object." if candidate.get("durable_facts") else "Add at least one durable_fact so the skill carries reusable memory, not just prose.", weight=1, warning=True)
+        add_check("provenance_refs", bool(candidate.get("provenance_refs")), "Provenance refs were captured for later audit and deprecation." if candidate.get("provenance_refs") else "Capture at least one provenance_ref (file, reference, brief, or artifact) for durable skill memory.", weight=1, warning=True)
+        add_check("canonical_keys", bool(candidate.get("canonical_keys")), "Canonical reconciliation keys were captured for write-time merge/update decisions." if candidate.get("canonical_keys") else "Capture canonical_keys so similar skills reconcile instead of duplicating.", weight=1, warning=True)
+        add_check("hierarchical_memory", (not candidate["long_task"]) or candidate["memory_strategy"] != "flat", "Long-task candidates use a non-flat memory strategy." if (not candidate["long_task"]) or candidate["memory_strategy"] != "flat" else "Long tasks should use hierarchical or knowledge_object memory, not flat storage.", weight=1, warning=candidate["long_task"])
         add_check("skip_steps", candidate["skip_steps_estimate"] > 0, "Exploration cost savings estimated." if candidate["skip_steps_estimate"] > 0 else "skip_steps_estimate should be positive.", weight=1, warning=True)
+        if candidate["verification_mode"] == "subjective_pairwise":
+            pairwise_ready = bool(candidate["subjective_task"] and candidate["baseline_output"] and candidate["candidate_output"])
+            add_check(
+                "subjective_pairwise_inputs",
+                pairwise_ready,
+                "Subjective pairwise verification has the task plus baseline and candidate outputs." if pairwise_ready else "subjective_pairwise verification needs subjective_task, baseline_output, and candidate_output.",
+                weight=1,
+                warning=not pairwise_ready,
+            )
         add_check(
             "briefing",
             (not candidate["long_task"]) or bool(candidate["brief_refs"]) or len(candidate["important_context"]) >= self.long_task_brief_min_chars,
@@ -776,6 +1227,16 @@ related_skill_ids: {json.dumps(brief["related_skill_ids"])}
         else:
             add_check("dedupe", True, "No strong duplicate detected.", weight=1)
 
+        requested_target = ensure_text(candidate.get("target_skill_id") or skill_id)
+        if candidate["proposal_action"] == "edit_skill":
+            add_check(
+                "proposal_target",
+                bool(requested_target or merge_target),
+                "Edit proposal can be attached to an existing skill." if bool(requested_target or merge_target) else "proposal_action=edit_skill requires target_skill_id, skill_id, or a dedupe merge target.",
+                weight=1,
+                blocker=not bool(requested_target or merge_target),
+            )
+
         status = "validated"
         if blockers:
             status = "blocked"
@@ -823,6 +1284,133 @@ related_skill_ids: {json.dumps(brief["related_skill_ids"])}
         self._save()
         return rel
 
+    def _derive_proposal_action(self, candidate: dict[str, Any], validation: dict[str, Any]) -> str:
+        requested = ensure_text(candidate.get("proposal_action")).lower()
+        if requested in EVOLUTION_ACTIONS:
+            return requested
+        if candidate.get("target_skill_id") or candidate.get("skill_id") or validation.get("merge_target"):
+            return "edit_skill"
+        return "create_skill"
+
+    def _write_proposal(self, proposal: dict[str, Any]) -> str:
+        path = self.proposal_dir / f"{file_stamp(proposal['created_at'])}--{safe_stem(proposal['title'])}.json"
+        path.write_text(json.dumps(proposal, indent=2) + "\n", encoding="utf-8")
+        rel = self._relative(path)
+        proposal["path"] = rel
+        self.data["proposals"].append(dict(proposal))
+        self._record_registry_event(
+            "skill_proposal",
+            {
+                "proposal_id": proposal["id"],
+                "path": rel,
+                "action": proposal["action"],
+                "skill_id": proposal.get("skill_id", ""),
+            },
+        )
+        self._save()
+        return rel
+
+    def _write_surrogate_review(self, review: dict[str, Any]) -> str:
+        path = self.surrogate_review_dir / f"{file_stamp(review['created_at'])}--{safe_stem(review['title'])}.json"
+        path.write_text(json.dumps(review, indent=2) + "\n", encoding="utf-8")
+        rel = self._relative(path)
+        review["path"] = rel
+        self.data["surrogate_reviews"].append(dict(review))
+        self._record_registry_event(
+            "skill_surrogate_review",
+            {
+                "review_id": review["id"],
+                "path": rel,
+                "verdict": review["verdict"],
+                "proposal_id": review["proposal_id"],
+            },
+        )
+        self._save()
+        return rel
+
+    def _update_frontier(self, entry: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        frontier = [dict(row) for row in self.data.get("frontier", []) if row.get("status") == "accepted"]
+        if entry.get("status") == "accepted":
+            replaced = False
+            for idx, row in enumerate(frontier):
+                same_skill = row.get("skill_id") and row.get("skill_id") == entry.get("skill_id")
+                same_program = row.get("program_id") and row.get("program_id") == entry.get("program_id")
+                if same_skill or same_program:
+                    frontier[idx] = dict(entry)
+                    replaced = True
+                    break
+            if not replaced:
+                frontier.append(dict(entry))
+            frontier.sort(
+                key=lambda row: (
+                    int(row.get("validation_score", 0)),
+                    int(row.get("score_delta", 0)),
+                    row.get("updated_at", ""),
+                ),
+                reverse=True,
+            )
+            frontier = frontier[: max(1, self.frontier_size)]
+        self.data["frontier"] = frontier
+        self._record_registry_event(
+            "skill_frontier",
+            {
+                "entry_id": entry["id"],
+                "status": entry["status"],
+                "skill_id": entry.get("skill_id", ""),
+                "size": len(frontier),
+            },
+        )
+        self._save()
+        return entry, frontier
+
+    def _write_evolution_run(self, run: dict[str, Any]) -> str:
+        path = self.evolution_run_dir / f"{file_stamp(run['created_at'])}--{safe_stem(run['title'])}.json"
+        path.write_text(json.dumps(run, indent=2) + "\n", encoding="utf-8")
+        rel = self._relative(path)
+        run["path"] = rel
+        self.data["evolution_runs"].append(dict(run))
+        self._record_registry_event(
+            "skill_evolution_run",
+            {
+                "run_id": run["id"],
+                "path": rel,
+                "decision": run["decision"],
+                "skill_id": run.get("skill_id", ""),
+            },
+        )
+        self._save()
+        return rel
+
+    def _stamp_evolution_metadata(
+        self,
+        skill_id: str,
+        *,
+        frontier_status: str,
+        proposal_id: str,
+        run_id: str,
+        proposal_path: str,
+        run_path: str,
+        parent_skill_id: str = "",
+        lineage_note: str = "",
+    ) -> dict[str, Any] | None:
+        skill = self.get_skill(skill_id)
+        if not skill:
+            return None
+        updated = dict(skill)
+        updated["evolution_count"] = int(skill.get("evolution_count", 0)) + 1
+        updated["last_evolved_at"] = utc_now()
+        updated["frontier_status"] = frontier_status or ensure_text(skill.get("frontier_status") or "inactive")
+        updated["parent_skill_id"] = ensure_text(parent_skill_id or skill.get("parent_skill_id"))
+        updated["proposal_refs"] = unique_list(ensure_list(skill.get("proposal_refs")) + [proposal_id, proposal_path])
+        updated["evolution_run_refs"] = unique_list(ensure_list(skill.get("evolution_run_refs")) + [run_id, run_path])
+        updated["lineage"] = unique_list(ensure_list(skill.get("lineage")) + ([lineage_note] if lineage_note else []))
+        updated["updated_at"] = updated["last_evolved_at"]
+        self.data["skills"][skill_id] = updated
+        self._save()
+        self._write_skill(updated)
+        self._sync_index()
+        return updated
+
     def _max_confidence(self, left: str, right: str) -> str:
         left_rank = CONFIDENCE_ORDER.get(left.lower(), 0)
         right_rank = CONFIDENCE_ORDER.get(right.lower(), 0)
@@ -845,12 +1433,25 @@ related_skill_ids: {json.dumps(brief["related_skill_ids"])}
         merged["confidence"] = self._max_confidence(skill.get("confidence", "medium"), candidate.get("confidence", "medium"))
         merged["http_candidate"] = bool(skill.get("http_candidate", False) or candidate.get("http_candidate", False))
         merged["source_type"] = skill.get("source_type", candidate.get("source_type", "trajectory"))
+        merged["memory_scope"] = candidate.get("memory_scope") or skill.get("memory_scope") or infer_memory_scope(merged["kind"], merged["source_type"], False)
+        merged["memory_strategy"] = candidate.get("memory_strategy") or skill.get("memory_strategy") or "hierarchical"
+        merged["update_strategy"] = candidate.get("update_strategy") or skill.get("update_strategy") or "merge_append"
+        merged["durable_facts"] = unique_list(ensure_list(skill.get("durable_facts")) + ensure_list(candidate.get("durable_facts")))
+        merged["provenance_refs"] = unique_list(ensure_list(skill.get("provenance_refs")) + ensure_list(candidate.get("provenance_refs")))
+        merged["retrieval_hints"] = unique_list(ensure_list(skill.get("retrieval_hints")) + ensure_list(candidate.get("retrieval_hints")))
+        merged["canonical_keys"] = unique_list(ensure_list(skill.get("canonical_keys")) + ensure_list(candidate.get("canonical_keys")))
         merged["last_validated"] = utc_day()
         merged["updated_at"] = utc_now()
         merged["validation_status"] = "validated"
         merged["validation_score"] = max(int(skill.get("validation_score", 0)), int(validation.get("score", 0)))
         merged["validation_notes"] = unique_list(ensure_list(skill.get("validation_notes")) + validation.get("warnings", []))
         merged["brief_refs"] = unique_list(ensure_list(skill.get("brief_refs")) + candidate.get("brief_refs", []))
+        merged["evolution_count"] = int(skill.get("evolution_count", 0))
+        merged["frontier_status"] = ensure_text(skill.get("frontier_status") or "inactive")
+        merged["parent_skill_id"] = ensure_text(skill.get("parent_skill_id") or candidate.get("parent_skill_id"))
+        merged["proposal_refs"] = unique_list(ensure_list(skill.get("proposal_refs")))
+        merged["evolution_run_refs"] = unique_list(ensure_list(skill.get("evolution_run_refs")))
+        merged["lineage"] = unique_list(ensure_list(skill.get("lineage")))
         merge_history = ensure_list(skill.get("merge_history"))
         merge_history.append(f"{utc_now()}: merged pipeline delta from {candidate['title']}")
         merged["merge_history"] = unique_list(merge_history)
@@ -897,6 +1498,13 @@ related_skill_ids: {json.dumps(brief["related_skill_ids"])}
             "validation_notes": validation["warnings"],
             "http_candidate": bool(candidate.get("http_candidate", existing.get("http_candidate", False))),
             "source_type": candidate.get("source_type", existing.get("source_type", "trajectory")),
+            "memory_scope": candidate.get("memory_scope", existing.get("memory_scope", infer_memory_scope(candidate.get("kind", "workflow"), candidate.get("source_type", "trajectory"), bool(candidate.get("long_task"))))),
+            "memory_strategy": candidate.get("memory_strategy", existing.get("memory_strategy", "hierarchical")),
+            "update_strategy": candidate.get("update_strategy", existing.get("update_strategy", "merge_append")),
+            "durable_facts": unique_list(ensure_list(existing.get("durable_facts")) + ensure_list(candidate.get("durable_facts"))),
+            "provenance_refs": unique_list(ensure_list(existing.get("provenance_refs")) + ensure_list(candidate.get("provenance_refs"))),
+            "retrieval_hints": unique_list(ensure_list(existing.get("retrieval_hints")) + ensure_list(candidate.get("retrieval_hints"))),
+            "canonical_keys": unique_list(ensure_list(existing.get("canonical_keys")) + ensure_list(candidate.get("canonical_keys"))),
             "last_validated": candidate.get("last_validated") or utc_day(),
             "problem": candidate.get("problem", ""),
             "trigger": candidate.get("trigger", ""),
@@ -906,6 +1514,12 @@ related_skill_ids: {json.dumps(brief["related_skill_ids"])}
             "evidence": candidate.get("evidence", ""),
             "brief_refs": unique_list(ensure_list(existing.get("brief_refs")) + candidate.get("brief_refs", [])),
             "merge_history": ensure_list(existing.get("merge_history")),
+            "evolution_count": int(existing.get("evolution_count", 0)),
+            "frontier_status": ensure_text(existing.get("frontier_status") or "inactive"),
+            "parent_skill_id": ensure_text(existing.get("parent_skill_id") or candidate.get("parent_skill_id")),
+            "proposal_refs": unique_list(ensure_list(existing.get("proposal_refs"))),
+            "evolution_run_refs": unique_list(ensure_list(existing.get("evolution_run_refs"))),
+            "lineage": unique_list(ensure_list(existing.get("lineage"))),
             "created_at": existing.get("created_at", now),
             "updated_at": now,
         }
@@ -1069,6 +1683,296 @@ related_skill_ids: {json.dumps(brief["related_skill_ids"])}
             "delta_path": delta_path,
         }
 
+    def evolve(self, payload: dict[str, Any]) -> dict[str, Any]:
+        reflection = self.reflect(payload)
+        if reflection["status"] != "ok":
+            return reflection
+
+        persist_packet = payload.get("persist_packet", True)
+        validation_payload = dict(payload)
+        validation_payload.update(reflection["candidate"])
+        validation_payload["packet"] = reflection["packet"]
+        validation_payload["packet_path"] = reflection.get("packet_path", "")
+        validation_payload["persist_report"] = payload.get("persist_report", True)
+        validation = self.validate(validation_payload)
+
+        delta = {
+            "created_at": utc_now(),
+            "brief": reflection["brief"],
+            "brief_path": reflection.get("brief_path", ""),
+            "packet": validation["packet"],
+            "packet_path": reflection.get("packet_path", ""),
+            "candidate": validation["candidate"],
+            "validation": {
+                "status": validation["status"],
+                "score": validation["score"],
+                "blockers": validation["blockers"],
+                "warnings": validation["warnings"],
+                "merge_target": validation["merge_target"],
+                "validation_path": validation.get("validation_path", ""),
+            },
+            "evolution_requested": True,
+        }
+        delta_path = self._write_delta(delta)
+        packet = dict(validation["packet"])
+        packet_path = reflection.get("packet_path", "")
+        if persist_packet:
+            packet, packet_path = self._refresh_packet(
+                validation["packet"],
+                artifact_refs=[
+                    reflection.get("brief_path", ""),
+                    validation.get("validation_path", ""),
+                    delta_path,
+                ],
+                validation_status=validation["status"],
+                pipeline_status=validation["status"],
+            )
+        else:
+            packet["artifact_refs"] = unique_list(
+                ensure_list(packet.get("artifact_refs"))
+                + [item for item in [reflection.get("brief_path", ""), validation.get("validation_path", ""), delta_path] if item]
+            )
+            packet["validation_status"] = validation["status"]
+            packet["pipeline_status"] = validation["status"]
+        reflection["packet"] = packet
+        reflection["packet_path"] = packet_path
+        validation["packet"] = packet
+        validation["packet_path"] = packet_path
+
+        candidate = validation["candidate"]
+        proposal_action = self._derive_proposal_action(candidate, validation)
+        target_skill_id = ensure_text(candidate.get("target_skill_id") or candidate.get("skill_id") or validation.get("merge_target"))
+        baseline_skill = self.get_skill(target_skill_id) if target_skill_id else None
+        baseline_score = ensure_int(candidate.get("baseline_validation_score"), int((baseline_skill or {}).get("validation_score", 0)))
+        benchmark = ensure_text(candidate.get("benchmark"))
+        iteration = ensure_int(candidate.get("iteration"), len(self.data["evolution_runs"]) + 1)
+        now = utc_now()
+
+        proposal = {
+            "id": f"proposal-{slugify(candidate['title'])}-{uuid.uuid4().hex[:8]}",
+            "title": candidate["title"],
+            "action": proposal_action,
+            "reason": ensure_text(candidate.get("proposal_reason"))
+            or ("Improve an existing reusable skill after repeated failure evidence." if proposal_action == "edit_skill" else "Create a new reusable skill from a novel failure pattern." if proposal_action == "create_skill" else "Discard the proposed mutation."),
+            "failure_summary": ensure_text(candidate.get("failure_summary"))
+            or candidate["outcome"]
+            or candidate["evidence"],
+            "skill_id": target_skill_id,
+            "candidate_skill_id": candidate.get("skill_id", ""),
+            "related_skill_ids": unique_list(
+                [item for item in [target_skill_id, candidate.get("skill_id", ""), validation.get("merge_target", "")] if item]
+            ),
+            "duplicate_matches": validation.get("duplicate_matches", [])[:3],
+            "history_refs": unique_list(candidate.get("history_refs", [])),
+            "benchmark": benchmark,
+            "iteration": iteration,
+            "packet_id": packet.get("id", ""),
+            "packet_path": packet_path,
+            "validation_status": validation["status"],
+            "validation_score": validation["score"],
+            "validation_path": validation.get("validation_path", ""),
+            "delta_path": delta_path,
+            "created_at": now,
+        }
+        proposal_path = self._write_proposal(proposal)
+
+        surrogate_review = self._build_surrogate_review(candidate, proposal, validation, now)
+        surrogate_verdict = ensure_text(surrogate_review.get("verdict")).lower()
+        verification_mode = ensure_text(surrogate_review.get("verification_mode") or candidate.get("verification_mode") or "heuristic")
+        surrogate_review_path = self._write_surrogate_review(surrogate_review)
+        if persist_packet:
+            packet, packet_path = self._refresh_packet(
+                packet,
+                artifact_refs=[proposal_path, surrogate_review_path],
+                validation_status=validation["status"],
+                pipeline_status=packet.get("pipeline_status", validation["status"]),
+            )
+        else:
+            packet["artifact_refs"] = unique_list(ensure_list(packet.get("artifact_refs")) + [proposal_path, surrogate_review_path])
+        reflection["packet"] = packet
+        reflection["packet_path"] = packet_path
+        validation["packet"] = packet
+        validation["packet_path"] = packet_path
+
+        routed_status = ensure_text(packet.get("route_decision")).lower()
+        oracle_verdict = ensure_text(candidate.get("oracle_verdict")).lower()
+        decision = "accepted"
+        if proposal_action == "discard":
+            decision = "discarded"
+        elif routed_status and routed_status != "complete":
+            decision = routed_status
+        elif validation["status"] == "blocked":
+            decision = "discarded"
+        elif surrogate_verdict == "fail" and self.surrogate_fail_blocks:
+            decision = "discarded"
+        elif surrogate_verdict == "revise":
+            decision = "needs_revision"
+        elif validation["status"] in {"needs_revision"}:
+            decision = "needs_revision"
+        elif oracle_verdict and oracle_verdict not in FRONTIER_ACCEPTED_ORACLE_VERDICTS:
+            decision = "discarded"
+
+        saved_skill: dict[str, Any] | None = None
+        resolved_skill_id = target_skill_id
+        if decision == "accepted":
+            if proposal_action == "edit_skill":
+                merge_target = target_skill_id or validation.get("merge_target", "")
+                if not merge_target:
+                    decision = "needs_revision"
+                else:
+                    merged = self._merge_skill(merge_target, candidate, validation)
+                    if merged["status"] == "missing":
+                        decision = "needs_revision"
+                    else:
+                        saved_skill = merged.get("skill")
+                        resolved_skill_id = merge_target
+            else:
+                saved = self.propose(
+                    {
+                        **candidate,
+                        "allow_duplicate": True,
+                        "persist_report": False,
+                    }
+                )
+                if saved["status"] in {"blocked", "missing", "needs_review"}:
+                    decision = "needs_revision"
+                else:
+                    saved_skill = saved.get("skill")
+                    resolved_skill_id = ensure_text((saved.get("skill") or {}).get("id"))
+
+        candidate_score = int((saved_skill or {}).get("validation_score", validation["score"]))
+        score_delta = candidate_score - baseline_score
+        frontier_status = "discarded"
+        if decision == "accepted":
+            if proposal_action == "create_skill" or score_delta >= self.min_frontier_delta or oracle_verdict in FRONTIER_ACCEPTED_ORACLE_VERDICTS:
+                frontier_status = "accepted"
+            else:
+                frontier_status = "candidate"
+
+        frontier_entry = {
+            "id": f"frontier-{uuid.uuid4().hex[:10]}",
+            "proposal_id": proposal["id"],
+            "run_iteration": iteration,
+            "skill_id": resolved_skill_id,
+            "title": candidate["title"],
+            "action": proposal_action,
+            "benchmark": benchmark,
+            "program_id": ensure_text(candidate.get("program_id")) or proposal["id"],
+            "parent_program_id": ensure_text(candidate.get("parent_program_id")),
+            "related_skill_ids": unique_list(
+                [item for item in [resolved_skill_id, target_skill_id, candidate.get("parent_skill_id", "")] if item]
+            ),
+            "validation_score": candidate_score,
+            "baseline_score": baseline_score,
+            "score_delta": score_delta,
+            "oracle_verdict": oracle_verdict,
+            "surrogate_verdict": surrogate_verdict,
+            "verification_mode": verification_mode,
+            "winner_source": ensure_text(surrogate_review.get("winner_source")),
+            "status": frontier_status,
+            "updated_at": utc_now(),
+        }
+        frontier_entry, frontier = self._update_frontier(frontier_entry)
+
+        evolution_run = {
+            "id": f"evolution-{slugify(candidate['title'])}-{uuid.uuid4().hex[:8]}",
+            "title": candidate["title"],
+            "decision": decision,
+            "skill_id": resolved_skill_id,
+            "target_skill_id": target_skill_id,
+            "related_skill_ids": unique_list(
+                [item for item in [resolved_skill_id, target_skill_id, candidate.get("parent_skill_id", "")] if item]
+            ),
+            "proposal_id": proposal["id"],
+            "proposal_path": proposal_path,
+            "surrogate_review_id": surrogate_review["id"],
+            "surrogate_review_path": surrogate_review_path,
+            "packet_id": packet.get("id", ""),
+            "packet_path": packet_path,
+            "validation_path": validation.get("validation_path", ""),
+            "delta_path": delta_path,
+            "frontier_entry_id": frontier_entry["id"],
+            "frontier_status": frontier_status,
+            "action": proposal_action,
+            "benchmark": benchmark,
+            "iteration": iteration,
+            "baseline_validation_score": baseline_score,
+            "candidate_validation_score": candidate_score,
+            "score_delta": score_delta,
+            "oracle_verdict": oracle_verdict,
+            "surrogate_verdict": surrogate_verdict,
+            "verification_mode": verification_mode,
+            "winner_source": ensure_text(surrogate_review.get("winner_source")),
+            "program_id": frontier_entry["program_id"],
+            "parent_program_id": frontier_entry["parent_program_id"],
+            "created_at": utc_now(),
+        }
+        evolution_run_path = self._write_evolution_run(evolution_run)
+        if persist_packet:
+            packet, packet_path = self._refresh_packet(
+                packet,
+                artifact_refs=[evolution_run_path],
+                related_skill_id=resolved_skill_id,
+                pipeline_status=decision,
+                validation_status=validation["status"],
+            )
+        else:
+            packet["artifact_refs"] = unique_list(ensure_list(packet.get("artifact_refs")) + [evolution_run_path])
+            if resolved_skill_id:
+                packet["skill_id"] = resolved_skill_id
+                packet["related_skill_ids"] = unique_list(ensure_list(packet.get("related_skill_ids")) + [resolved_skill_id])
+            packet["pipeline_status"] = decision
+        reflection["packet"] = packet
+        reflection["packet_path"] = packet_path
+        validation["packet"] = packet
+        validation["packet_path"] = packet_path
+
+        if decision == "accepted" and resolved_skill_id:
+            lineage_note = (
+                f"{utc_now()}: EvoSkill {proposal_action} via {proposal['id']} "
+                f"(baseline={baseline_score}, candidate={candidate_score}, delta={score_delta:+d})"
+            )
+            saved_skill = self._stamp_evolution_metadata(
+                resolved_skill_id,
+                frontier_status=frontier_status,
+                proposal_id=proposal["id"],
+                run_id=evolution_run["id"],
+                proposal_path=proposal_path,
+                run_path=evolution_run_path,
+                parent_skill_id=target_skill_id or candidate.get("parent_skill_id", ""),
+                lineage_note=lineage_note,
+            ) or saved_skill
+
+        self._append_log(
+            "skill",
+            f"evolved `{candidate['title']}`",
+            [
+                f"decision: {decision}",
+                f"proposal: {proposal_action}",
+                f"surrogate: {surrogate_verdict}",
+                f"validation: {validation['status']} ({validation['score']})",
+                f"frontier: {frontier_status}",
+                f"delta path: {delta_path}",
+            ],
+        )
+        return {
+            "status": decision,
+            "reflection": reflection,
+            "validation": validation,
+            "packet": packet,
+            "packet_path": packet_path,
+            "delta_path": delta_path,
+            "proposal": proposal,
+            "proposal_path": proposal_path,
+            "surrogate_review": surrogate_review,
+            "surrogate_review_path": surrogate_review_path,
+            "frontier_entry": frontier_entry,
+            "frontier": frontier,
+            "evolution_run": evolution_run,
+            "evolution_run_path": evolution_run_path,
+            "skill": saved_skill,
+        }
+
     def feedback(
         self,
         skill_id: str,
@@ -1161,7 +2065,14 @@ related_skill_ids: {json.dumps(brief["related_skill_ids"])}
         ) or "- No feedback yet"
         validation_summary = "\n".join(f"- {item}" for item in ensure_list(skill.get("validation_notes"))) or "- No validation warnings recorded."
         brief_summary = "\n".join(f"- {item}" for item in ensure_list(skill.get("brief_refs"))) or "- No brief references recorded."
+        durable_facts_summary = "\n".join(f"- {item}" for item in ensure_list(skill.get("durable_facts"))) or "- No durable facts recorded."
+        provenance_summary = "\n".join(f"- {item}" for item in ensure_list(skill.get("provenance_refs"))) or "- No provenance refs recorded."
+        retrieval_summary = "\n".join(f"- {item}" for item in ensure_list(skill.get("retrieval_hints"))) or "- No retrieval hints recorded."
+        canonical_summary = "\n".join(f"- {item}" for item in ensure_list(skill.get("canonical_keys"))) or "- No canonical reconciliation keys recorded."
         merge_summary = "\n".join(f"- {item}" for item in ensure_list(skill.get("merge_history"))) or "- No merge history."
+        proposal_summary = "\n".join(f"- {item}" for item in ensure_list(skill.get("proposal_refs"))) or "- No proposal history."
+        evolution_summary = "\n".join(f"- {item}" for item in ensure_list(skill.get("evolution_run_refs"))) or "- No evolution runs."
+        lineage_summary = "\n".join(f"- {item}" for item in ensure_list(skill.get("lineage"))) or "- No lineage notes."
         applies = "\n".join(f"  - {yaml_quote(item)}" for item in skill["applies_to"]) or "  - \"<fill in>\""
         body = f"""---
 id: {skill["id"]}
@@ -1180,8 +2091,20 @@ validation_status: {skill.get("validation_status", "unknown")}
 validation_score: {skill.get("validation_score", 0)}
 http_candidate: {"true" if skill["http_candidate"] else "false"}
 source_type: {skill["source_type"]}
+memory_scope: {yaml_quote(ensure_text(skill.get("memory_scope") or infer_memory_scope(skill.get("kind", "workflow"), skill.get("source_type", "trajectory"), False)))}
+memory_strategy: {yaml_quote(ensure_text(skill.get("memory_strategy") or "hierarchical"))}
+update_strategy: {yaml_quote(ensure_text(skill.get("update_strategy") or "merge_append"))}
+durable_facts: {json.dumps(ensure_list(skill.get("durable_facts")))}
+provenance_refs: {json.dumps(ensure_list(skill.get("provenance_refs")))}
+retrieval_hints: {json.dumps(ensure_list(skill.get("retrieval_hints")))}
+canonical_keys: {json.dumps(ensure_list(skill.get("canonical_keys")))}
 last_validated: {skill["last_validated"]}
 brief_refs: {json.dumps(ensure_list(skill.get("brief_refs")))}
+evolution_count: {skill.get("evolution_count", 0)}
+frontier_status: {yaml_quote(ensure_text(skill.get("frontier_status") or "inactive"))}
+parent_skill_id: {yaml_quote(ensure_text(skill.get("parent_skill_id")))}
+proposal_refs: {json.dumps(ensure_list(skill.get("proposal_refs")))}
+evolution_run_refs: {json.dumps(ensure_list(skill.get("evolution_run_refs")))}
 created_at: {skill["created_at"]}
 updated_at: {skill["updated_at"]}
 ---
@@ -1197,6 +2120,28 @@ updated_at: {skill["updated_at"]}
 ## Preconditions
 
 {skill["preconditions"] or "List the preconditions."}
+
+## Memory Role
+
+- Scope: `{ensure_text(skill.get("memory_scope") or infer_memory_scope(skill.get("kind", "workflow"), skill.get("source_type", "trajectory"), False))}`
+- Strategy: `{ensure_text(skill.get("memory_strategy") or "hierarchical")}`
+- Update strategy: `{ensure_text(skill.get("update_strategy") or "merge_append")}`
+
+## Durable Facts
+
+{durable_facts_summary}
+
+## Retrieval Hints
+
+{retrieval_summary}
+
+## Provenance
+
+{provenance_summary}
+
+## Reconciliation Keys
+
+{canonical_summary}
 
 ## Fast Path
 
@@ -1221,6 +2166,26 @@ updated_at: {skill["updated_at"]}
 ## Merge History
 
 {merge_summary}
+
+## EvoSkill Lineage
+
+Frontier status: `{ensure_text(skill.get("frontier_status") or "inactive")}`
+
+Evolution count: {skill.get("evolution_count", 0)}
+
+Parent skill: `{ensure_text(skill.get("parent_skill_id")) or "none"}`
+
+### Proposal References
+
+{proposal_summary}
+
+### Evolution Runs
+
+{evolution_summary}
+
+### Lineage Notes
+
+{lineage_summary}
 
 ## HTTP Upgrade Candidate
 
@@ -1264,12 +2229,12 @@ created_at: {row["created_at"]}
 
         def lines_for(skills: list[dict[str, Any]]) -> list[str]:
             if not skills:
-                return ["| _none_ | _none_ | _none_ | 0 | _none_ | _none_ | _none_ |"]
+                return ["| _none_ | _none_ | _none_ | _none_ | 0 | _none_ | _none_ | _none_ |"]
             return [
                 (
-                    f"| `{skill['id']}` | {skill['title']} | `{skill['kind']}` | {skill['score']} "
+                    f"| `{skill['id']}` | {skill['title']} | `{skill['kind']}` | `{ensure_text(skill.get('memory_scope') or infer_memory_scope(skill.get('kind', 'workflow'), skill.get('source_type', 'trajectory'), False))}` | {skill['score']} "
                     f"| {skill.get('validation_status', 'unknown')} ({skill.get('validation_score', 0)}) "
-                    f"| `{', '.join(skill['applies_to'])}` | {skill['updated_at']} |"
+                    f"| `{ensure_text(skill.get('frontier_status') or 'inactive')}` | `{', '.join(skill['applies_to'])}` | {skill['updated_at']} |"
                 )
                 for skill in skills
             ]
@@ -1279,14 +2244,14 @@ created_at: {row["created_at"]}
             "",
             "## Active Skills",
             "",
-            "| ID | Title | Kind | Score | Validation | Applies To | Updated |",
-            "| --- | --- | --- | ---: | --- | --- | --- |",
+            "| ID | Title | Kind | Memory | Score | Validation | Frontier | Applies To | Updated |",
+            "| --- | --- | --- | --- | ---: | --- | --- | --- | --- |",
             *lines_for(active),
             "",
             "## Retired Skills",
             "",
-            "| ID | Title | Kind | Score | Validation | Applies To | Updated |",
-            "| --- | --- | --- | ---: | --- | --- | --- |",
+            "| ID | Title | Kind | Memory | Score | Validation | Frontier | Applies To | Updated |",
+            "| --- | --- | --- | --- | ---: | --- | --- | --- | --- |",
             *lines_for(retired),
             "",
         ]
@@ -1320,8 +2285,38 @@ def mcp_tools() -> list[dict[str, Any]]:
         "parent_packet_id": {"type": "string"},
         "hop_count": {"type": "integer"},
         "retry_count": {"type": "integer"},
+        "target_skill_id": {"type": "string"},
+        "parent_skill_id": {"type": "string"},
+        "proposal_action": {"type": "string", "enum": sorted(EVOLUTION_ACTIONS)},
+        "proposal_reason": {"type": "string"},
+        "failure_summary": {"type": "string"},
+        "benchmark": {"type": "string"},
+        "iteration": {"type": "integer"},
+        "baseline_validation_score": {"type": "integer"},
+        "surrogate_verdict": {"type": "string", "enum": sorted(SURROGATE_VERDICTS)},
+        "surrogate_summary": {"type": "string"},
+        "surrogate_findings": {"type": "array", "items": {"type": "string"}},
+        "oracle_verdict": {"type": "string"},
+        "verification_mode": {"type": "string", "enum": sorted(VERIFICATION_MODES)},
+        "subjective_task": {"type": "string"},
+        "subjective_rubric": {"type": "array", "items": {"type": "string"}},
+        "baseline_output": {"type": "string"},
+        "candidate_output": {"type": "string"},
+        "judge_choice": {"type": "string", "enum": ["A", "B", "a", "b"]},
+        "judge_summary": {"type": "string"},
+        "judge_findings": {"type": "array", "items": {"type": "string"}},
+        "history_refs": {"type": "array", "items": {"type": "string"}},
+        "program_id": {"type": "string"},
+        "parent_program_id": {"type": "string"},
         "http_candidate": {"type": "boolean"},
         "source_type": {"type": "string"},
+        "memory_scope": {"type": "string", "enum": sorted(MEMORY_SCOPES)},
+        "memory_strategy": {"type": "string", "enum": sorted(MEMORY_STRATEGIES)},
+        "update_strategy": {"type": "string", "enum": sorted(UPDATE_STRATEGIES)},
+        "durable_facts": {"type": "array", "items": {"type": "string"}},
+        "provenance_refs": {"type": "array", "items": {"type": "string"}},
+        "retrieval_hints": {"type": "array", "items": {"type": "string"}},
+        "canonical_keys": {"type": "array", "items": {"type": "string"}},
         "skip_steps_estimate": {"type": "integer"},
         "confidence": {"type": "string"},
         "last_validated": {"type": "string"},
@@ -1399,8 +2394,28 @@ def mcp_tools() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "skill_evolve",
+            "description": "Run an EvoSkill-style create-or-edit improvement loop: reflect failure evidence, create a proposal, store surrogate verification, apply the mutation, and update the frontier.",
+            "inputSchema": {
+                "type": "object",
+                "required": ["title", "kind", "goal", "evidence"],
+                "properties": base_skill_fields,
+            },
+        },
+        {
+            "name": "skill_frontier",
+            "description": "List the currently accepted EvoSkill frontier entries, optionally filtered to one skill id.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "skill_id": {"type": "string"},
+                    "limit": {"type": "integer"},
+                },
+            },
+        },
+        {
             "name": "skill_get",
-            "description": "Fetch a skill, related briefs, related packets, and its feedback by skill id.",
+            "description": "Fetch a skill, related briefs, packets, feedback, proposals, surrogate reviews, and evolution runs by skill id.",
             "inputSchema": {
                 "type": "object",
                 "required": ["skill_id"],
@@ -1508,6 +2523,12 @@ def run_mcp(workspace: str) -> int:
                     arguments.get("score_delta"),
                 )
                 write_message({"jsonrpc": "2.0", "id": msg_id, "result": tool_result(result, result.get("status") in {"blocked", "missing"})})
+            elif name == "skill_evolve":
+                result = store.evolve(arguments)
+                write_message({"jsonrpc": "2.0", "id": msg_id, "result": tool_result(result, result.get("status") in {"blocked", "missing"})})
+            elif name == "skill_frontier":
+                result = {"status": "ok", "frontier": store.list_frontier(int(arguments.get("limit", 5)), str(arguments.get("skill_id", "")))}
+                write_message({"jsonrpc": "2.0", "id": msg_id, "result": tool_result(result)})
             elif name == "skill_get":
                 skill_id = str(arguments["skill_id"])
                 skill = store.get_skill(skill_id)
@@ -1518,6 +2539,10 @@ def run_mcp(workspace: str) -> int:
                         "feedback": store.list_feedback(skill_id),
                         "briefs": store.list_briefs(skill_id),
                         "packets": store.list_packets(skill_id),
+                        "proposals": store.list_proposals(skill_id),
+                        "surrogate_reviews": store.list_surrogate_reviews(skill_id),
+                        "evolution_runs": store.list_evolution_runs(skill_id),
+                        "frontier": store.list_frontier(skill_id=skill_id),
                     }
                     if skill
                     else {"status": "missing", "skill_id": skill_id}
@@ -1576,6 +2601,13 @@ def main(argv: list[str] | None = None) -> int:
     reflect.add_argument("--retry-count", type=int, default=0)
     reflect.add_argument("--http-candidate", action="store_true")
     reflect.add_argument("--source-type", default="trajectory")
+    reflect.add_argument("--memory-scope", choices=sorted(MEMORY_SCOPES))
+    reflect.add_argument("--memory-strategy", choices=sorted(MEMORY_STRATEGIES))
+    reflect.add_argument("--update-strategy", choices=sorted(UPDATE_STRATEGIES))
+    reflect.add_argument("--durable-fact", dest="durable_facts", action="append")
+    reflect.add_argument("--provenance-ref", dest="provenance_refs", action="append")
+    reflect.add_argument("--retrieval-hint", dest="retrieval_hints", action="append")
+    reflect.add_argument("--canonical-key", dest="canonical_keys", action="append")
     reflect.add_argument("--skip-steps-estimate", type=int, default=0)
     reflect.add_argument("--confidence", default="medium")
     reflect.add_argument("--last-validated", default="")
@@ -1613,6 +2645,13 @@ def main(argv: list[str] | None = None) -> int:
     validate.add_argument("--retry-count", type=int, default=0)
     validate.add_argument("--http-candidate", action="store_true")
     validate.add_argument("--source-type", default="trajectory")
+    validate.add_argument("--memory-scope", choices=sorted(MEMORY_SCOPES))
+    validate.add_argument("--memory-strategy", choices=sorted(MEMORY_STRATEGIES))
+    validate.add_argument("--update-strategy", choices=sorted(UPDATE_STRATEGIES))
+    validate.add_argument("--durable-fact", dest="durable_facts", action="append")
+    validate.add_argument("--provenance-ref", dest="provenance_refs", action="append")
+    validate.add_argument("--retrieval-hint", dest="retrieval_hints", action="append")
+    validate.add_argument("--canonical-key", dest="canonical_keys", action="append")
     validate.add_argument("--skip-steps-estimate", type=int, default=0)
     validate.add_argument("--confidence", default="medium")
     validate.add_argument("--last-validated", default="")
@@ -1649,6 +2688,13 @@ def main(argv: list[str] | None = None) -> int:
     propose.add_argument("--retry-count", type=int, default=0)
     propose.add_argument("--http-candidate", action="store_true")
     propose.add_argument("--source-type", default="trajectory")
+    propose.add_argument("--memory-scope", choices=sorted(MEMORY_SCOPES))
+    propose.add_argument("--memory-strategy", choices=sorted(MEMORY_STRATEGIES))
+    propose.add_argument("--update-strategy", choices=sorted(UPDATE_STRATEGIES))
+    propose.add_argument("--durable-fact", dest="durable_facts", action="append")
+    propose.add_argument("--provenance-ref", dest="provenance_refs", action="append")
+    propose.add_argument("--retrieval-hint", dest="retrieval_hints", action="append")
+    propose.add_argument("--canonical-key", dest="canonical_keys", action="append")
     propose.add_argument("--skip-steps-estimate", type=int, default=0)
     propose.add_argument("--confidence", default="medium")
     propose.add_argument("--last-validated", default="")
@@ -1686,6 +2732,13 @@ def main(argv: list[str] | None = None) -> int:
     pipeline.add_argument("--retry-count", type=int, default=0)
     pipeline.add_argument("--http-candidate", action="store_true")
     pipeline.add_argument("--source-type", default="trajectory")
+    pipeline.add_argument("--memory-scope", choices=sorted(MEMORY_SCOPES))
+    pipeline.add_argument("--memory-strategy", choices=sorted(MEMORY_STRATEGIES))
+    pipeline.add_argument("--update-strategy", choices=sorted(UPDATE_STRATEGIES))
+    pipeline.add_argument("--durable-fact", dest="durable_facts", action="append")
+    pipeline.add_argument("--provenance-ref", dest="provenance_refs", action="append")
+    pipeline.add_argument("--retrieval-hint", dest="retrieval_hints", action="append")
+    pipeline.add_argument("--canonical-key", dest="canonical_keys", action="append")
     pipeline.add_argument("--skip-steps-estimate", type=int, default=0)
     pipeline.add_argument("--confidence", default="medium")
     pipeline.add_argument("--last-validated", default="")
@@ -1698,12 +2751,83 @@ def main(argv: list[str] | None = None) -> int:
     pipeline.add_argument("--allow-duplicate", action="store_true")
     pipeline.set_defaults(persist=True, persist_brief=True, persist_packet=True, persist_report=True, auto_merge=True)
 
+    evolve = sub.add_parser("evolve")
+    evolve.add_argument("--skill-id")
+    evolve.add_argument("--target-skill-id", default="")
+    evolve.add_argument("--parent-skill-id", default="")
+    evolve.add_argument("--title", required=True)
+    evolve.add_argument("--kind", required=True)
+    evolve.add_argument("--apply", dest="applies_to", action="append")
+    evolve.add_argument("--goal", required=True)
+    evolve.add_argument("--problem", default="")
+    evolve.add_argument("--trigger", default="")
+    evolve.add_argument("--preconditions", default="")
+    evolve.add_argument("--fast-path", default="")
+    evolve.add_argument("--failure-modes", default="")
+    evolve.add_argument("--evidence", required=True)
+    evolve.add_argument("--important-context", default="")
+    evolve.add_argument("--observation", dest="observations", action="append")
+    evolve.add_argument("--risk", dest="risks", action="append")
+    evolve.add_argument("--next-action", dest="next_actions", action="append")
+    evolve.add_argument("--file", dest="files", action="append")
+    evolve.add_argument("--reference", dest="references", action="append")
+    evolve.add_argument("--outcome", default="")
+    evolve.add_argument("--route-decision", choices=sorted(ROUTE_DECISIONS))
+    evolve.add_argument("--route-reason", default="")
+    evolve.add_argument("--unresolved-question", dest="unresolved_questions", action="append")
+    evolve.add_argument("--artifact-ref", dest="artifact_refs", action="append")
+    evolve.add_argument("--assigned-target", default="")
+    evolve.add_argument("--parent-packet-id", default="")
+    evolve.add_argument("--hop-count", type=int, default=0)
+    evolve.add_argument("--retry-count", type=int, default=0)
+    evolve.add_argument("--proposal-action", choices=sorted(EVOLUTION_ACTIONS))
+    evolve.add_argument("--proposal-reason", default="")
+    evolve.add_argument("--failure-summary", default="")
+    evolve.add_argument("--benchmark", default="")
+    evolve.add_argument("--iteration", type=int, default=0)
+    evolve.add_argument("--baseline-validation-score", type=int, default=0)
+    evolve.add_argument("--surrogate-verdict", choices=sorted(SURROGATE_VERDICTS))
+    evolve.add_argument("--surrogate-summary", default="")
+    evolve.add_argument("--surrogate-finding", dest="surrogate_findings", action="append")
+    evolve.add_argument("--oracle-verdict", default="")
+    evolve.add_argument("--verification-mode", choices=sorted(VERIFICATION_MODES))
+    evolve.add_argument("--subjective-task", default="")
+    evolve.add_argument("--subjective-rubric", action="append")
+    evolve.add_argument("--baseline-output", default="")
+    evolve.add_argument("--candidate-output", default="")
+    evolve.add_argument("--judge-choice", default="")
+    evolve.add_argument("--judge-summary", default="")
+    evolve.add_argument("--judge-finding", dest="judge_findings", action="append")
+    evolve.add_argument("--history-ref", dest="history_refs", action="append")
+    evolve.add_argument("--program-id", default="")
+    evolve.add_argument("--parent-program-id", default="")
+    evolve.add_argument("--http-candidate", action="store_true")
+    evolve.add_argument("--source-type", default="trajectory")
+    evolve.add_argument("--memory-scope", choices=sorted(MEMORY_SCOPES))
+    evolve.add_argument("--memory-strategy", choices=sorted(MEMORY_STRATEGIES))
+    evolve.add_argument("--update-strategy", choices=sorted(UPDATE_STRATEGIES))
+    evolve.add_argument("--durable-fact", dest="durable_facts", action="append")
+    evolve.add_argument("--provenance-ref", dest="provenance_refs", action="append")
+    evolve.add_argument("--retrieval-hint", dest="retrieval_hints", action="append")
+    evolve.add_argument("--canonical-key", dest="canonical_keys", action="append")
+    evolve.add_argument("--skip-steps-estimate", type=int, default=0)
+    evolve.add_argument("--confidence", default="medium")
+    evolve.add_argument("--last-validated", default="")
+    evolve.add_argument("--long-task", action="store_true")
+    evolve.add_argument("--no-persist-packet", dest="persist_packet", action="store_false")
+    evolve.add_argument("--no-persist-report", dest="persist_report", action="store_false")
+    evolve.set_defaults(persist_packet=True, persist_report=True)
+
     feedback = sub.add_parser("feedback")
     feedback.add_argument("--skill-id", required=True)
     feedback.add_argument("--verdict", choices=["upvote", "downvote", "amend"], required=True)
     feedback.add_argument("--reason", required=True)
     feedback.add_argument("--evidence", default="")
     feedback.add_argument("--score-delta", type=int)
+
+    frontier = sub.add_parser("frontier")
+    frontier.add_argument("--skill-id", default="")
+    frontier.add_argument("--limit", type=int, default=5)
 
     retire = sub.add_parser("retire")
     retire.add_argument("--skill-id", required=True)
@@ -1734,8 +2858,12 @@ def main(argv: list[str] | None = None) -> int:
         result = store.propose(payload)
     elif command == "pipeline-run":
         result = store.pipeline_run(payload)
+    elif command == "evolve":
+        result = store.evolve(payload)
     elif command == "feedback":
         result = store.feedback(payload["skill_id"], payload["verdict"], payload["reason"], payload["evidence"], payload["score_delta"])
+    elif command == "frontier":
+        result = {"status": "ok", "frontier": store.list_frontier(payload["limit"], payload["skill_id"])}
     elif command == "retire":
         result = store.retire(payload["skill_id"], payload["reason"])
     elif command == "get":
@@ -1746,6 +2874,10 @@ def main(argv: list[str] | None = None) -> int:
             "feedback": store.list_feedback(payload["skill_id"]),
             "briefs": store.list_briefs(payload["skill_id"]),
             "packets": store.list_packets(payload["skill_id"]),
+            "proposals": store.list_proposals(payload["skill_id"]),
+            "surrogate_reviews": store.list_surrogate_reviews(payload["skill_id"]),
+            "evolution_runs": store.list_evolution_runs(payload["skill_id"]),
+            "frontier": store.list_frontier(skill_id=payload["skill_id"]),
         } if skill else {"status": "missing", "skill_id": payload["skill_id"]}
     else:
         store._sync_index()

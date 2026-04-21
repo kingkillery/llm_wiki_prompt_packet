@@ -119,6 +119,13 @@ Common optional flags across write subcommands:
 - `--failure-modes` — what goes wrong without this skill
 - `--observation` (repeatable), `--risk` (repeatable) — supporting detail
 - `--file` (repeatable), `--reference` (repeatable), `--artifact-ref` (repeatable) — durable refs
+- `--memory-scope` — `working`, `episodic`, `semantic`, `procedural`, or `hybrid`
+- `--memory-strategy` — `hierarchical`, `knowledge_object`, or `flat`
+- `--update-strategy` — `append_only`, `merge_append`, `replace_on_validation`, or `deprecate_on_conflict`
+- `--durable-fact` (repeatable) — stable facts worth preserving beyond the immediate run
+- `--provenance-ref` (repeatable) — supporting refs used later for audit/deprecation
+- `--retrieval-hint` (repeatable) — compact lookup handles for future agents
+- `--canonical-key` (repeatable) — write-time reconciliation handles so overlapping skills update/merge instead of duplicating
 - `--route-decision` — one of `complete`, `retry_same_worker`, `reroute_to_sibling`, `escalate_to_parent`, `stop_insufficient_evidence`
 - `--skip-steps-estimate` — how many steps this shortcut avoids
 - `--confidence` — `low`, `medium`, or `high`
@@ -337,9 +344,20 @@ A solid reusable skill should include:
 - explicit preconditions
 - explicit failure modes
 - artifact references when the task had depth
+- a memory scope that says what kind of durable knowledge this is
+- a non-flat memory strategy for long or expensive trajectories
+- durable facts plus provenance refs so the skill behaves like a knowledge object, not a vague note
+- canonical reconciliation keys so writes can merge/update cleanly
 - enough specificity that another agent can execute it without guesswork
 
 If the shortcut still depends on hidden context in your head, it is not ready.
+
+Modern packet default:
+
+- most `ui` and `http` skills are **procedural** memory
+- long workflow captures begin as **episodic** or **hybrid** memory
+- prompt/style skills often become **semantic** memory
+- the pipeline should promote raw episodes into hierarchical summaries before saving them as active procedural memory
 
 ## Packet Integration
 
