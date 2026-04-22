@@ -40,29 +40,38 @@ If you do not find one, continue with this wrapper.
 
 ## Install Flow
 
-Preferred packet toolset surface when the packet checkout is available:
+### One-command hosted install (`--wire-repo`)
 
-- `powershell -NoProfile -ExecutionPolicy Bypass -File <llm_wiki_prompt_packet>\support\scripts\llm_wiki_packet.ps1 init --project-root <repo-root>`
-- `python <llm_wiki_prompt_packet>\support\scripts\llm_wiki_packet.py init --project-root <repo-root>`
+Preferred path. Works from any directory. Downloads the latest release, installs the packet, wires global Claude config, and runs the health check as the closing step.
 
-Use the current invoked folder as the workspace root unless deeper repo instructions say otherwise.
+**PowerShell (Windows):**
+```powershell
+$f="$env:TEMP\llm-wiki-install.ps1"; iwr https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1 -OutFile $f; & $f -WireRepo
+```
 
-Fastest local path when the packet checkout is present:
+**Shell (macOS / Linux):**
+```bash
+curl -fsSL https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.sh | bash -s -- --wire-repo
+```
+
+The health check propagates its exit code so chained commands honor failure.
+Set `LLM_WIKI_HEALTH_CHECK_NONFATAL=1` to restore warn-only behavior.
+
+### Local checkout install
+
+When the `llm_wiki_prompt_packet` checkout is already on disk:
+
+- `bash ./install.sh --wire-repo` (from inside the checkout, wires current directory)
+- `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -WireRepo`
+- `python installers/install_g_kade_workspace.py --workspace <repo-root>`
+- `bash ./installers/install_g_kade_workspace.sh --workspace <repo-root>`
+
+### Legacy packet CLI (still supported)
 
 - `powershell -NoProfile -ExecutionPolicy Bypass -File .\support\scripts\llm_wiki_packet.ps1 init --project-root <repo-root>`
 - `python .\support\scripts\llm_wiki_packet.py init --project-root <repo-root>`
-- `python installers/install_g_kade_workspace.py --workspace <repo-root>`
-- `powershell -NoProfile -ExecutionPolicy Bypass -File .\installers\install_g_kade_workspace.ps1 --workspace <repo-root>`
-- `bash ./installers/install_g_kade_workspace.sh --workspace <repo-root>`
 
-Hosted fallback when only the hosted installer is available:
-
-- PowerShell:
-  - `LLM_WIKI_INSTALL_MODE=g-kade`
-  - then run the hosted `install.ps1` with the repo root path
-- Shell:
-  - `LLM_WIKI_INSTALL_MODE=g-kade`
-  - then run the hosted `install.sh` with the repo root path
+Prefer `--wire-repo` for new setups. The legacy CLI delegates to the same workspace installer but does not run the closing health check or global Claude wiring by default.
 
 This flow must:
 
@@ -103,11 +112,11 @@ Treat packet instructions as the base contract. Layer KADE guidance on top inste
 
 ## Fastest Successful Install
 
-1. Run `powershell -NoProfile -ExecutionPolicy Bypass -File .\support\scripts\llm_wiki_packet.ps1 init --project-root <repo-root>`.
-2. Let it install the packet into the repo root.
-3. Let it scaffold repo-local `.agents/.codex/.claude` skill surfaces for `kade-hq`, `g-kade`, `gstack`, and `pokemon-benchmark`.
-4. Let it run `scripts/setup_llm_wiki_memory.ps1` or `.sh` with GitVizz skipped unless a real GitVizz repo path is configured.
-5. Confirm the workspace has packet files, local skill files, and a valid health-helper path.
+1. Run `bash ./install.sh --wire-repo` (or `install.ps1 -WireRepo` on Windows) from inside the target repo.
+2. It runs preflight, installs the packet, scaffolds repo-local `.agents/.codex/.claude` skill surfaces for `kade-hq`, `g-kade`, `gstack`, and `pokemon-benchmark`.
+3. It wires global Claude config (`~/.claude/CLAUDE.md` + `~/.claude/commands/wiki-*.md`).
+4. It runs the health check and propagates exit code (set `LLM_WIKI_HEALTH_CHECK_NONFATAL=1` for warn-only).
+5. Confirm the workspace has packet files, local skill files, and a passing health check.
 
 ## Roadblocks And Corrections
 
@@ -122,9 +131,10 @@ Treat packet instructions as the base contract. Layer KADE guidance on top inste
 
 ## Wish I Knew Before Install
 
-- `xyz`: a successful `/g-kade install` is not "copy the wrapper skill". It is "bootstrap the repo into a layered workspace".
+- `xyz`: a successful install is not "copy the wrapper skill". It is "bootstrap the repo into a layered workspace". Use `--wire-repo` for the full one-command path.
 - `xyz`: the repo root is the workspace target; `~/.agents/skills/g-kade` by itself is not enough.
-- `xyz`: the fastest reliable path is the packet CLI `init` entrypoint because it delegates to the workspace installer, keeps the surface stable, and leaves a repo-local toolset behind for setup, checks, and benchmarks.
+- `xyz`: `--wire-repo` is the fastest reliable path because it handles preflight, install, global Claude wiring, and health check in one step.
+- `xyz`: the health check exit code propagates by default. Set `LLM_WIKI_HEALTH_CHECK_NONFATAL=1` if your automation needs warn-only behavior.
 
 ## Session Flow
 

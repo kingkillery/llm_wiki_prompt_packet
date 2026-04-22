@@ -25,17 +25,34 @@ This launcher skill is not itself the harness under test. The benchmarked harnes
 
 ## Bootstrap The Neutral Repo
 
-Preferred local path when the `llm_wiki_prompt_packet` checkout is available:
+### One-command hosted install (`--wire-repo`)
+
+Preferred path. Downloads the latest release, installs the packet into the neutral repo, wires global Claude config, and runs the health check.
+
+**PowerShell (Windows):**
+```powershell
+$f="$env:TEMP\llm-wiki-install.ps1"; iwr https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1 -OutFile $f; cd <neutral-repo>; & $f -WireRepo
+```
+
+**Shell (macOS / Linux):**
+```bash
+cd <neutral-repo> && curl -fsSL https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.sh | bash -s -- --wire-repo
+```
+
+### Local checkout install
+
+When the `llm_wiki_prompt_packet` checkout is already on disk:
+
+- `bash ./install.sh --wire-repo` (from inside the neutral repo, with `install.sh` from the packet checkout)
+- `python <llm_wiki_prompt_packet>/installers/install_g_kade_workspace.py --workspace <neutral-repo>`
+- `bash <llm_wiki_prompt_packet>/installers/install_g_kade_workspace.sh --workspace <neutral-repo>`
+
+### Legacy packet CLI (still supported)
 
 - `powershell -NoProfile -ExecutionPolicy Bypass -File <llm_wiki_prompt_packet>\support\scripts\llm_wiki_packet.ps1 init --project-root <neutral-repo>`
 - `python <llm_wiki_prompt_packet>\support\scripts\llm_wiki_packet.py init --project-root <neutral-repo>`
-- `python <llm_wiki_prompt_packet>\installers\install_g_kade_workspace.py --workspace <neutral-repo>`
-- `powershell -NoProfile -ExecutionPolicy Bypass -File <llm_wiki_prompt_packet>\installers\install_g_kade_workspace.ps1 --workspace <neutral-repo>`
 
-Hosted fallback when only the hosted installer is available:
-
-- set `LLM_WIKI_INSTALL_MODE=g-kade`
-- then run the hosted `install.ps1` or `install.sh` against the neutral repo root
+Prefer `--wire-repo` for new setups.
 
 The bootstrap must leave these benchmark surfaces inside the neutral repo:
 
