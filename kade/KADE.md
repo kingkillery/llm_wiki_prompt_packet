@@ -20,6 +20,13 @@
 
 ## Handoff Log
 
+2026-04-21T04:40:00Z - Archived legacy pk-skills1 copy down to the packet keep set
+Changed: archived the old `deps/pk-skills1` copy into `deps/pk-skills1/archive/`, keeping only `gstack/`, `kade-hq/`, and `kade-headquarters/` at the top level, plus a small `archive/README.md` explaining the split.
+Files: `deps/pk-skills1/**`, with the active keep set left at the submodule root and the remainder moved under `deps/pk-skills1/archive/`.
+Why: the packet repo only depends on the richer `gstack` / `g-kade` runtime surface and the Kade HUMAN template candidates, while the rest of the historical skills copy was useful mainly as reference material.
+Verified: [x] top-level `deps/pk-skills1` now contains only `archive/`, `gstack/`, `kade-hq/`, and `kade-headquarters/`; [x] the `pk-skills1` submodule committed and pushed the archive split; [x] the parent repo can advance its submodule pointer without reviving the full legacy tree.
+Next: if installer or docs references ever need another legacy subtree, restore it deliberately from `deps/pk-skills1/archive/` instead of repopulating the submodule root.
+
 2026-04-21T00:20:00Z - Literature-driven memory architecture simplification pass
 Changed: upgraded the packet skill-learning plane with typed memory-object fields, layered-memory guidance, and WorldDB-style write-time reconciliation keys; then simplified the packet-owned `kade-hq`, `gstack`, and `g-kade` wrappers so they preserve the Kade homage while still reflecting controller-style memory routing and capability-aware harness choices.
 Files: `support/scripts/llm_wiki_skill_mcp.py`, `tests/test_llm_wiki_skill_mcp.py`, `LLM_WIKI_MEMORY.md`, `SKILL_CREATION_AT_EXPERT_LEVEL.md`, `SYSTEM_CONTRACT.md`, `prompts/00-system-prompt.md`, `prompts/04-tool-directives.md`, `skills/home/llm-wiki-skills/SKILL.md`, `skills/home/kade-hq/SKILL.md`, `skills/home/gstack/SKILL.md`, `skills/home/g-kade/SKILL.md`, `.factory/memories.md`, the new vault progress files, and the repo wiki synthesis note.
