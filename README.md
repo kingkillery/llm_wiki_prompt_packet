@@ -25,9 +25,9 @@ Those wrappers live in this repo under `skills/home/` and are intentionally ligh
 
 **One command - wire this packet into the repo or vault you are sitting in.**
 
-Windows (PowerShell):
+Windows (PowerShell) - download then invoke (BOM-immune; flags are guaranteed to propagate):
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1))) -WireRepo
+$f="$env:TEMP\llm-wiki-install.ps1"; iwr https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1 -OutFile $f; & $f -WireRepo
 ```
 
 macOS / Linux:
@@ -35,13 +35,18 @@ macOS / Linux:
 curl -fsSL https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.sh | bash -s -- --wire-repo
 ```
 
-`-WireRepo` / `--wire-repo` runs preflight (detects missing tools), installs the packet into the current directory as a workspace, automates global Claude wiring (`~/.claude/CLAUDE.md` plus `~/.claude/commands/wiki-*.md`), and runs the health check as the closing step.
+`-WireRepo` / `--wire-repo` runs preflight (detects missing tools), installs the packet into the current directory as a workspace, automates global Claude wiring (`~/.claude/CLAUDE.md` plus `~/.claude/commands/wiki-*.md`), and runs the health check as the closing step. The closing health check propagates its exit code so chained commands honor failure (set `LLM_WIKI_HEALTH_CHECK_NONFATAL=1` to keep warn-only behavior). Global Claude wiring writes a timestamped `.bak` of `~/.claude/CLAUDE.md` before any mutation.
 
 See [`QUICKSTART.md`](QUICKSTART.md) for the 30-second walkthrough, or run `bash install.sh --help` / `install.ps1 -Help` for the full flag set.
 
+**Compact PowerShell alternative** (shorter, but args can be silently dropped if upstream ever serves a UTF-8 BOM - prefer the temp-file form above for reliability):
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1))) -WireRepo
+```
+
 **Vault-only install** (legacy `packet` mode for an Obsidian vault, no global Claude wiring):
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1)))
+$f="$env:TEMP\llm-wiki-install.ps1"; iwr https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1 -OutFile $f; & $f
 ```
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.sh | bash
@@ -173,7 +178,9 @@ Use the installed helpers from the vault root when you want machine-level setup,
 - `scripts/run_llm_wiki_agent.sh`
 - `scripts/run_llm_wiki_agent.cmd`
 
-## Quickstart
+## Advanced: repo-CLI surface (`llm_wiki_packet.ps1`)
+
+> If you just want to install, see [Quick Install](#quick-install) above. This section is for the repo-CLI surface used by power users and CI - it is NOT the canonical install path.
 
 Use this when you already have this packet checked out and want a CLI-style packet toolset that can activate a specific repo for the full harness contract, including `kade-hq`, `g-kade`, `gstack`, Pi-facing home skills, and the Pokemon benchmark surface.
 

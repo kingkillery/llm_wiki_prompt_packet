@@ -4,9 +4,9 @@ Zero to a wired repo with the full stack.
 
 ## One command
 
-**PowerShell (Windows):**
+**PowerShell (Windows)** - download then invoke. BOM-immune; `-WireRepo` is guaranteed to propagate:
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1))) -WireRepo
+$f="$env:TEMP\llm-wiki-install.ps1"; iwr https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1 -OutFile $f; & $f -WireRepo
 ```
 
 **Shell (macOS / Linux):**
@@ -19,8 +19,13 @@ That command:
 1. Runs **preflight** to detect missing tools (Python, Git, Node, curl) and prints platform-specific install hints before touching disk.
 2. Lays the packet into the current directory as a workspace.
 3. Installs the harness skill surfaces (`kade-hq`, `gstack`, `g-kade`).
-4. **Wires global Claude config** - writes the LLM Wiki section into `~/.claude/CLAUDE.md` and copies `wiki-{ingest,query,lint,skill}.md` into `~/.claude/commands/`, so every future Claude session can call `/wiki-query`, `/wiki-ingest`, `/wiki-skill`, `/wiki-lint`.
-5. Runs the **health check** and reports green/red.
+4. **Wires global Claude config** - writes the LLM Wiki section into `~/.claude/CLAUDE.md` (timestamped `.bak` is written alongside before any mutation) and copies `wiki-{ingest,query,lint,skill}.md` into `~/.claude/commands/`, so every future Claude session can call `/wiki-query`, `/wiki-ingest`, `/wiki-skill`, `/wiki-lint`.
+5. Runs the **health check**. Exit code propagates so chained commands honor failure - set `LLM_WIKI_HEALTH_CHECK_NONFATAL=1` for warn-only behavior.
+
+**Compact PowerShell alternative** (shorter, but args can be silently dropped if upstream ever serves a BOM):
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1))) -WireRepo
+```
 
 ## Verify
 

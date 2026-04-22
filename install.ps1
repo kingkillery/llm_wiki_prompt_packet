@@ -250,8 +250,16 @@ try {
         if (Test-Path $checkHelper) {
             Write-Host ">> running health check"
             & $checkHelper
-            if ($LASTEXITCODE -ne 0) {
-                Write-Warning "health check reported issues - review output above"
+            $healthRc = $LASTEXITCODE
+            if ($healthRc -ne 0) {
+                # Exit code propagates so chained commands honor failure.
+                # Set LLM_WIKI_HEALTH_CHECK_NONFATAL=1 to keep warn-only behavior.
+                if ($env:LLM_WIKI_HEALTH_CHECK_NONFATAL -eq "1") {
+                    Write-Warning "health check reported issues (LLM_WIKI_HEALTH_CHECK_NONFATAL=1, continuing)"
+                } else {
+                    Write-Error "health check failed (exit $healthRc); set LLM_WIKI_HEALTH_CHECK_NONFATAL=1 to ignore"
+                    exit $healthRc
+                }
             }
         } else {
             Write-Warning "health check not found at $checkHelper"

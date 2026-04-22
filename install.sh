@@ -316,11 +316,26 @@ if [[ "$GLOBAL_WIRE_FLAG" == "1" ]]; then
 fi
 
 # Closing health check (wire-repo path) so the user sees green/red, not just installer logs.
+# Exit code propagates so chained commands (install.sh --wire-repo && next_thing) honor failure.
+# Set LLM_WIKI_HEALTH_CHECK_NONFATAL=1 to keep the warn-only behavior.
 if [[ "$WIRE_REPO" == "1" || "${LLM_WIKI_RUN_HEALTH_CHECK:-0}" == "1" ]]; then
   CHECK_HELPER="$VAULT/scripts/check_llm_wiki_memory.sh"
   if [[ -f "$CHECK_HELPER" ]]; then
     echo ">> running health check"
-    bash "$CHECK_HELPER" || echo "warn: health check reported issues — review output above" >&2
+    # Capture exit code BEFORE any compound conditional ($? would otherwise
+    # reflect the conditional's own evaluation, not the underlying command).
+    set +e
+    bash "$CHECK_HELPER"
+    HEALTH_RC=$?
+    set -e
+    if [[ "$HEALTH_RC" -ne 0 ]]; then
+      if [[ "${LLM_WIKI_HEALTH_CHECK_NONFATAL:-0}" == "1" ]]; then
+        echo "warn: health check reported issues (exit $HEALTH_RC; LLM_WIKI_HEALTH_CHECK_NONFATAL=1, continuing)" >&2
+      else
+        echo "error: health check failed (exit $HEALTH_RC); set LLM_WIKI_HEALTH_CHECK_NONFATAL=1 to ignore" >&2
+        exit "$HEALTH_RC"
+      fi
+    fi
   else
     echo "warn: health check not found at $CHECK_HELPER" >&2
   fi
