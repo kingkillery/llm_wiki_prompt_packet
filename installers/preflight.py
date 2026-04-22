@@ -59,6 +59,11 @@ HINTS = {
     "brv": {
         "_all": "  -> install: npm install -g byterover-cli",
     },
+    "hf": {
+        "Windows": "  -> install: pip install -U \"huggingface_hub[cli]\"",
+        "Darwin":  "  -> install: pip install -U \"huggingface_hub[cli]\"  (or: curl -LsSf https://hf.co/cli/install.sh | bash)",
+        "Linux":   "  -> install: pip install -U \"huggingface_hub[cli]\"  (or: curl -LsSf https://hf.co/cli/install.sh | bash)",
+    },
 }
 
 def get_hint(group, sys_name):
@@ -124,6 +129,13 @@ TOOLS = [
         "required": False,
         "modes":    None,
         "hint_key": None,
+    },
+    {
+        "group":    "hf",
+        "bins":     ["hf"],
+        "required": False,
+        "modes":    None,
+        "hint_key": "hf",
     },
 ]
 
@@ -203,6 +215,7 @@ def main():
                 "bun":    "optional, faster pk-qmd install",
                 "brv":    "optional, durable memory",
                 "docker": "optional, docker-compose path only",
+                "hf":     "optional, Hugging Face Hub CLI + MCP server",
             }
             primary_bin = bins[0]
             desc = desc_map.get(primary_bin, "optional")
@@ -217,6 +230,8 @@ def main():
         print("{} BYTEROVER_API_KEY not set (optional, brv query/curate will be unauthenticated)".format(warn_label))
     if not os.environ.get("GEMINI_API_KEY"):
         print("{} GEMINI_API_KEY not set (optional, pk-qmd membed multimodal disabled)".format(warn_label))
+    if not os.environ.get("HF_TOKEN"):
+        print("{} HF_TOKEN not set (optional, Hugging Face MCP server will not be wired)".format(warn_label))
 
     print()
 

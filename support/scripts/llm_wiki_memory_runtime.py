@@ -891,12 +891,68 @@ def patch_skill_mcp_configs(runtime: dict[str, Any], summary: list[str]) -> None
     summary.append(f"Updated ~/.factory/mcp.json for {runtime['skill_server_key']}")
 
 
+def patch_hf_mcp_configs(summary: list[str]) -> None:
+    """Wire the Hugging Face Hub MCP server via mcp-remote (pinned).
+
+    Only written when HF_TOKEN is present in the environment - we never
+    persist the token itself to disk. Config values use ${HF_AUTH_HEADER}
+    interpolation, with the env block holding `Bearer ${HF_TOKEN}` so MCP
+    clients can resolve the token at launch time. The two-step indirection
+    (HF_AUTH_HEADER -> Bearer ${HF_TOKEN}) avoids spaces in stdio args,
+    which trip a known npx-args-mangling bug on Claude Desktop / Cursor on
+    Windows (per the mcp-remote upstream README).
+
+    Only Claude Code (`~/.claude/settings.json`) and Factory (`~/.factory/mcp.json`)
+    are wired automatically. Codex is intentionally skipped: as of this writing,
+    Codex's stdio MCP launcher does NOT expand ${VAR} in args or env values,
+    so the wired entry would silently fail authentication. Users wanting HF
+    Hub MCP from Codex should configure it manually via Codex's HTTP MCP +
+    bearer_token_env_var path.
+    """
+    if not os.environ.get("HF_TOKEN"):
+        summary.append("Skipped Hugging Face MCP wiring (HF_TOKEN not set)")
+        return
+    user_home = Path.home()
+    command_name = "npx"
+    args = [
+        "-y",
+        "mcp-remote@0.1.38",
+        "https://huggingface.co/mcp",
+        "--header",
+        "Authorization:${HF_AUTH_HEADER}",
+    ]
+    env = {"HF_AUTH_HEADER": "Bearer ${HF_TOKEN}"}
+    update_json_mcp_config(
+        user_home / ".claude" / "settings.json",
+        "huggingface",
+        command_name,
+        args,
+        factory_style=False,
+        env=env,
+    )
+    summary.append("Updated ~/.claude/settings.json for huggingface")
+    update_json_mcp_config(
+        user_home / ".factory" / "mcp.json",
+        "huggingface",
+        command_name,
+        args,
+        factory_style=True,
+        env=env,
+    )
+    summary.append("Updated ~/.factory/mcp.json for huggingface")
+    summary.append(
+        "Skipped ~/.codex/config.toml for huggingface (Codex stdio MCP does not expand ${VAR}; "
+        "wire manually via HTTP MCP + bearer_token_env_var if needed)"
+    )
+
+
 def patch_mcp_configs(runtime: dict[str, Any], qmd_command: str | None, obsidian_command: str | None, summary: list[str]) -> None:
     if obsidian_command:
         patch_obsidian_mcp_configs(runtime, obsidian_command, summary)
     if qmd_command:
         patch_qmd_mcp_configs(qmd_command, summary)
     patch_skill_mcp_configs(runtime, summary)
+    patch_hf_mcp_configs(summary)
 
 
 def resolve_runtime_script_path(runtime: dict[str, Any], runtime_key: str, fallback_relative: str) -> Path:

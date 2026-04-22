@@ -111,6 +111,51 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(payload["mcpServers"]["llm-wiki-skills"]["command"], "python")
         self.assertNotIn("qmd", payload["mcpServers"])
 
+    def test_patch_hf_mcp_configs_skips_when_hf_token_missing(self) -> None:
+        summary: list[str] = []
+
+        with mock.patch.dict(self.module.os.environ, {}, clear=True):
+            self.module.patch_hf_mcp_configs(summary)
+
+        self.assertEqual(summary, ["Skipped Hugging Face MCP wiring (HF_TOKEN not set)"])
+        self.assertFalse((self.workspace / ".claude" / "settings.json").exists())
+        self.assertFalse((self.workspace / ".factory" / "mcp.json").exists())
+
+    def test_patch_hf_mcp_configs_wires_claude_and_factory_without_persisting_token(self) -> None:
+        summary: list[str] = []
+
+        with mock.patch.dict(self.module.os.environ, {"HF_TOKEN": "hf_test_secret"}, clear=True):
+            with mock.patch.object(self.module.Path, "home", return_value=self.workspace):
+                self.module.patch_hf_mcp_configs(summary)
+
+        claude_payload = json.loads((self.workspace / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        factory_payload = json.loads((self.workspace / ".factory" / "mcp.json").read_text(encoding="utf-8"))
+
+        expected_args = [
+            "-y",
+            "mcp-remote@0.1.38",
+            "https://huggingface.co/mcp",
+            "--header",
+            "Authorization:${HF_AUTH_HEADER}",
+        ]
+        expected_env = {"HF_AUTH_HEADER": "Bearer ${HF_TOKEN}"}
+
+        self.assertEqual(claude_payload["mcpServers"]["huggingface"]["command"], "npx")
+        self.assertEqual(claude_payload["mcpServers"]["huggingface"]["args"], expected_args)
+        self.assertEqual(claude_payload["mcpServers"]["huggingface"]["env"], expected_env)
+
+        self.assertEqual(factory_payload["mcpServers"]["huggingface"]["type"], "stdio")
+        self.assertEqual(factory_payload["mcpServers"]["huggingface"]["command"], "npx")
+        self.assertEqual(factory_payload["mcpServers"]["huggingface"]["args"], expected_args)
+        self.assertEqual(factory_payload["mcpServers"]["huggingface"]["env"], expected_env)
+        self.assertFalse((self.workspace / ".codex" / "config.toml").exists())
+
+        self.assertIn("Updated ~/.claude/settings.json for huggingface", summary)
+        self.assertIn("Updated ~/.factory/mcp.json for huggingface", summary)
+        self.assertTrue(any("Skipped ~/.codex/config.toml for huggingface" in item for item in summary))
+        self.assertNotIn("hf_test_secret", json.dumps(claude_payload))
+        self.assertNotIn("hf_test_secret", json.dumps(factory_payload))
+
     def test_workspace_mcp_json_declares_obsidian_plus_required_servers(self) -> None:
         mcp_path = REPO_ROOT / ".mcp.json"
 

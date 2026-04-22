@@ -64,6 +64,16 @@ The stack contract baked into this packet is:
 - treat `GitVizz` as the local graph surface, with frontend and backend URLs configured explicitly
 - do not expect end users to manage raw tool choices
 
+### Hugging Face integrations (optional)
+
+Three opt-in HF surfaces are wired into the packet:
+
+1. **HF Hub MCP server (Claude Code + Factory)** - auto-wired by the setup helper when `HF_TOKEN` is set in the launching shell. Bridges the hosted `https://huggingface.co/mcp` endpoint into `~/.claude/settings.json` and `~/.factory/mcp.json` via `npx mcp-remote@0.1.38`. The token is never persisted to disk - the on-disk config holds `Bearer ${HF_TOKEN}` only as an env-var template that the MCP client expands at launch. Token rotation = shell-env change, not a re-install.
+   - **Codex is intentionally not wired**: Codex's stdio MCP launcher does not expand `${VAR}` in args or env, so an auto-wired entry would silently fail authentication. Codex users wanting HF Hub MCP should configure it manually using Codex's HTTP MCP + `bearer_token_env_var` path.
+   - **Spaces-in-args defang**: the wiring uses `Authorization:${HF_AUTH_HEADER}` (no space) plus an env entry holding `Bearer ${HF_TOKEN}`, per the upstream `mcp-remote` recommendation, to avoid a documented `npx`-args-mangling bug on Claude Desktop / Cursor on Windows.
+2. **Local embeddings via `text-embeddings-inference` (TEI)** - opt-in service in `docker-compose.yml` behind the `tei` profile. Spin up with `COMPOSE_PROFILES=tei docker compose up tei`. Defaults to `BAAI/bge-small-en-v1.5` (override with `LLM_WIKI_TEI_MODEL`); binds loopback `127.0.0.1:8182` (override with `LLM_WIKI_TEI_PORT` / `LLM_WIKI_TEI_BIND_HOST`). The first `/embed` call after start triggers a one-time model download (~100MB-1GB depending on model) and may take 1-2 minutes. To use as the embedder for `pk-qmd`'s `vec` mode, set `LLM_WIKI_QMD_EMBED_URL=http://127.0.0.1:8182/embed` in your shell before invoking pk-qmd - this is a manual integration today, not auto-wired.
+3. **`hf` CLI detection in preflight** - the install preflight detects `hf` as an optional tool with platform-specific install hints (defaults to `pip install -U "huggingface_hub[cli]"`, which is the canonical cross-platform installer). With `hf` on PATH, downstream automation (dataset queries, model downloads, Hub releases) becomes available without further setup.
+
 ## What the packet installs
 
 ### Shared root

@@ -50,6 +50,29 @@ services:
       retries: 5
       start_period: 180s
 
+  tei:
+    # Hugging Face text-embeddings-inference - local embedding server.
+    # Opt-in via `COMPOSE_PROFILES=tei` (or `--profile tei` on `docker compose up`).
+    # Point pk-qmd at this by setting LLM_WIKI_QMD_EMBED_URL=http://127.0.0.1:${LLM_WIKI_TEI_PORT:-8182}/embed
+    # when running against the host, or http://tei:80/embed when in the packet's docker net.
+    profiles: ["tei"]
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.5
+    container_name: llm-wiki-tei
+    environment:
+      MODEL_ID: ${LLM_WIKI_TEI_MODEL:-BAAI/bge-small-en-v1.5}
+      HF_TOKEN: ${HF_TOKEN:-}
+    command: ["--model-id", "${LLM_WIKI_TEI_MODEL:-BAAI/bge-small-en-v1.5}"]
+    ports:
+      - "${LLM_WIKI_TEI_BIND_HOST:-127.0.0.1}:${LLM_WIKI_TEI_PORT:-8182}:80"
+    volumes:
+      - tei_cache:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
   gitvizz-phoenix:
     profiles: ["gitvizz"]
     image: arizephoenix/phoenix:latest
@@ -111,3 +134,4 @@ volumes:
   gitvizz_mongo:
   gitvizz_phoenix:
   gitvizz_storage:
+  tei_cache:
