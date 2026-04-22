@@ -21,90 +21,30 @@ The installer can also seed packet-owned `kade-hq`, `gstack`, `g-kade`, and `llm
 
 Those wrappers live in this repo under `skills/home/` and are intentionally light. They are the packet-owned bridge layer, not a vendored copy of the full upstream `gstack` runtime bundle. The richer `gstack` and `g-kade` pieces are expected to arrive from the `deps/pk-skills1` submodule when that bootstrap path is enabled.
 
-## Agent Easy Install
+## Quick Install
 
-Paste the prompt below directly into Claude Code (or any agent with shell access) to install the full stack and self-configure the agent so it can use the wiki from any future project.
+**One command - wire this packet into the repo or vault you are sitting in.**
 
-The prompt tells the agent to:
-- run the one-command installer for your platform
-- detect the vault path that was installed to
-- write the vault path into `~/.claude/CLAUDE.md` so every future session knows where the wiki lives
-- copy the global wiki commands to `~/.claude/commands/`
-- run the health check and report status
-
+Windows (PowerShell):
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1))) -WireRepo
 ```
-## What this repo does and how to install it from GitHub
 
-llm_wiki_prompt_packet is a prompt packet and vault installer for the llm-wiki-memory stack — a multi-agent
-persistent memory system. It combines five components into one unified intelligence surface:
+macOS / Linux:
+```bash
+curl -fsSL https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.sh | bash -s -- --wire-repo
+```
 
-- pk-qmd: semantic/keyword search over your local docs, notes, and prompts (source-evidence retrieval)
-- Byterover (brv): durable memory for preferences, decisions, and workflow quirks
-- Kade-HQ / G-Stack: agent harness layer
-- GitVizz: repo graph and web surface
-- llm-wiki-skills: local-first reusable skill lifecycle
+`-WireRepo` / `--wire-repo` runs preflight (detects missing tools), installs the packet into the current directory as a workspace, automates global Claude wiring (`~/.claude/CLAUDE.md` plus `~/.claude/commands/wiki-*.md`), and runs the health check as the closing step.
 
-It installs guidance files, agent command files, a stack config, and health-check scripts into an Obsidian
-vault. From any future project, agents can then query, curate, and build on that persistent knowledge base.
+See [`QUICKSTART.md`](QUICKSTART.md) for the 30-second walkthrough, or run `bash install.sh --help` / `install.ps1 -Help` for the full flag set.
 
-Install from GitHub with a single command — no manual clone required:
-
-  Windows (PowerShell):
-    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1)))
-
-  macOS/Linux:
-    curl -fsSL https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.sh | bash
-
-The installer will prompt for a vault folder (or use the current directory), lay down all packet files,
-and run the full setup helper automatically.
-
----
-
-Install the llm-wiki-memory stack for me. Do the following steps in order:
-
-1. Detect my platform (Windows = PowerShell available, otherwise bash).
-
-   Windows — run:
-     & ([scriptblock]::Create((irm https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1)))
-   When prompted for a vault folder, use the current working directory (or ask me if you are unsure which vault to use).
-
-   macOS/Linux — run:
-     curl -fsSL https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.sh | bash
-   When prompted, use the current working directory as the vault.
-
-2. After the installer finishes, determine the absolute path to the vault that was installed.
-   This is either the path I confirmed during the install prompt or the current working directory.
-   Call this VAULT_PATH.
-
-3. Open ~/.claude/CLAUDE.md (create it if it does not exist). Find the "## LLM Wiki" section.
-   If the section exists, update the "Configured vault:" line to the actual VAULT_PATH.
-   If the section does not exist, append this block:
-
-   ## LLM Wiki
-
-   A persistent knowledge base is available from any project via /wiki-query, /wiki-ingest, /wiki-skill, /wiki-lint.
-
-   First-time setup: clone llm_wiki_prompt_packet, run scripts/setup_llm_wiki_memory.ps1 (Windows) or
-   scripts/setup_llm_wiki_memory.sh (shell), then update the vault path in ~/.claude/commands/wiki-*.md.
-
-   Configured vault: VAULT_PATH
-   (If this path does not exist, the wiki stack is not yet set up — run setup above.)
-
-   Each command auto-detects the current project (basename $(pwd)) and scopes storage and retrieval
-   to wiki/projects/<PROJECT>/.
-   Use these proactively: surface past knowledge before answering research questions, ingest durable
-   findings, create reusable skills.
-
-4. Check whether ~/.claude/commands/ contains wiki-query.md, wiki-ingest.md, wiki-skill.md, and wiki-lint.md.
-   If any are missing, copy them from VAULT_PATH/.claude/commands/ into ~/.claude/commands/.
-   In each copied file, verify the vault root path matches VAULT_PATH and update it if not.
-
-5. Run the health check:
-   Windows: powershell -NoProfile -ExecutionPolicy Bypass -File VAULT_PATH/scripts/check_llm_wiki_memory.ps1
-   macOS/Linux: bash VAULT_PATH/scripts/check_llm_wiki_memory.sh
-
-6. Report: what was installed, the confirmed vault path, which global command files were added or updated,
-   and the health check result. Flag any failures clearly.
+**Vault-only install** (legacy `packet` mode for an Obsidian vault, no global Claude wiring):
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1)))
+```
+```bash
+curl -fsSL https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.sh | bash
 ```
 
 ## Architecture

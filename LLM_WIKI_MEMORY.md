@@ -1,5 +1,7 @@
 # LLM Wiki Memory Stack
 
+> **Audience:** Agents operating inside an installed llm-wiki vault. For repo-level architecture and the canonical-layer contract, see [`SYSTEM_CONTRACT.md`](SYSTEM_CONTRACT.md).
+
 This vault expects the following tooling stack around the markdown wiki:
 
 - `Kade-HQ` and `G-Stack` for the agent harness and local bootstrap surface

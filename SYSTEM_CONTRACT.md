@@ -1,5 +1,7 @@
 # System Contract
 
+> **Audience:** Maintainers and integrators reasoning about the packet's canonical layers and MCP wiring. For per-vault agent operating rules, see [`LLM_WIKI_MEMORY.md`](LLM_WIKI_MEMORY.md).
+
 This repo packages the combined `Kade-HQ` + `G-Stack` + `pk-qmd` + `Byterover` + `GitVizz` system.
 
 ## Canonical Layers
