@@ -18,7 +18,11 @@ from urllib.parse import urlparse
 
 DEFAULT_QMD_REPO_URL = "https://github.com/kingkillery/pk-qmd"
 DEFAULT_QMD_REPO_REF = "ef26cb62bb8132bc3a851b23f450af8e382e4c4e"
+DEFAULT_QMD_CONFIG_DIR = ".llm-wiki/qmd-config"
 DEFAULT_BRV_PACKAGE = "byterover-cli"
+DEFAULT_OBSIDIAN_PACKAGE = "@bitbonsai/mcpvault"
+DEFAULT_OBSIDIAN_SERVER_KEY = "obsidian"
+DEFAULT_OBSIDIAN_WRAPPER_SCRIPT = "scripts/llm_wiki_obsidian_mcp.py"
 DEFAULT_SKILL_SERVER_KEY = "llm-wiki-skills"
 DEFAULT_SKILL_SCRIPT = "scripts/llm_wiki_skill_mcp.py"
 DEFAULT_FAILURE_HOOK_SCRIPT = "scripts/llm_wiki_failure_hook.py"
@@ -276,7 +280,15 @@ def write_qmd_wrappers(managed_tool_root: Path, qmd_dist_path: Path) -> list[Pat
     return [cmd_path, ps1_path, sh_path, qmd_dist_path]
 
 
-def update_json_mcp_config(path: Path, server_key: str, command_name: str, args: list[str], *, factory_style: bool) -> None:
+def update_json_mcp_config(
+    path: Path,
+    server_key: str,
+    command_name: str,
+    args: list[str],
+    *,
+    factory_style: bool,
+    env: dict[str, str] | None = None,
+) -> None:
     payload = load_json(path)
     mcp_servers = payload.get("mcpServers")
     if not isinstance(mcp_servers, dict):
@@ -290,6 +302,8 @@ def update_json_mcp_config(path: Path, server_key: str, command_name: str, args:
         }
     else:
         server_payload = {"command": command_name, "args": args}
+    if env:
+        server_payload["env"] = env
     mcp_servers[server_key] = server_payload
     mcp_servers.pop("qmd", None)
     payload["mcpServers"] = mcp_servers
@@ -302,14 +316,28 @@ def toml_string_literal(value: str) -> str:
     return json.dumps(value)
 
 
-def update_codex_toml(path: Path, server_key: str, command_name: str, args: list[str]) -> None:
+def toml_inline_table(payload: dict[str, str]) -> str:
+    items = ", ".join(f"{key} = {toml_string_literal(value)}" for key, value in payload.items())
+    return "{ " + items + " }"
+
+
+def update_codex_toml(
+    path: Path,
+    server_key: str,
+    command_name: str,
+    args: list[str],
+    *,
+    env: dict[str, str] | None = None,
+) -> None:
     content = path.read_text(encoding="utf-8") if path.exists() else ""
     args_literal = "[" + ", ".join(toml_string_literal(value) for value in args) + "]"
     block = f"[mcp_servers.{server_key}]\ncommand = {toml_string_literal(command_name)}\nargs = {args_literal}\n"
+    if env:
+        block += f"env = {toml_inline_table(env)}\n"
     section = re.compile(rf"(?ms)^\[mcp_servers\.{re.escape(server_key)}\]\n(?:.*?)(?=^\[|\Z)")
     legacy = re.compile(r"(?ms)^\[mcp_servers\.qmd\]\n(?:.*?)(?=^\[|\Z)")
     if section.search(content):
-        content = section.sub(block + "\n", content)
+        content = section.sub(lambda _match: block + "\n", content)
     else:
         if content and not content.endswith("\n"):
             content += "\n"
@@ -353,6 +381,7 @@ def default_runtime_settings(workspace_root: Path, config_path: Path) -> dict[st
     pk_qmd = config.get("pk_qmd") if isinstance(config.get("pk_qmd"), dict) else {}
     byterover = config.get("byterover") if isinstance(config.get("byterover"), dict) else {}
     gitvizz = config.get("gitvizz") if isinstance(config.get("gitvizz"), dict) else {}
+    obsidian = config.get("obsidian") if isinstance(config.get("obsidian"), dict) else {}
     skills = config.get("skills") if isinstance(config.get("skills"), dict) else {}
     pipeline = skills.get("pipeline") if isinstance(skills.get("pipeline"), dict) else {}
     agent_failure_capture = config.get("agent_failure_capture") if isinstance(config.get("agent_failure_capture"), dict) else {}
@@ -392,6 +421,22 @@ def default_runtime_settings(workspace_root: Path, config_path: Path) -> dict[st
             brv_install_root / "node_modules" / ".bin" / "brv",
         ]
 
+    obsidian_install_root = resolve_optional_path(obsidian.get("install_root"), workspace_root) or (managed_tool_root / "obsidian-mcp")
+    local_obsidian_candidates = [
+        path
+        for path in (
+            resolve_optional_path(str(candidate), workspace_root)
+            for candidate in obsidian.get("local_command_candidates", [])
+        )
+        if path
+    ]
+    if not local_obsidian_candidates:
+        local_obsidian_candidates = [
+            obsidian_install_root / "node_modules" / ".bin" / "mcpvault.cmd",
+            obsidian_install_root / "node_modules" / ".bin" / "mcpvault.ps1",
+            obsidian_install_root / "node_modules" / ".bin" / "mcpvault",
+        ]
+
     memory_base_path = resolve_optional_path(memory_base.get("vault_path"), workspace_root) or workspace_root
     memory_base_name = str(memory_base.get("name") or workspace_root.name.lower().replace(" ", "-"))
     memory_base_id = str(memory_base.get("vault_id") or "")
@@ -413,11 +458,20 @@ def default_runtime_settings(workspace_root: Path, config_path: Path) -> dict[st
         "qmd_local_candidates": local_qmd_candidates,
         "qmd_collection": qmd_collection,
         "qmd_context": qmd_context,
+        "qmd_config_dir": resolve_optional_path(pk_qmd.get("config_dir"), workspace_root) or workspace_root / DEFAULT_QMD_CONFIG_DIR,
+        "qmd_source_checkout": resolve_optional_path(pk_qmd.get("source_checkout_path"), workspace_root),
         "qmd_source_path": resolve_optional_path(pk_qmd.get("source_path"), workspace_root) or memory_base_path,
         "brv_command": str(byterover.get("command") or "brv"),
         "brv_package_name": str(byterover.get("package_name") or DEFAULT_BRV_PACKAGE),
         "brv_install_root": brv_install_root,
         "brv_local_candidates": local_brv_candidates,
+        "obsidian_server_key": str(obsidian.get("mcp_server_key") or DEFAULT_OBSIDIAN_SERVER_KEY),
+        "obsidian_package_name": str(obsidian.get("package_name") or DEFAULT_OBSIDIAN_PACKAGE),
+        "obsidian_install_root": obsidian_install_root,
+        "obsidian_local_candidates": local_obsidian_candidates,
+        "obsidian_wrapper_script_path": resolve_optional_path(obsidian.get("wrapper_script_path") or DEFAULT_OBSIDIAN_WRAPPER_SCRIPT, workspace_root)
+        or workspace_root / DEFAULT_OBSIDIAN_WRAPPER_SCRIPT,
+        "obsidian_vault_path": resolve_optional_path(obsidian.get("vault_path"), workspace_root) or memory_base_path,
         "gitvizz_frontend_url": str(gitvizz.get("frontend_url") or "http://localhost:3000"),
         "gitvizz_backend_url": str(gitvizz.get("backend_url") or "http://localhost:8003"),
         "gitvizz_repo_url": str(gitvizz.get("repo_url") or ""),
@@ -464,11 +518,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workspace", help="Workspace root that contains .llm-wiki/config.json")
     parser.add_argument("--config-path", help="Explicit path to .llm-wiki/config.json")
     parser.add_argument("--qmd-source", default=os.getenv("LLM_WIKI_QMD_SOURCE", ""))
+    parser.add_argument("--qmd-source-checkout", default=os.getenv("LLM_WIKI_QMD_SOURCE_CHECKOUT", ""))
     parser.add_argument("--qmd-repo-url", default=os.getenv("LLM_WIKI_QMD_REPO_URL", ""))
     parser.add_argument("--qmd-command", default=os.getenv("LLM_WIKI_QMD_COMMAND", ""))
     parser.add_argument("--qmd-collection", default=os.getenv("LLM_WIKI_QMD_COLLECTION", ""))
     parser.add_argument("--qmd-context", default=os.getenv("LLM_WIKI_QMD_CONTEXT", ""))
     parser.add_argument("--brv-command", default=os.getenv("LLM_WIKI_BRV_COMMAND", ""))
+    parser.add_argument("--obsidian-vault-path", default=os.getenv("LLM_WIKI_OBSIDIAN_VAULT_PATH", ""))
     parser.add_argument("--gitvizz-frontend-url", default=os.getenv("LLM_WIKI_GITVIZZ_FRONTEND_URL", ""))
     parser.add_argument("--gitvizz-backend-url", default=os.getenv("LLM_WIKI_GITVIZZ_BACKEND_URL", ""))
     parser.add_argument("--gitvizz-repo-url", default=os.getenv("LLM_WIKI_GITVIZZ_REPO_URL", ""))
@@ -513,6 +569,8 @@ def build_runtime(args: argparse.Namespace) -> dict[str, Any]:
     runtime["skip_gitvizz"] = args.skip_gitvizz
     runtime["skip_gitvizz_start"] = args.skip_gitvizz or args.skip_gitvizz_start or args.mode == "check"
     runtime["qmd_source"] = resolve_optional_path(args.qmd_source, workspace_root)
+    if args.qmd_source_checkout:
+        runtime["qmd_source_checkout"] = resolve_optional_path(args.qmd_source_checkout, workspace_root)
     if args.qmd_repo_url:
         runtime["qmd_repo_url"] = args.qmd_repo_url
     if args.qmd_command:
@@ -523,6 +581,8 @@ def build_runtime(args: argparse.Namespace) -> dict[str, Any]:
         runtime["qmd_context"] = args.qmd_context
     if args.brv_command:
         runtime["brv_command"] = args.brv_command
+    if args.obsidian_vault_path:
+        runtime["obsidian_vault_path"] = resolve_optional_path(args.obsidian_vault_path, workspace_root) or Path(args.obsidian_vault_path)
     if args.gitvizz_frontend_url:
         runtime["gitvizz_frontend_url"] = args.gitvizz_frontend_url
     if args.gitvizz_backend_url:
@@ -549,6 +609,15 @@ def ensure_qmd_source_command(source_path: Path) -> Path | None:
     return first_existing(candidates)
 
 
+def qmd_runtime_env(runtime: dict[str, Any]) -> dict[str, str]:
+    env = os.environ.copy()
+    config_dir = runtime.get("qmd_config_dir")
+    if config_dir:
+        Path(config_dir).mkdir(parents=True, exist_ok=True)
+        env["QMD_CONFIG_DIR"] = str(config_dir)
+    return env
+
+
 def qmd_package_spec(runtime: dict[str, Any]) -> str:
     repo_url = str(runtime["qmd_repo_url"]).rstrip("/")
     repo_ref = str(runtime["qmd_repo_ref"]).strip()
@@ -567,6 +636,15 @@ def ensure_managed_qmd(runtime: dict[str, Any], summary: list[str], failures: li
     managed_tool_root: Path = runtime["managed_tool_root"]
     checkout_path: Path = runtime["qmd_checkout_path"]
     local_candidates: list[Path] = runtime["qmd_local_candidates"]
+
+    source_checkout: Path | None = runtime.get("qmd_source_checkout")
+    if source_checkout:
+        source_command = ensure_qmd_source_command(source_checkout)
+        if source_command:
+            summary.append(f"pk-qmd install state: resolved preferred source checkout {source_command}")
+            return str(source_command)
+        summary.append(f"pk-qmd install state: preferred source checkout missing runnable entrypoint ({source_checkout})")
+
     existing_candidate = first_existing(local_candidates)
     if existing_candidate:
         summary.append(f"pk-qmd install state: resolved managed candidate {existing_candidate}")
@@ -703,6 +781,47 @@ def ensure_brv_command(runtime: dict[str, Any], summary: list[str], failures: li
     return None
 
 
+def ensure_managed_obsidian(runtime: dict[str, Any], summary: list[str], failures: list[str], state: dict[str, Any]) -> str | None:
+    local_candidates: list[Path] = runtime["obsidian_local_candidates"]
+    existing_candidate = first_existing(local_candidates)
+    if existing_candidate:
+        summary.append(f"obsidian install state: resolved managed candidate {existing_candidate}")
+        return str(existing_candidate)
+
+    configured_command = "mcpvault"
+    configured_path = Path(configured_command).expanduser()
+    if configured_path.exists() or command_in_path(configured_command):
+        summary.append(f"obsidian install state: resolved existing command {configured_command}")
+        return configured_command
+
+    if runtime["verify_only"]:
+        failures.append(f"Missing Obsidian MCP command: {configured_command}")
+        return None
+
+    npm = resolve_npm_command()
+    if npm:
+        install_root: Path = runtime["obsidian_install_root"]
+        install_root.mkdir(parents=True, exist_ok=True)
+        try:
+            run_command(
+                npm,
+                ["install", "--prefix", str(install_root), str(runtime["obsidian_package_name"])],
+                check=True,
+                timeout=1800,
+            )
+            resolved_candidate = first_existing(local_candidates)
+            if resolved_candidate:
+                record_state(state, "setup", "obsidian", "install_root", value=str(install_root))
+                record_state(state, "setup", "obsidian", "last_install_at", value=current_timestamp())
+                summary.append(f"obsidian install state: installed managed dependency {resolved_candidate}")
+                return str(resolved_candidate)
+        except Exception as exc:  # noqa: BLE001
+            summary.append(f"obsidian managed install failed: {exc}")
+
+    failures.append(f"Missing Obsidian MCP command: {configured_command}")
+    return None
+
+
 def patch_qmd_mcp_configs(qmd_command: str, summary: list[str]) -> None:
     user_home = Path.home()
     qmd_invocation = resolve_command_invocation(qmd_command, ["mcp"])
@@ -714,6 +833,40 @@ def patch_qmd_mcp_configs(qmd_command: str, summary: list[str]) -> None:
     summary.append("Updated ~/.codex/config.toml")
     update_json_mcp_config(user_home / ".factory" / "mcp.json", "pk-qmd", qmd_command_name, qmd_args, factory_style=True)
     summary.append("Updated ~/.factory/mcp.json")
+
+
+def patch_obsidian_mcp_configs(runtime: dict[str, Any], obsidian_command: str, summary: list[str]) -> None:
+    user_home = Path.home()
+    obsidian_invocation = resolve_command_invocation(obsidian_command, [str(runtime["obsidian_vault_path"])])
+    obsidian_command_name = obsidian_invocation[0]
+    obsidian_args = obsidian_invocation[1:]
+    obsidian_env = {"OBSIDIAN_VAULT_PATH": str(runtime["obsidian_vault_path"])}
+    update_json_mcp_config(
+        user_home / ".claude" / "settings.json",
+        runtime["obsidian_server_key"],
+        obsidian_command_name,
+        obsidian_args,
+        factory_style=False,
+        env=obsidian_env,
+    )
+    summary.append(f"Updated ~/.claude/settings.json for {runtime['obsidian_server_key']}")
+    update_codex_toml(
+        user_home / ".codex" / "config.toml",
+        runtime["obsidian_server_key"],
+        obsidian_command_name,
+        obsidian_args,
+        env=obsidian_env,
+    )
+    summary.append(f"Updated ~/.codex/config.toml for {runtime['obsidian_server_key']}")
+    update_json_mcp_config(
+        user_home / ".factory" / "mcp.json",
+        runtime["obsidian_server_key"],
+        obsidian_command_name,
+        obsidian_args,
+        factory_style=True,
+        env=obsidian_env,
+    )
+    summary.append(f"Updated ~/.factory/mcp.json for {runtime['obsidian_server_key']}")
 
 
 def patch_skill_mcp_configs(runtime: dict[str, Any], summary: list[str]) -> None:
@@ -738,7 +891,9 @@ def patch_skill_mcp_configs(runtime: dict[str, Any], summary: list[str]) -> None
     summary.append(f"Updated ~/.factory/mcp.json for {runtime['skill_server_key']}")
 
 
-def patch_mcp_configs(runtime: dict[str, Any], qmd_command: str | None, summary: list[str]) -> None:
+def patch_mcp_configs(runtime: dict[str, Any], qmd_command: str | None, obsidian_command: str | None, summary: list[str]) -> None:
+    if obsidian_command:
+        patch_obsidian_mcp_configs(runtime, obsidian_command, summary)
     if qmd_command:
         patch_qmd_mcp_configs(qmd_command, summary)
     patch_skill_mcp_configs(runtime, summary)
@@ -881,23 +1036,24 @@ def bootstrap_qmd(runtime: dict[str, Any], qmd_command: str, summary: list[str],
 
     collection_name = str(runtime["qmd_collection"])
     source_path: Path = runtime["qmd_source_path"]
-    collection_output = run_command(qmd_command, ["collection", "list"], timeout=60)
+    qmd_env = qmd_runtime_env(runtime)
+    collection_output = run_command(qmd_command, ["collection", "list"], env=qmd_env, timeout=60)
     if f"{collection_name} (qmd://" not in collection_output.stdout:
         if runtime["verify_only"]:
             failures.append(f"Missing qmd collection: {collection_name}")
             return
-        run_command(qmd_command, ["collection", "add", str(source_path), "--name", collection_name], check=True, timeout=300)
+        run_command(qmd_command, ["collection", "add", str(source_path), "--name", collection_name], env=qmd_env, check=True, timeout=300)
         summary.append(f"Added qmd collection: {collection_name}")
     else:
         summary.append(f"qmd collection already present: {collection_name}")
 
-    context_output = run_command(qmd_command, ["context", "list"], timeout=60)
+    context_output = run_command(qmd_command, ["context", "list"], env=qmd_env, timeout=60)
     context_path = f"qmd://{collection_name}/"
     if runtime["qmd_context"] and context_path not in context_output.stdout:
         if runtime["verify_only"]:
             failures.append(f"Missing qmd context: {context_path}")
         else:
-            run_command(qmd_command, ["context", "add", context_path, str(runtime["qmd_context"])], check=True, timeout=300)
+            run_command(qmd_command, ["context", "add", context_path, str(runtime["qmd_context"])], env=qmd_env, check=True, timeout=300)
             summary.append(f"Added qmd context: {context_path}")
     elif runtime["qmd_context"]:
         summary.append(f"qmd context already present: {context_path}")
@@ -909,18 +1065,26 @@ def bootstrap_qmd(runtime: dict[str, Any], qmd_command: str, summary: list[str],
     try:
         runner = runtime["workspace_root"] / "scripts" / "qmd_embed_runner.mjs"
         if runner.exists() and command_in_path("node"):
-            runner_args = [str(runner), "--workspace", str(runtime["workspace_root"]), "--collection", collection_name]
+            runner_args = [
+                str(runner),
+                "--workspace",
+                str(runtime["workspace_root"]),
+                "--collection",
+                collection_name,
+                "--command",
+                qmd_command,
+            ]
             if env_flag("GEMINI_API_KEY"):
                 runner_args.append("--include-images")
-            run_command("node", runner_args, check=True, timeout=1800)
+            run_command("node", runner_args, env=qmd_env, check=True, timeout=1800)
             summary.append("Ran qmd embed runner")
         else:
-            run_command(qmd_command, ["update"], check=True, timeout=1800)
-            run_command(qmd_command, ["embed"], check=True, timeout=1800)
+            run_command(qmd_command, ["update"], env=qmd_env, check=True, timeout=1800)
+            run_command(qmd_command, ["embed"], env=qmd_env, check=True, timeout=1800)
             if env_flag("GEMINI_API_KEY"):
-                result = run_command(qmd_command, [], timeout=30)
+                result = run_command(qmd_command, [], env=qmd_env, timeout=30)
                 if "membed" in "\n".join(filter(None, [result.stdout, result.stderr])):
-                    run_command(qmd_command, ["membed"], check=True, timeout=1800)
+                    run_command(qmd_command, ["membed"], env=qmd_env, check=True, timeout=1800)
                     summary.append("Ran qmd text + image embeddings")
                 else:
                     summary.append("Ran qmd text embeddings")
@@ -1137,8 +1301,14 @@ def run_setup(runtime: dict[str, Any], summary: list[str], failures: list[str], 
             if status_result.returncode == 0 and not runtime["skip_qmd_bootstrap"]:
                 bootstrap_qmd(runtime, qmd_command, summary, failures, state)
 
+    obsidian_command: str | None = None
     if not runtime["skip_mcp"]:
-        patch_mcp_configs(runtime, runtime.get("qmd_command"), summary)
+        obsidian_command = ensure_managed_obsidian(runtime, summary, failures, state)
+        if obsidian_command:
+            runtime["obsidian_command"] = obsidian_command
+
+    if not runtime["skip_mcp"]:
+        patch_mcp_configs(runtime, runtime.get("qmd_command"), obsidian_command, summary)
 
         patch_claude_local_hook_settings(runtime, summary)
 

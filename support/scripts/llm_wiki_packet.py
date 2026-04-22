@@ -132,6 +132,8 @@ def command_init(args: argparse.Namespace) -> int:
         command.append("--allow-global-tool-install")
     if args.enable_gitvizz:
         command.append("--enable-gitvizz")
+    if args.qmd_source_checkout:
+        command.extend(["--qmd-source-checkout", args.qmd_source_checkout])
     if args.skip_setup:
         command.append("--skip-setup")
     if args.preflight_only:
@@ -202,6 +204,10 @@ def build_parser() -> argparse.ArgumentParser:
     init_parser.add_argument("--packet-root", help="Optional llm_wiki_prompt_packet checkout path.")
     init_parser.add_argument("--targets", default=DEFAULT_TARGETS, help="Comma-separated target surfaces.")
     init_parser.add_argument("--home-root", default=str(Path.home()), help="Home root used for home skill installs.")
+    init_parser.add_argument(
+        "--qmd-source-checkout",
+        help="Optional local pk-qmd checkout to prefer over the managed git fallback.",
+    )
     init_parser.add_argument(
         "--install-scope",
         choices=("local", "global"),

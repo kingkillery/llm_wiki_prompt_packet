@@ -177,6 +177,7 @@ class InstallerHomeSkillTests(unittest.TestCase):
             qmd_command="pk-qmd",
             qmd_repo_url="https://github.com/kingkillery/pk-qmd",
             qmd_repo_ref=self.module.DEFAULT_QMD_REPO_REF,
+            qmd_source_checkout=str(self.home_root / "pk-qmd-main"),
             brv_command="brv",
             allow_global_tool_install=False,
             gitvizz_repo_url="https://github.com/example/gitvizz.git",
@@ -198,6 +199,10 @@ class InstallerHomeSkillTests(unittest.TestCase):
         self.assertEqual(config["docs"]["contract_path"], "SYSTEM_CONTRACT.md")
         self.assertEqual(config["memory_base"]["name"], "kade-hq")
         self.assertEqual(config["memory_base"]["vault_id"], "fd8411f00d3a9d21")
+        self.assertEqual(config["obsidian"]["mcp_server_key"], "obsidian")
+        self.assertEqual(config["obsidian"]["package_name"], "@bitbonsai/mcpvault")
+        self.assertEqual(config["obsidian"]["wrapper_script_path"], "scripts/llm_wiki_obsidian_mcp.py")
+        self.assertIn("mcpvault", "\n".join(config["obsidian"]["local_command_candidates"]))
         self.assertEqual(config["agent_runtimes"]["packet_wrappers"]["kade-hq"]["status"], "home-install-enabled")
         self.assertEqual(config["agent_runtimes"]["packet_wrappers"]["g-kade"]["status"], "home-install-enabled")
         self.assertEqual(config["agent_runtimes"]["packet_wrappers"]["llm-wiki-skills"]["status"], "home-install-enabled")
@@ -206,6 +211,8 @@ class InstallerHomeSkillTests(unittest.TestCase):
         self.assertEqual(config["agent_runtimes"]["repo_dependencies"]["gstack"]["detected_path"], "deps/pk-skills1/gstack")
         self.assertEqual(config["pk_qmd"]["collection_name"], "kade-hq")
         self.assertEqual(config["pk_qmd"]["repo_ref"], self.module.DEFAULT_QMD_REPO_REF)
+        self.assertEqual(config["pk_qmd"]["source_checkout_path"], "pk-qmd-main")
+        self.assertEqual(config["pk_qmd"]["config_dir"], ".llm-wiki/qmd-config")
         self.assertIn("pk-qmd", "\n".join(config["pk_qmd"]["local_command_candidates"]))
         self.assertIn("brv", "\n".join(config["byterover"]["local_command_candidates"]))
         self.assertEqual(config["gitvizz"]["repo_url"], "https://github.com/example/gitvizz.git")
@@ -235,6 +242,7 @@ class InstallerHomeSkillTests(unittest.TestCase):
             install_scope="local",
             g_kade_dependency_path=self.module.REPO_RUNTIME_DEFAULT_PATHS["g-kade"],
             gstack_dependency_path=self.module.REPO_RUNTIME_DEFAULT_PATHS["gstack"],
+            qmd_source_checkout=str(self.home_root / "pk-qmd-main"),
         )
 
         report = "\n".join(lines)
@@ -242,6 +250,8 @@ class InstallerHomeSkillTests(unittest.TestCase):
         self.assertIn("preflight g-kade wrapper: available", report)
         self.assertIn("preflight g-kade runtime: missing", report)
         self.assertIn("deps/pk-skills1/gstack/g-kade", report)
+        self.assertIn("preflight pk-qmd source checkout:", report)
+        self.assertIn("pk-qmd-main", report)
 
     def test_build_stack_dependency_manifest_tracks_brv_for_managed_local_installs(self) -> None:
         manifest = self.module.build_stack_dependency_manifest(
@@ -257,6 +267,7 @@ class InstallerHomeSkillTests(unittest.TestCase):
             f"git+https://github.com/kingkillery/pk-qmd.git#{self.module.DEFAULT_QMD_REPO_REF}",
         )
         self.assertEqual(manifest["dependencies"]["byterover-cli"], "^3.3.0")
+        self.assertEqual(manifest["dependencies"]["@bitbonsai/mcpvault"], "^0.11.0")
 
     def test_normalize_targets_accepts_pi(self) -> None:
         targets = self.module.normalize_targets("claude,pi,codex")
@@ -317,6 +328,7 @@ class InstallerHomeSkillTests(unittest.TestCase):
         expected_memory_name = self.module.default_memory_vault_name(expected_memory_path)
         self.assertEqual(config["memory_base"]["vault_path"], str(expected_memory_path))
         self.assertEqual(config["memory_base"]["name"], expected_memory_name)
+        self.assertEqual(config["obsidian"]["vault_path"], str(expected_memory_path))
         self.assertTrue(any("Packet-owned home skill install skipped" in action for action in actions))
         self.assertTrue(any("pi target uses root AGENTS.md" in action for action in actions))
 

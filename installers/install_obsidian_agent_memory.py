@@ -32,6 +32,7 @@ RICH_MARKERS = {"bin", "browse", "qa", "review", "kade"}
 RICH_SIBLING_HINTS = {"debug", "debugging", "deploy", "deployment", "design", "dogfood", "dx", "investigate", "ship", "workflows"}
 DEFAULT_INSTALL_SCOPE = "local"
 DEFAULT_BRV_PACKAGE = "byterover-cli"
+DEFAULT_OBSIDIAN_PACKAGE = "@bitbonsai/mcpvault"
 DEFAULT_QMD_REPO_REF = "ef26cb62bb8132bc3a851b23f450af8e382e4c4e"
 DEFAULT_GITVIZZ_REPO_URL = "https://github.com/kingkillery/GitVizz.git"
 OFFICIAL_MEMORY_VAULT_NAME = "kade-hq"
@@ -99,6 +100,7 @@ STACK_FILES = {
     "scripts/llm_wiki_packet.sh": SUPPORT / "scripts" / "llm_wiki_packet.sh",
     "scripts/llm_wiki_packet.cmd": SUPPORT / "scripts" / "llm_wiki_packet.cmd",
     "scripts/llm_wiki_memory_runtime.py": SUPPORT / "scripts" / "llm_wiki_memory_runtime.py",
+    "scripts/llm_wiki_obsidian_mcp.py": SUPPORT / "scripts" / "llm_wiki_obsidian_mcp.py",
     "scripts/llm_wiki_skill_mcp.py": SUPPORT / "scripts" / "llm_wiki_skill_mcp.py",
     "scripts/llm_wiki_failure_collector.py": SUPPORT / "scripts" / "llm_wiki_failure_collector.py",
     "scripts/llm_wiki_failure_hook.py": SUPPORT / "scripts" / "llm_wiki_failure_hook.py",
@@ -217,6 +219,13 @@ def normalize_path_string(value: str) -> str:
     return value.strip().rstrip("/\\")
 
 
+def qmd_source_checkout_path(raw_path: str) -> Path | None:
+    normalized = normalize_path_string(raw_path)
+    if not normalized:
+        return None
+    return Path(normalized).expanduser().resolve()
+
+
 def env_flag(name: str) -> bool:
     value = os.getenv(name)
     if value is None:
@@ -266,6 +275,15 @@ def brv_managed_candidates(vault: Path, home_root: Path, install_scope: str) -> 
         install_root / "node_modules" / ".bin" / "brv.cmd",
         install_root / "node_modules" / ".bin" / "brv.ps1",
         install_root / "node_modules" / ".bin" / "brv",
+    ]
+
+
+def obsidian_managed_candidates(vault: Path, home_root: Path, install_scope: str) -> list[Path]:
+    install_root = managed_tool_root(vault, home_root, install_scope) / "obsidian-mcp"
+    return [
+        install_root / "node_modules" / ".bin" / "mcpvault.cmd",
+        install_root / "node_modules" / ".bin" / "mcpvault.ps1",
+        install_root / "node_modules" / ".bin" / "mcpvault",
     ]
 
 
@@ -411,6 +429,11 @@ def parse_args() -> argparse.Namespace:
         "--qmd-repo-ref",
         default=env_or_default("LLM_WIKI_QMD_REPO_REF", DEFAULT_QMD_REPO_REF),
         help="Pinned commit or tag for the managed pk-qmd checkout",
+    )
+    parser.add_argument(
+        "--qmd-source-checkout",
+        default=os.getenv("LLM_WIKI_QMD_SOURCE_CHECKOUT", ""),
+        help="Optional local pk-qmd checkout to prefer over the managed git fallback, for example a Gemini-capable pk-qmd-main repo",
     )
     parser.add_argument(
         "--qmd-mcp-url",
@@ -634,6 +657,7 @@ def build_preflight_report(
     install_scope: str,
     g_kade_dependency_path: str,
     gstack_dependency_path: str,
+    qmd_source_checkout: str = "",
 ) -> list[str]:
     node = shutil.which("node")
     npm = shutil.which("npm")
@@ -647,6 +671,7 @@ def build_preflight_report(
     gstack_runtime = repo_runtime_dependency_status(vault, "gstack", gstack_dependency_path)
     managed_root = managed_tool_root(vault, home_root, install_scope)
     submodule_root = vault / PK_SKILLS_SUBMODULE_PATH
+    qmd_source_checkout_path_value = qmd_source_checkout_path(qmd_source_checkout)
 
     lines = [
         "Preflight:",
@@ -666,6 +691,11 @@ def build_preflight_report(
         tool_status_line("npm", npm, missing_note="required when pk-qmd or brv must be installed"),
         tool_status_line("docker", docker, missing_note="optional unless you manage GitVizz locally"),
         f"preflight pk-qmd pin: {DEFAULT_QMD_REPO_REF}",
+        (
+            f"preflight pk-qmd source checkout: {qmd_source_checkout_path_value}"
+            if qmd_source_checkout_path_value
+            else "preflight pk-qmd source checkout: none (managed git fallback)"
+        ),
         (
             f"preflight pk-skills1 source: {submodule_root}"
             if submodule_root.exists()
@@ -853,7 +883,12 @@ def build_stack_config(args: argparse.Namespace) -> dict[str, object]:
         relative_or_absolute_path(candidate, workspace_root)
         for candidate in brv_managed_candidates(workspace_root, home_root, install_scope)
     ]
+    obsidian_local_candidates = [
+        relative_or_absolute_path(candidate, workspace_root)
+        for candidate in obsidian_managed_candidates(workspace_root, home_root, install_scope)
+    ]
     gitvizz_checkout = args.gitvizz_checkout_path or relative_or_absolute_path(managed_root / "gitvizz", workspace_root)
+    qmd_source_checkout = qmd_source_checkout_path(getattr(args, "qmd_source_checkout", ""))
 
     return {
         "version": 1,
@@ -875,6 +910,14 @@ def build_stack_config(args: argparse.Namespace) -> dict[str, object]:
             "name": memory_vault_name,
             "vault_path": str(memory_vault_path),
             "vault_id": memory_vault_id,
+        },
+        "obsidian": {
+            "mcp_server_key": "obsidian",
+            "package_name": DEFAULT_OBSIDIAN_PACKAGE,
+            "wrapper_script_path": "scripts/llm_wiki_obsidian_mcp.py",
+            "install_root": relative_or_absolute_path(managed_root / "obsidian-mcp", workspace_root),
+            "local_command_candidates": obsidian_local_candidates,
+            "vault_path": str(memory_vault_path),
         },
         "stack": {
             "retrieval": {
@@ -936,6 +979,12 @@ def build_stack_config(args: argparse.Namespace) -> dict[str, object]:
             "repo_url": args.qmd_repo_url,
             "repo_ref": args.qmd_repo_ref,
             "checkout_path": relative_or_absolute_path(managed_root / "pk-qmd", workspace_root),
+            "source_checkout_path": (
+                relative_or_absolute_path(qmd_source_checkout, workspace_root)
+                if qmd_source_checkout
+                else ""
+            ),
+            "config_dir": ".llm-wiki/qmd-config",
             "manual_install_required": False,
             "global_install_allowed": global_tool_install_allowed(args),
             "mcp_url": qmd_mcp_url,
@@ -1051,6 +1100,7 @@ def build_stack_dependency_manifest(args: argparse.Namespace) -> dict[str, objec
         "dependencies": {
             "@kingkillery/pk-qmd": qmd_package_spec(args.qmd_repo_url, getattr(args, "qmd_repo_ref", DEFAULT_QMD_REPO_REF)),
             DEFAULT_BRV_PACKAGE: "^3.3.0",
+            DEFAULT_OBSIDIAN_PACKAGE: "^0.11.0",
         },
     }
 
@@ -1113,6 +1163,7 @@ def packet_required_paths(vault: Path) -> list[Path]:
         vault / "scripts" / "llm_wiki_packet.sh",
         vault / "scripts" / "llm_wiki_packet.cmd",
         vault / "scripts" / "llm_wiki_memory_runtime.py",
+        vault / "scripts" / "llm_wiki_obsidian_mcp.py",
         vault / "scripts" / "llm_wiki_failure_hook.py",
         vault / "scripts" / "llm_wiki_agent_failure_capture.py",
         vault / "scripts" / "pokemon_benchmark_adapter.py",
@@ -1154,6 +1205,7 @@ def main() -> int:
         install_scope=normalize_install_scope(getattr(args, "install_scope", DEFAULT_INSTALL_SCOPE)),
         g_kade_dependency_path=args.g_kade_dependency_path,
         gstack_dependency_path=args.gstack_dependency_path,
+        qmd_source_checkout=args.qmd_source_checkout,
     )
 
     if args.preflight_only:

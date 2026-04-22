@@ -92,6 +92,23 @@ function resolveQmdCommand(options, config) {
     return options.command;
   }
 
+  const sourceCheckout = resolveWorkspacePath(options.workspace, config?.pk_qmd?.source_checkout_path);
+  if (sourceCheckout) {
+    for (const candidate of [
+      path.join(sourceCheckout, "dist", "cli", "qmd.js"),
+      path.join(sourceCheckout, "bin", "qmd.cmd"),
+      path.join(sourceCheckout, "bin", "qmd.ps1"),
+      path.join(sourceCheckout, "bin", "qmd"),
+      path.join(sourceCheckout, "bin", "pk-qmd.cmd"),
+      path.join(sourceCheckout, "bin", "pk-qmd.ps1"),
+      path.join(sourceCheckout, "bin", "pk-qmd"),
+    ]) {
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    }
+  }
+
   const localCandidates = Array.isArray(config?.pk_qmd?.local_command_candidates)
     ? config.pk_qmd.local_command_candidates
     : [];
@@ -119,11 +136,19 @@ function writeState(filePath, payload) {
   fs.writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
 }
 
-function runCommand(command, args, cwd) {
+function resolveQmdConfigDir(workspace, config) {
+  const configured = config?.pk_qmd?.config_dir;
+  const resolved = resolveWorkspacePath(workspace, typeof configured === "string" ? configured : ".llm-wiki/qmd-config");
+  fs.mkdirSync(resolved, { recursive: true });
+  return resolved;
+}
+
+function runCommand(command, args, cwd, extraEnv = {}) {
   const result = spawnSync(command, args, {
     cwd,
     stdio: "inherit",
     shell: process.platform === "win32",
+    env: { ...process.env, ...extraEnv },
   });
 
   if (typeof result.status === "number" && result.status !== 0) {
@@ -135,6 +160,8 @@ function main() {
   const options = parseArgs(process.argv.slice(2));
   const config = loadConfig(options.workspace);
   const qmdCommand = resolveQmdCommand(options, config);
+  const qmdConfigDir = resolveQmdConfigDir(options.workspace, config);
+  const qmdEnv = { QMD_CONFIG_DIR: qmdConfigDir };
   const startedAt = new Date().toISOString();
 
   writeState(options.stateFile, {
@@ -143,20 +170,21 @@ function main() {
     workspace: options.workspace,
     command: qmdCommand,
     collection: options.collection,
+    configDir: qmdConfigDir,
     includeImages: options.includeImages,
   });
 
   try {
     if (!options.skipUpdate) {
-      runCommand(qmdCommand, ["update"], options.workspace);
+      runCommand(qmdCommand, ["update"], options.workspace, qmdEnv);
     }
 
     if (!options.skipText) {
-      runCommand(qmdCommand, ["embed"], options.workspace);
+      runCommand(qmdCommand, ["embed"], options.workspace, qmdEnv);
     }
 
     if (options.includeImages && process.env.GEMINI_API_KEY) {
-      runCommand(qmdCommand, ["membed"], options.workspace);
+      runCommand(qmdCommand, ["membed"], options.workspace, qmdEnv);
     }
 
     writeState(options.stateFile, {
@@ -165,6 +193,7 @@ function main() {
       workspace: options.workspace,
       command: qmdCommand,
       collection: options.collection,
+      configDir: qmdConfigDir,
       includeImages: options.includeImages,
     });
   } catch (error) {
@@ -174,6 +203,7 @@ function main() {
       workspace: options.workspace,
       command: qmdCommand,
       collection: options.collection,
+      configDir: qmdConfigDir,
       includeImages: options.includeImages,
       error: error instanceof Error ? error.message : String(error),
     });

@@ -120,8 +120,9 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(payload["pk-qmd"]["args"], ["mcp"])
         self.assertEqual(payload["llm-wiki-skills"]["command"], "python")
         self.assertEqual(payload["brv"]["args"], ["mcp"])
-        self.assertEqual(payload["obsidian"]["command"], "npx")
-        self.assertIn("@bitbonsai/mcpvault", payload["obsidian"]["args"])
+        self.assertEqual(payload["obsidian"]["command"], "python")
+        self.assertIn("support/scripts/llm_wiki_obsidian_mcp.py", payload["obsidian"]["args"])
+        self.assertIn("--ensure-install", payload["obsidian"]["args"])
         self.assertIn("OBSIDIAN_VAULT_PATH", payload["obsidian"]["env"])
 
     def test_update_codex_toml_uses_windows_safe_literal_strings(self) -> None:
@@ -137,12 +138,14 @@ class RuntimeTests(unittest.TestCase):
                 r"C:\dev\Desktop-Projects\llm_wiki_prompt_packet\llm_wiki_prompt_packet",
                 "mcp",
             ],
+            env={"OBSIDIAN_VAULT_PATH": r"C:\Vaults\Kade-HQ"},
         )
 
         content = config_path.read_text(encoding="utf-8")
         self.assertIn("command = 'python'", content)
         self.assertIn(r"'C:\dev\Desktop-Projects\llm_wiki_prompt_packet\llm_wiki_prompt_packet\support\scripts\llm_wiki_skill_mcp.py'", content)
         self.assertIn(r"'C:\dev\Desktop-Projects\llm_wiki_prompt_packet\llm_wiki_prompt_packet'", content)
+        self.assertIn(r"env = { OBSIDIAN_VAULT_PATH = 'C:\Vaults\Kade-HQ' }", content)
 
     def test_build_runtime_uses_configured_paths_and_repo_ref(self) -> None:
         config_path = self.write_config(
@@ -157,12 +160,22 @@ class RuntimeTests(unittest.TestCase):
                     "local_command_candidates": [".llm-wiki/tools/bin/pk-qmd.cmd"],
                     "collection_name": "kade-hq",
                     "context": "ctx",
+                    "source_checkout_path": ".llm-wiki/tools/pk-qmd-main",
+                    "config_dir": ".llm-wiki/qmd-config",
                     "source_path": str(self.workspace / "memory"),
                 },
                 "byterover": {
                     "command": "brv",
                     "install_root": ".llm-wiki/tools/brv",
                     "local_command_candidates": [".llm-wiki/tools/brv/node_modules/.bin/brv.cmd"],
+                },
+                "obsidian": {
+                    "mcp_server_key": "obsidian",
+                    "package_name": "@bitbonsai/mcpvault",
+                    "wrapper_script_path": "scripts/llm_wiki_obsidian_mcp.py",
+                    "install_root": ".llm-wiki/tools/obsidian-mcp",
+                    "local_command_candidates": [".llm-wiki/tools/obsidian-mcp/node_modules/.bin/mcpvault.cmd"],
+                    "vault_path": str(self.workspace / "memory"),
                 },
                 "gitvizz": {
                     "frontend_url": "http://localhost:3000",
@@ -199,11 +212,13 @@ class RuntimeTests(unittest.TestCase):
             workspace=str(self.workspace),
             config_path=str(config_path),
             qmd_source="",
+            qmd_source_checkout="",
             qmd_repo_url="",
             qmd_command="",
             qmd_collection="",
             qmd_context="",
             brv_command="",
+            obsidian_vault_path="",
             gitvizz_frontend_url="",
             gitvizz_backend_url="",
             gitvizz_repo_url="",
@@ -226,10 +241,101 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(runtime["install_scope"], "global")
         self.assertEqual(runtime["qmd_repo_ref"], "abc123")
         self.assertEqual(runtime["memory_base_id"], "vault-1")
+        self.assertEqual(runtime["obsidian_server_key"], "obsidian")
+        self.assertTrue(str(runtime["qmd_source_checkout"]).endswith(".llm-wiki\\tools\\pk-qmd-main") or str(runtime["qmd_source_checkout"]).endswith(".llm-wiki/tools/pk-qmd-main"))
+        self.assertTrue(str(runtime["qmd_config_dir"]).endswith(".llm-wiki\\qmd-config") or str(runtime["qmd_config_dir"]).endswith(".llm-wiki/qmd-config"))
+        self.assertEqual(runtime["obsidian_package_name"], "@bitbonsai/mcpvault")
+        self.assertTrue(str(runtime["obsidian_install_root"]).endswith(".llm-wiki\\tools\\obsidian-mcp") or str(runtime["obsidian_install_root"]).endswith(".llm-wiki/tools/obsidian-mcp"))
         self.assertTrue(str(runtime["failure_hook_script_path"]).endswith("scripts\\llm_wiki_failure_hook.py") or str(runtime["failure_hook_script_path"]).endswith("scripts/llm_wiki_failure_hook.py"))
         self.assertTrue(str(runtime["agent_failure_capture_script_path"]).endswith("scripts\\llm_wiki_agent_failure_capture.py") or str(runtime["agent_failure_capture_script_path"]).endswith("scripts/llm_wiki_agent_failure_capture.py"))
         self.assertIn("pi", runtime["agent_failure_commands"])
         self.assertTrue(str(runtime["qmd_checkout_path"]).endswith(".llm-wiki\\tools\\pk-qmd") or str(runtime["qmd_checkout_path"]).endswith(".llm-wiki/tools/pk-qmd"))
+
+    def test_qmd_runtime_env_sets_workspace_local_config_dir(self) -> None:
+        runtime = {"qmd_config_dir": self.workspace / ".llm-wiki" / "qmd-config"}
+
+        env = self.module.qmd_runtime_env(runtime)
+
+        self.assertEqual(env["QMD_CONFIG_DIR"], str(self.workspace / ".llm-wiki" / "qmd-config"))
+        self.assertTrue((self.workspace / ".llm-wiki" / "qmd-config").exists())
+
+    def test_ensure_managed_qmd_prefers_source_checkout_over_managed_candidate(self) -> None:
+        source_checkout = self.workspace / "pk-qmd-main"
+        source_entrypoint = source_checkout / "dist" / "cli" / "qmd.js"
+        source_entrypoint.parent.mkdir(parents=True, exist_ok=True)
+        source_entrypoint.write_text("console.log('source')\n", encoding="utf-8")
+
+        managed_candidate = self.workspace / ".llm-wiki" / "tools" / "bin" / "pk-qmd.cmd"
+        managed_candidate.parent.mkdir(parents=True, exist_ok=True)
+        managed_candidate.write_text("@echo off\r\n", encoding="ascii")
+
+        runtime = {
+            "managed_tool_root": self.workspace / ".llm-wiki" / "tools",
+            "qmd_checkout_path": self.workspace / ".llm-wiki" / "tools" / "pk-qmd",
+            "qmd_local_candidates": [managed_candidate],
+            "qmd_source_checkout": source_checkout,
+            "qmd_command": "pk-qmd",
+            "workspace_root": self.workspace,
+            "verify_only": False,
+            "allow_global_tool_install": False,
+        }
+        summary: list[str] = []
+        failures: list[str] = []
+        state: dict[str, object] = {}
+
+        resolved = self.module.ensure_managed_qmd(runtime, summary, failures, state)
+
+        self.assertEqual(resolved, str(source_entrypoint))
+        self.assertIn("resolved preferred source checkout", "\n".join(summary))
+        self.assertEqual(failures, [])
+
+    def test_bootstrap_qmd_uses_workspace_local_qmd_config_and_passes_explicit_command_to_runner(self) -> None:
+        qmd_command = str(self.workspace / "pk-qmd-main" / "dist" / "cli" / "qmd.js")
+        runner = self.workspace / "scripts" / "qmd_embed_runner.mjs"
+        runner.parent.mkdir(parents=True, exist_ok=True)
+        runner.write_text("// runner\n", encoding="utf-8")
+        source_path = self.workspace / "memory"
+        source_path.mkdir(parents=True, exist_ok=True)
+
+        runtime = {
+            "qmd_collection": "kade-hq",
+            "qmd_source_path": source_path,
+            "qmd_context": "ctx",
+            "qmd_config_dir": self.workspace / ".llm-wiki" / "qmd-config",
+            "verify_only": False,
+            "skip_qmd_embed": False,
+            "workspace_root": self.workspace,
+        }
+        summary: list[str] = []
+        failures: list[str] = []
+        state: dict[str, object] = {}
+        calls: list[tuple[str, list[str], dict[str, str] | None]] = []
+
+        def fake_run(command_name, args, **kwargs):
+            calls.append((command_name, args, kwargs.get("env")))
+            if command_name == qmd_command and args == ["collection", "list"]:
+                return mock.Mock(returncode=0, stdout="", stderr="")
+            if command_name == qmd_command and args == ["context", "list"]:
+                return mock.Mock(returncode=0, stdout="", stderr="")
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        with mock.patch.object(self.module, "qmd_supports_collections", return_value=True):
+            with mock.patch.object(self.module, "command_in_path", return_value="node"):
+                with mock.patch.object(self.module, "env_flag", return_value=False):
+                    with mock.patch.object(self.module, "run_command", side_effect=fake_run):
+                        self.module.bootstrap_qmd(runtime, qmd_command, summary, failures, state)
+
+        self.assertEqual(failures, [])
+        self.assertTrue((self.workspace / ".llm-wiki" / "qmd-config").exists())
+        self.assertIn("Added qmd collection: kade-hq", summary)
+        self.assertIn("Added qmd context: qmd://kade-hq/", summary)
+        self.assertIn("Ran qmd embed runner", summary)
+        node_call = next(call for call in calls if call[0] == "node")
+        self.assertIn("--command", node_call[1])
+        self.assertIn(qmd_command, node_call[1])
+        self.assertEqual(node_call[2]["QMD_CONFIG_DIR"], str(self.workspace / ".llm-wiki" / "qmd-config"))
+        qmd_calls = [call for call in calls if call[0] == qmd_command]
+        self.assertTrue(all(call[2]["QMD_CONFIG_DIR"] == str(self.workspace / ".llm-wiki" / "qmd-config") for call in qmd_calls))
 
     def test_build_claude_failure_hook_handler_supports_posix_and_powershell(self) -> None:
         runtime = {
@@ -273,6 +379,12 @@ class RuntimeTests(unittest.TestCase):
             "skip_gitvizz": True,
             "skip_gitvizz_start": True,
             "workspace_root": self.workspace,
+            "verify_only": False,
+            "obsidian_server_key": "obsidian",
+            "obsidian_package_name": "@bitbonsai/mcpvault",
+            "obsidian_install_root": self.workspace / ".llm-wiki" / "tools" / "obsidian-mcp",
+            "obsidian_local_candidates": [],
+            "obsidian_vault_path": self.workspace / "memory",
             "skill_server_key": "llm-wiki-skills",
             "skill_script_path": self.workspace / "support" / "scripts" / "llm_wiki_skill_mcp.py",
             "agent_failure_capture_script_path": self.workspace / "support" / "scripts" / "llm_wiki_agent_failure_capture.py",
@@ -289,17 +401,18 @@ class RuntimeTests(unittest.TestCase):
         state: dict[str, object] = {}
 
         with mock.patch.object(self.module, "ensure_managed_qmd", return_value="pk-qmd"):
-            with mock.patch.object(
-                self.module,
-                "run_command",
-                return_value=mock.Mock(returncode=1, stdout="", stderr="pk-qmd broke"),
-            ):
-                with mock.patch.object(self.module, "patch_mcp_configs") as patch_mcp:
-                    with mock.patch.object(self.module, "patch_claude_local_hook_settings"):
-                        with mock.patch.object(self.module, "verify_agent_failure_capture"):
-                            self.module.run_setup(runtime, summary, failures, state)
+            with mock.patch.object(self.module, "ensure_managed_obsidian", return_value="C:/tools/mcpvault.cmd"):
+                with mock.patch.object(
+                    self.module,
+                    "run_command",
+                    return_value=mock.Mock(returncode=1, stdout="", stderr="pk-qmd broke"),
+                ):
+                    with mock.patch.object(self.module, "patch_mcp_configs") as patch_mcp:
+                        with mock.patch.object(self.module, "patch_claude_local_hook_settings"):
+                            with mock.patch.object(self.module, "verify_agent_failure_capture"):
+                                self.module.run_setup(runtime, summary, failures, state)
 
-        patch_mcp.assert_called_once_with(runtime, "pk-qmd", summary)
+        patch_mcp.assert_called_once_with(runtime, "pk-qmd", "C:/tools/mcpvault.cmd", summary)
         self.assertIn("pk-qmd broke", failures)
 
     def test_ensure_managed_qmd_falls_back_when_existing_command_is_unusable(self) -> None:

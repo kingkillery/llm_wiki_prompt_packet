@@ -137,6 +137,11 @@ def parse_args() -> argparse.Namespace:
         help="Pinned commit or tag for the managed pk-qmd checkout",
     )
     parser.add_argument(
+        "--qmd-source-checkout",
+        default=os.getenv("LLM_WIKI_QMD_SOURCE_CHECKOUT", ""),
+        help="Optional local pk-qmd checkout to prefer over the managed git fallback, for example a Gemini-capable pk-qmd-main repo",
+    )
+    parser.add_argument(
         "--qmd-mcp-url",
         default=os.getenv("LLM_WIKI_QMD_MCP_URL", "http://localhost:8181/mcp"),
         help="HTTP MCP endpoint for the shared pk-qmd server",
@@ -730,6 +735,7 @@ def main() -> int:
         install_scope=PACKET.normalize_install_scope(getattr(args, "install_scope", PACKET.DEFAULT_INSTALL_SCOPE)),
         g_kade_dependency_path=args.g_kade_dependency_path,
         gstack_dependency_path=args.gstack_dependency_path,
+        qmd_source_checkout=args.qmd_source_checkout,
     )
 
     if args.preflight_only:
@@ -765,6 +771,7 @@ def main() -> int:
         qmd_command=args.qmd_command,
         qmd_repo_url=args.qmd_repo_url,
         qmd_repo_ref=args.qmd_repo_ref,
+        qmd_source_checkout=args.qmd_source_checkout,
         qmd_mcp_url=args.qmd_mcp_url,
         brv_command=args.brv_command,
         install_scope=args.install_scope,
