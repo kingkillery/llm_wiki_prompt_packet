@@ -123,6 +123,12 @@ The implementation guide for this lives in `SKILL_CREATION_AT_EXPERT_LEVEL.md`.
 
 For long tasks, the parent path should consume the reducer packet by default and only pull raw detail from referenced artifacts when escalation is necessary.
 
+### Skill-index maintenance
+
+- The packet automatically builds or refreshes `.llm-wiki/skill-index.json` during setup and health-check runs.
+- Interactive wrapped agent launches and the read-only dashboard also lazily refresh the index when the active-skill set, retired-skill set, feedback log, or `.llm-wiki/config.json` changed.
+- Do not ask end users to manually run index maintenance unless you are debugging the maintenance path itself. Manual fallback remains `python scripts/build_skill_index.py --workspace <repo>`.
+
 ## Defaults
 
 - QMD command: `pk-qmd`

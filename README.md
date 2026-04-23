@@ -119,6 +119,11 @@ Three opt-in HF surfaces are wired into the packet:
 - `scripts/check_llm_wiki_memory.sh`
 - `scripts/llm_wiki_skill_mcp.py`
 - `scripts/llm_wiki_agent_failure_capture.py`
+- `scripts/auto_reducer_watcher.py`
+- `scripts/build_skill_index.py`
+- `scripts/skill_index.py`
+- `scripts/skill_trigger.py`
+- `scripts/dashboard_server.py`
 - `scripts/run_llm_wiki_agent.ps1`
 - `scripts/run_llm_wiki_agent.sh`
 - `scripts/run_llm_wiki_agent.cmd`
@@ -173,6 +178,8 @@ Three opt-in HF surfaces are wired into the packet:
 ## Bootstrap path
 
 The packet configures the stack, but the easiest path is now the hosted installer. It prompts for the vault folder when you do not pass one, lays down the packet, and then runs the vault setup helper unless you explicitly skip it.
+
+During setup and health-check runs, the packet now also **builds or refreshes the skill suggestion index automatically**. Interactive agent launches and the dashboard will lazily rebuild the index if the active skills, retired skills, feedback log, or config changed. Users should not need to understand or manually maintain `.llm-wiki/skill-index.json`.
 
 Local-first use remains supported. When you want a single hosted surface, the intended Docker mode should be able to host the qmd + gitvizz + brv stack together while keeping the same contract boundaries.
 
@@ -700,7 +707,9 @@ For remote MCP or app clients, the clean hosted split is:
 
 - use a `Worker` as the public API edge on a hostname like `mcp.example.com`
 - point that Worker at a Cloudflare `Tunnel` hostname such as `mcp-origin.example.com`
+- set the Worker's `ORIGIN_BASE_URL` to the tunnel hostname root, for example `https://mcp-origin.example.com` (the worker appends `/mcp` itself)
 - protect the tunnel hostname with `Access` and let the Worker send an Access service token to the origin
+- optionally require a caller bearer token via `EDGE_API_TOKEN`; if you do not set it, the Worker becomes Access-protected but not caller-token-protected
 - keep GitVizz on its own hostname, usually `gitvizz.example.com`, behind interactive Access instead of routing it through the packet Worker
 
 The repo includes a minimal scaffold for this path:
@@ -712,6 +721,7 @@ The repo includes a minimal scaffold for this path:
 Operational notes:
 
 - the packet VM in this repo only hosts the MCP-facing packet service by default
+- `deploy/cloudflare/wrangler.jsonc.example` only sets the worker name and `ORIGIN_BASE_URL`; you still need to configure secrets (`ACCESS_CLIENT_ID`, `ACCESS_CLIENT_SECRET`, optional `EDGE_API_TOKEN`) and attach a route or custom domain in Cloudflare
 - GitVizz can still stay a separate runtime with its own compose stack, but this repo also supports an opt-in containerized local GitVizz path when you mount a checkout and enable the compose profile
 - `brv` remains a private memory plane; expose curated app-level routes, not raw BRV provider credentials or direct provider calls
 

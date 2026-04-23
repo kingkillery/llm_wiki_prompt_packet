@@ -143,6 +143,7 @@ reducer packet (episodic)
 
 - **Recency decay:** Skill scores decay exponentially with age (`halflife_days` configurable, default 30).
 - **Graph traversal:** Skills expose `related_skills` edges (prerequisite, conflict, successor). Traversal returns up to 2 neighbors per relation type.
+- **Automatic index maintenance:** Setup and health-check flows refresh `.llm-wiki/skill-index.json`; wrapped interactive sessions and the dashboard lazily rebuild it when active skills, retired skills, feedback, or config changed.
 - **Conflict resolution:** When `brv` and `wiki/` disagree, current source evidence (`pk-qmd`) wins.
 
 ---
@@ -189,6 +190,7 @@ reducer packet (episodic)
 2. **Curation gate** before promotion (not append-only ingestion).
 3. **Human-legible markdown stores** for governance and audit.
 4. **Recency decay + graph traversal** in retrieval (not just static similarity).
+5. **Auto-maintained procedural index** so end users do not need to understand or manually rebuild retrieval artifacts.
 
 ---
 
@@ -214,6 +216,7 @@ reducer packet (episodic)
 - `LLM_WIKI_MEMORY.md` — routing rules and wiki/brv routing table
 - `SYSTEM_CONTRACT.md` — canonical layer-to-store mapping
 - `SKILL_CREATION_AT_EXPERT_LEVEL.md` — skill promotion pipeline details
+- `docs/decisions/ADR-001-automatic-skill-index-maintenance.md` — derived-artifact maintenance decision
 - `wiki/syntheses/agentic-memory-skill-stack-upgrade-2026.md` — literature review
 - `wiki/syntheses/recent-csai-actionable-agent-memory-patterns-2026.md` — design patterns
 - `wiki/syntheses/quickscope-memory-retrieval-improvements-2026.md` — retrieval gap closure

@@ -19,6 +19,12 @@ from typing import Any
 # Use stdlib only; no external framework dependencies
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from skill_index import ensure_index
+
 
 class DashboardHandler(BaseHTTPRequestHandler):
     workspace: Path = Path.cwd()
@@ -49,6 +55,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def _read_index(self) -> dict:
         path = self.workspace / ".llm-wiki" / "skill-index.json"
+        try:
+            path = ensure_index(self.workspace)
+        except Exception:
+            pass
         if path.exists():
             return json.loads(path.read_text(encoding="utf-8"))
         return {}

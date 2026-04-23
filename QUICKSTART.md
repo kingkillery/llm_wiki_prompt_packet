@@ -20,12 +20,15 @@ That command:
 2. Lays the packet into the current directory as a workspace.
 3. Installs the harness skill surfaces (`kade-hq`, `gstack`, `g-kade`).
 4. **Wires global Claude config** - writes the LLM Wiki section into `~/.claude/CLAUDE.md` (timestamped `.bak` is written alongside before any mutation) and copies `wiki-{ingest,query,lint,skill}.md` into `~/.claude/commands/`, so every future Claude session can call `/wiki-query`, `/wiki-ingest`, `/wiki-skill`, `/wiki-lint`.
-5. Runs the **health check**. Exit code propagates so chained commands honor failure - set `LLM_WIKI_HEALTH_CHECK_NONFATAL=1` for warn-only behavior.
+5. **Builds the skill suggestion index automatically** from `wiki/skills/active/`, retired skills, and accumulated feedback so session-start suggestions work immediately.
+6. Runs the **health check**. Exit code propagates so chained commands honor failure - set `LLM_WIKI_HEALTH_CHECK_NONFATAL=1` for warn-only behavior.
 
 **Compact PowerShell alternative** (shorter, but args can be silently dropped if upstream ever serves a BOM):
 ```powershell
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1))) -WireRepo
 ```
+
+The skill index is also self-healing at runtime: the dashboard and interactive wrapped agent launches rebuild it automatically when skills, feedback, retired skills, or config change.
 
 ## Verify
 

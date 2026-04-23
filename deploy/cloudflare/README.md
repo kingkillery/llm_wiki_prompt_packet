@@ -1,6 +1,6 @@
 # Cloudflare edge for the hosted llm-wiki stack
 
-Use Cloudflare as the public edge and keep the GCP VM private by default.
+Use Cloudflare as the public edge and keep the GCP VM private by default. This guide matches the worker in this folder as it exists today.
 
 Recommended split:
 
@@ -13,8 +13,8 @@ This keeps the packet service private on GCP while still giving you a stable HTT
 
 Files in this folder:
 
-- `mcp-edge-worker.js` is a minimal Worker that proxies `/mcp` to the tunnel hostname.
-- `wrangler.jsonc.example` is a starting config for deploying the Worker.
+- `mcp-edge-worker.js` is a minimal Worker that proxies `/mcp` to the configured origin.
+- `wrangler.jsonc.example` is a starting config for deploying the Worker. It only includes `name`, `main`, `compatibility_date`, and `ORIGIN_BASE_URL`; routes/custom domains and secrets are configured separately.
 
 Suggested hostnames:
 
@@ -30,19 +30,23 @@ Recommended sequence:
 3. Create a Cloudflare Tunnel from the VM to `http://127.0.0.1:8181`.
 4. Create a Cloudflare Access self-hosted application for `mcp-origin.<your-domain>`.
 5. Create an Access service token for the Worker-to-origin hop.
-6. Deploy the Worker from this folder with:
+6. Set `ORIGIN_BASE_URL` to the tunnel origin root, for example `https://mcp-origin.<your-domain>`. Do **not** append `/mcp`; the worker preserves the incoming `/mcp` path.
+7. Deploy the Worker from this folder with:
 
 ```bash
 npx wrangler secret put ACCESS_CLIENT_ID
 npx wrangler secret put ACCESS_CLIENT_SECRET
+# optional extra bearer gate for remote clients
 npx wrangler secret put EDGE_API_TOKEN
 npx wrangler deploy
 ```
 
-7. Set `LLM_WIKI_QMD_MCP_URL=https://mcp.<your-domain>/mcp` when you want the packet config to advertise the edge URL instead of the VM-local URL.
+8. Attach a route or custom domain such as `mcp.<your-domain>` in Cloudflare so the Worker is reachable on the intended hostname.
+9. Set `LLM_WIKI_QMD_MCP_URL=https://mcp.<your-domain>/mcp` when you want the packet config to advertise the edge URL instead of the VM-local URL.
 
 Notes:
 
+- `EDGE_API_TOKEN` is optional. If unset, the Worker still proxies requests, but caller authentication is then entirely up to Access and the origin exposure model.
 - `brv` should stay private on the VM or inside your app layer. Do not expose raw BRV provider credentials directly to the edge.
 - GitVizz can now run either as its own runtime or as an optional Docker sidecar stack behind the VM. Keep it on its own hostname and gate it with interactive Access rather than routing it through the Worker.
 - If you intentionally want direct VM ingress for testing, set `OPEN_PUBLIC_MCP=1` and `PUBLIC_MCP_SOURCE_RANGES=<cidr-list>` when deploying.

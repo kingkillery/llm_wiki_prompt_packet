@@ -192,6 +192,24 @@ class RuntimeTests(unittest.TestCase):
         self.assertIn(r"'C:\dev\Desktop-Projects\llm_wiki_prompt_packet\llm_wiki_prompt_packet'", content)
         self.assertIn(r"env = { OBSIDIAN_VAULT_PATH = 'C:\Vaults\Kade-HQ' }", content)
 
+    def test_ensure_skill_index_builds_missing_index(self) -> None:
+        self.write_config({"skills": {"active_dir": "wiki/skills/active"}})
+        active_dir = self.workspace / "wiki" / "skills" / "active"
+        active_dir.mkdir(parents=True, exist_ok=True)
+        (active_dir / "git-rebase.md").write_text(
+            "---\nskill_id: skill-git-rebase\ntitle: Git rebase\n---\n\n## Trigger\nrebase branch\n",
+            encoding="utf-8",
+        )
+        summary: list[str] = []
+        failures: list[str] = []
+        state: dict[str, object] = {}
+
+        self.module.ensure_skill_index({"workspace_root": self.workspace}, summary, failures, state)
+
+        self.assertEqual(failures, [])
+        self.assertTrue((self.workspace / ".llm-wiki" / "skill-index.json").exists())
+        self.assertTrue(any("Skill index refreshed:" in item for item in summary))
+
     def test_build_runtime_uses_configured_paths_and_repo_ref(self) -> None:
         config_path = self.write_config(
             {
@@ -454,8 +472,10 @@ class RuntimeTests(unittest.TestCase):
                 ):
                     with mock.patch.object(self.module, "patch_mcp_configs") as patch_mcp:
                         with mock.patch.object(self.module, "patch_claude_local_hook_settings"):
-                            with mock.patch.object(self.module, "verify_agent_failure_capture"):
-                                self.module.run_setup(runtime, summary, failures, state)
+                            with mock.patch.object(self.module, "verify_skill_pipeline"):
+                                with mock.patch.object(self.module, "ensure_skill_index"):
+                                    with mock.patch.object(self.module, "verify_agent_failure_capture"):
+                                        self.module.run_setup(runtime, summary, failures, state)
 
         patch_mcp.assert_called_once_with(runtime, "pk-qmd", "C:/tools/mcpvault.cmd", summary)
         self.assertIn("pk-qmd broke", failures)

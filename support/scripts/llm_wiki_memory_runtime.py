@@ -15,6 +15,9 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
 
 DEFAULT_QMD_REPO_URL = "https://github.com/kingkillery/pk-qmd"
 DEFAULT_QMD_REPO_REF = "ef26cb62bb8132bc3a851b23f450af8e382e4c4e"
@@ -509,6 +512,12 @@ def default_runtime_settings(workspace_root: Path, config_path: Path) -> dict[st
             key: resolve_optional_path(pipeline.get(key) or default, workspace_root) or workspace_root / default
             for key, default in DEFAULT_PIPELINE_DIRS.items()
         },
+        "skill_active_dir": resolve_optional_path(skills.get("active_dir") or "wiki/skills/active", workspace_root)
+        or workspace_root / "wiki/skills/active",
+        "skill_retired_dir": resolve_optional_path(skills.get("retired_dir") or "wiki/skills/retired", workspace_root)
+        or workspace_root / "wiki/skills/retired",
+        "skill_index_path": resolve_optional_path((skills.get("index") or {}).get("output_path") or ".llm-wiki/skill-index.json", workspace_root)
+        or workspace_root / ".llm-wiki/skill-index.json",
     }
 
 
@@ -1178,6 +1187,26 @@ def verify_skill_pipeline(runtime: dict[str, Any], failures: list[str]) -> None:
             failures.append(f"Missing skill pipeline {key.replace('_', ' ')}: {directory}")
 
 
+def ensure_skill_index(runtime: dict[str, Any], summary: list[str], failures: list[str], state: dict[str, Any] | None = None) -> None:
+    try:
+        from skill_index import ensure_index as ensure_skill_index_file, index_needs_rebuild
+
+        workspace_root: Path = runtime["workspace_root"]
+        needs_rebuild = index_needs_rebuild(workspace_root)
+        if runtime.get("verify_only") and needs_rebuild:
+            failures.append(f"Skill index missing or stale: {runtime.get('skill_index_path', workspace_root / '.llm-wiki' / 'skill-index.json')}")
+            return
+        index_path = ensure_skill_index_file(workspace_root)
+        if not index_path.exists():
+            failures.append(f"Skill index was not created: {index_path}")
+            return
+        summary.append(f"Skill index {'refreshed' if needs_rebuild else 'current'}: {index_path}")
+        if state is not None:
+            record_state(state, "setup", "skills", "index_built_at", value=current_timestamp())
+    except Exception as exc:  # noqa: BLE001
+        failures.append(f"Skill index refresh failed: {exc}")
+
+
 def verify_agent_failure_capture(runtime: dict[str, Any], summary: list[str], failures: list[str]) -> None:
     script_path: Path = runtime["agent_failure_capture_script_path"]
     if not script_path.exists():
@@ -1376,6 +1405,8 @@ def run_setup(runtime: dict[str, Any], summary: list[str], failures: list[str], 
             if not runtime["skip_brv_init"]:
                 init_brv_workspace(runtime, brv_command, summary, failures, state)
 
+    verify_skill_pipeline(runtime, failures)
+    ensure_skill_index(runtime, summary, failures, state)
     verify_agent_failure_capture(runtime, summary, failures)
 
     if runtime["skip_gitvizz"]:
@@ -1410,6 +1441,7 @@ def run_health_check(runtime: dict[str, Any], summary: list[str], failures: list
             init_brv_workspace(runtime, brv_command, [], failures, {})
 
     verify_skill_pipeline(runtime, failures)
+    ensure_skill_index(runtime, summary, failures)
     verify_agent_failure_capture(runtime, summary, failures)
 
     if runtime["skip_gitvizz"]:

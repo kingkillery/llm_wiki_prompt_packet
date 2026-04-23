@@ -16,7 +16,7 @@ import re
 import urllib.request
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 
 WORD_RE = re.compile(r"[a-zA-Z0-9_\-]+")
@@ -454,6 +454,69 @@ def _extract_section(body: str, *headers: str) -> str:
     return remaining.strip()
 
 
+def _iter_skill_index_inputs(
+    workspace: Path,
+    config: dict[str, Any] | None = None,
+) -> tuple[Path, Path, Path, Path, list[Path]]:
+    config = config or {}
+    skill_config = config.get("skills", {}) if isinstance(config.get("skills"), dict) else {}
+    index_config = skill_config.get("index", {}) if isinstance(skill_config.get("index"), dict) else {}
+    config_path = workspace / ".llm-wiki" / "config.json"
+    active_dir = workspace / skill_config.get("active_dir", "wiki/skills/active")
+    retired_dir = workspace / skill_config.get("retired_dir", "wiki/skills/retired")
+    index_path = workspace / index_config.get("output_path", ".llm-wiki/skill-index.json")
+    feedback_log = workspace / ".llm-wiki" / "skill-pipeline" / "feedback.jsonl"
+
+    inputs: list[Path] = []
+    if config_path.exists():
+        inputs.append(config_path)
+    if feedback_log.exists():
+        inputs.append(feedback_log)
+    if active_dir.exists():
+        inputs.extend(sorted(active_dir.glob("*.md")))
+    if retired_dir.exists():
+        inputs.extend(sorted(retired_dir.glob("*.md")))
+    return config_path, active_dir, retired_dir, index_path, inputs
+
+
+def _latest_mtime(paths: Iterable[Path]) -> float:
+    latest = 0.0
+    for path in paths:
+        try:
+            latest = max(latest, path.stat().st_mtime)
+        except OSError:
+            continue
+    return latest
+
+
+def index_needs_rebuild(workspace: Path, config: dict[str, Any] | None = None) -> bool:
+    _, _, _, index_path, inputs = _iter_skill_index_inputs(workspace, config)
+    if not index_path.exists():
+        return True
+    try:
+        index_mtime = index_path.stat().st_mtime
+    except OSError:
+        return True
+    return _latest_mtime(inputs) > index_mtime
+
+
+def ensure_index(workspace: Path, config: dict[str, Any] | None = None, force: bool = False) -> Path:
+    workspace = workspace.resolve()
+    config_path = workspace / ".llm-wiki" / "config.json"
+    if config is None:
+        config = json.loads(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
+    _, active_dir, _, index_path, _ = _iter_skill_index_inputs(workspace, config)
+    if force or index_needs_rebuild(workspace, config):
+        skill_config = config.get("skills", {}) if isinstance(config.get("skills"), dict) else {}
+        index_config = skill_config.get("index", {}) if isinstance(skill_config.get("index"), dict) else {}
+        embedder_config = {
+            "backend": index_config.get("backend", "keyword"),
+            "tei_url": index_config.get("tei_url", "http://127.0.0.1:8182/embed"),
+        }
+        build_index(active_dir, index_path, embedder=resolve_embedder(embedder_config))
+    return index_path
+
+
 def suggest_skills(
     workspace: Path,
     task_text: str,
@@ -465,7 +528,7 @@ def suggest_skills(
     config = json.loads(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
     skill_config = config.get("skills", {})
     index_config = skill_config.get("index", {})
-    index_path = workspace / ".llm-wiki" / "skill-index.json"
+    index_path = ensure_index(workspace, config=config)
 
     if not index_path.exists():
         return []

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -125,6 +127,20 @@ class TestSkillIndex(unittest.TestCase):
 
         suggestions = self.skill_index.suggest_skills(self.workspace, "how do I rebase", threshold=0.99)
         self.assertEqual(len(suggestions), 0)
+
+    def test_suggest_skills_builds_index_automatically_when_missing(self) -> None:
+        self._write_skill(
+            "git-rebase.md",
+            "---\nskill_id: skill-git-rebase\ntitle: Git rebase\n---\n\n## Trigger\nrebase branch\n",
+        )
+        config = {"skills": {"active_dir": str(self.active_dir.relative_to(self.workspace))}}
+        (self.workspace / ".llm-wiki").mkdir(parents=True, exist_ok=True)
+        (self.workspace / ".llm-wiki" / "config.json").write_text(json.dumps(config), encoding="utf-8")
+
+        suggestions = self.skill_index.suggest_skills(self.workspace, "how do I rebase", threshold=0.01)
+
+        self.assertEqual(len(suggestions), 1)
+        self.assertTrue((self.workspace / ".llm-wiki" / "skill-index.json").exists())
 
     def test_stub_embedder_is_deterministic(self) -> None:
         embedder = self.skill_index.StubEmbedder(dimensions=8)
@@ -360,6 +376,30 @@ class TestNegativeExampleFiltering(unittest.TestCase):
         output = self.workspace / ".llm-wiki" / "skill-index.json"
         index = self.skill_index.build_index(custom_active_dir, output)
         self.assertEqual(index.penalties.get("skill-risky"), 0.25)
+
+    def test_suggest_skills_rebuilds_index_when_feedback_changes(self) -> None:
+        self._write_skill("risky.md", "---\nskill_id: skill-risky\ntitle: Risky skill\n---\n\n## Trigger\nrisky task\n")
+        config = {"skills": {"active_dir": str(self.active_dir.relative_to(self.workspace))}}
+        (self.workspace / ".llm-wiki").mkdir(parents=True, exist_ok=True)
+        (self.workspace / ".llm-wiki" / "config.json").write_text(json.dumps(config), encoding="utf-8")
+        output = self.workspace / ".llm-wiki" / "skill-index.json"
+        self.skill_index.build_index(self.active_dir, output)
+        before = self.skill_index.suggest_skills(self.workspace, "risky task", threshold=0.0)[0]["score"]
+
+        time.sleep(0.02)
+        pipeline_dir = self.workspace / ".llm-wiki" / "skill-pipeline"
+        pipeline_dir.mkdir(parents=True, exist_ok=True)
+        feedback_path = pipeline_dir / "feedback.jsonl"
+        feedback_path.write_text(
+            json.dumps({"skill_id": "skill-risky", "verdict": -1, "reason": "failed"}) + "\n",
+            encoding="utf-8",
+        )
+        os.utime(feedback_path, None)
+
+        after = self.skill_index.suggest_skills(self.workspace, "risky task", threshold=0.0)[0]["score"]
+        rebuilt = self.skill_index.SkillIndex.load(output)
+        self.assertEqual(rebuilt.penalties.get("skill-risky"), 0.25)
+        self.assertLess(after, before)
 
     def test_penalty_reduces_score(self) -> None:
         skill = self.skill_index.Skill(id="skill-bad", title="Bad", trigger="task")

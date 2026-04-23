@@ -1,5 +1,16 @@
 # Wiki Log
 
+## 2026-04-22T16:15:00Z - docs+runtime: automatic skill-index maintenance and documentation QA
+
+- Added automatic skill-index maintenance to the runtime: setup and health-check now refresh `.llm-wiki/skill-index.json`.
+- Added lazy rebuilds in `skill_index.py` so wrapped interactive sessions rebuild the index when skills, retired skills, feedback, or config changed.
+- Updated the dashboard to auto-refresh the skill index before reading skill data.
+- Added regression coverage for missing-index auto-build, feedback-driven rebuilds, and runtime setup/index refresh.
+- Audited and corrected core docs: `README.md`, `QUICKSTART.md`, `LLM_WIKI_MEMORY.md`, `docs/rfc-memory-taxonomy.md`, and `deploy/cloudflare/README.md`.
+- Added `docs/decisions/ADR-001-automatic-skill-index-maintenance.md` and `docs/documentation-audit-2026-04-22.md`.
+- Focused verification passed: `python -m pytest tests/test_skill_trigger.py tests/test_dashboard_server.py tests/test_llm_wiki_memory_runtime.py tests/test_llm_wiki_agent_failure_capture.py -q` -> `53 passed`.
+
+
 ## 2026-04-22T14:30:00Z - implement: negative-example filtering
 
 - Added `SkillIndex.penalties` dict and `_penalty_multiplier()` method.
