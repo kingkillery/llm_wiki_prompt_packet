@@ -1,5 +1,12 @@
 # Wiki Log
 
+## 2026-04-22T17:05:00Z - fix: shorter PowerShell temp extraction root for hosted install
+
+- Shortened `install.ps1` temp extraction directory prefix from the long packet name to `lwpk-<id>`.
+- This avoids Windows PowerShell `Expand-Archive` failures on long nested archive paths during hosted install into repos like `Autonomous-Business`.
+- Added regression coverage in `tests/test_installer_flags.py` to guard the short temp-root behavior.
+- Verification: `python -m pytest tests/test_installer_flags.py -q` -> `4 passed, 1 skipped`.
+
 ## 2026-04-22T16:15:00Z - docs+runtime: automatic skill-index maintenance and documentation QA
 
 - Added automatic skill-index maintenance to the runtime: setup and health-check now refresh `.llm-wiki/skill-index.json`.

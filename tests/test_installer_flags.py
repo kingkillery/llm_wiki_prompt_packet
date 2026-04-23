@@ -22,6 +22,10 @@ class TestInstallerFlags(unittest.TestCase):
         text = INSTALL_PS1.read_text(encoding="utf-8")
         self.assertIn("[switch]$Unattended", text)
 
+    def test_install_ps1_uses_short_temp_extract_root(self) -> None:
+        text = INSTALL_PS1.read_text(encoding="utf-8")
+        self.assertIn('"lwpk-" + [guid]::NewGuid().ToString("N").Substring(0, 12)', text)
+
     @unittest.skipIf(sys.platform == "win32", "bash not available on Windows")
     def test_install_sh_unattended_skips_prompt(self) -> None:
         """Run install.sh --help to verify it accepts --unattended."""

@@ -129,7 +129,10 @@ Write-Host ">>   global-wire = $globalWireLabel"
 
 $repo = "kingkillery/llm_wiki_prompt_packet"
 $zipUrl = "https://github.com/$repo/archive/$Ref.zip"
-$tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("llm-wiki-prompt-packet-" + [guid]::NewGuid().ToString("N"))
+# Keep the extraction root deliberately short on Windows.
+# Expand-Archive in Windows PowerShell can fail on long nested archive paths even
+# when the final workspace path itself is valid.
+$tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("lwpk-" + [guid]::NewGuid().ToString("N").Substring(0, 12))
 $zipPath = "$tempRoot.zip"
 
 # Preflight: detect missing required tools BEFORE network fetch and any state changes.
