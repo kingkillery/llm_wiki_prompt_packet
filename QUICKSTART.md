@@ -9,10 +9,16 @@ Zero to a wired repo with the full stack.
 $f="$env:TEMP\llm-wiki-install.ps1"; iwr https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1 -OutFile $f; & $f -WireRepo
 ```
 
-**Shell (macOS / Linux):**
+**Shell (macOS / Linux / Git Bash / WSL):**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.sh | bash -s -- --wire-repo
 ```
+
+**Important:** use the command that matches your shell.
+
+- If you are in `PS C:\...>`, use the PowerShell command.
+- If you see `/usr/bin/bash` anywhere in your prompt or error output, use the bash command.
+- Do not paste the PowerShell command into bash.
 
 That command:
 

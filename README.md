@@ -73,10 +73,16 @@ Windows (PowerShell) - download then invoke (BOM-immune; flags are guaranteed to
 $f="$env:TEMP\llm-wiki-install.ps1"; iwr https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1 -OutFile $f; & $f -WireRepo
 ```
 
-macOS / Linux:
+macOS / Linux / Git Bash / WSL:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.sh | bash -s -- --wire-repo
 ```
+
+**Important: use the command that matches your current shell.**
+
+- If your prompt is **PowerShell** (`PS C:\...>`), use the **PowerShell** command.
+- If your prompt is **bash**, **Git Bash**, or **WSL** and you see paths or errors mentioning `/usr/bin/bash`, use the **bash** command.
+- Do **not** paste the PowerShell command into bash. Bash will fail on PowerShell syntax like `& $f -WireRepo`.
 
 `-WireRepo` / `--wire-repo` does the normal user install path:
 
@@ -562,6 +568,8 @@ PowerShell (recommended temp-file form):
 ```powershell
 $f="$env:TEMP\llm-wiki-install.ps1"; iwr https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1 -OutFile $f; & $f
 ```
+
+If your terminal is actually bash / Git Bash / WSL, use the shell command instead of the PowerShell form.
 
 `cmd.exe`:
 
