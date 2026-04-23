@@ -1,16 +1,59 @@
 # LLM Wiki Memory Packet
 
-This repo is the prompt packet and vault installer for the `llm-wiki-memory` stack:
+LLM Wiki Memory Packet is a **local-first memory and retrieval layer for coding agents**.
 
-- `Kade-HQ` and `G-Stack` provide the agent harness layer
-- `pk-qmd` is the source-evidence retrieval plane
-- `Byterover` (`brv`) is the curated durable-memory plane
-- `GitVizz` is the repo graph and web surface
-- `llm-wiki-skills` is the local-first reusable skill lifecycle plane
+In plain English, it helps an agent do five things reliably:
 
-The intended system combines `Kade-HQ`, `G-Stack`, `Byterover`, `GitVizz`, and `pk-qmd` into one contract, while still supporting local-first bootstrap paths.
+1. **find source truth** in your repo and notes
+2. **remember durable preferences and decisions**
+3. **reuse proven workflows as skills**
+4. **capture failures and learn from them**
+5. **present all of that as one coherent system instead of five separate tools**
 
-The packet installs concise guidance files, tool-specific command/workflow files, a stack config, and health-check scripts into an Obsidian vault. It does not hide these components from maintainers, but the installed prompts tell agents to present one coherent intelligence surface to end users.
+Under the hood, the packet wires together these components:
+
+- `pk-qmd` — source evidence retrieval
+- `Byterover` (`brv`) — durable memory
+- `GitVizz` — repo graph / topology
+- `llm-wiki-skills` — reusable workflow lifecycle
+- `Kade-HQ` + `G-Stack` — harness / operating surface
+
+## Start here if you are new
+
+Most users only need three things:
+
+1. **Quick Install** — installs and wires the packet into the current repo or vault
+2. **Verification** — confirms the stack is healthy
+3. **Daily use** — run the installed helpers and let the packet keep itself up to date
+
+You do **not** need to understand the internal scoring/indexing system to use this repo. The packet now maintains the skill index automatically during setup, health checks, wrapped interactive sessions, and dashboard reads.
+
+## Which path should I use?
+
+| If you want to... | Use this |
+|---|---|
+| install into the repo you are currently in | **Quick Install** with `-WireRepo` / `--wire-repo` |
+| install into an Obsidian vault only | the vault-only install path |
+| re-run setup after config/tool changes | `scripts/setup_llm_wiki_memory.ps1` or `.sh` |
+| check whether the stack is healthy | `scripts/check_llm_wiki_memory.ps1` or `.sh` |
+| run the stack locally in Docker | `docker-compose.quickstart.yml` |
+| host it on a VM | the **Google Cloud VM** section |
+| put Cloudflare in front of a hosted VM | the **Cloudflare edge in front of GCP** section |
+| understand the advanced repo-owned CLI surface | `llm_wiki_packet.ps1` / `.sh` advanced section |
+
+If you are new, you can safely ignore most of the advanced sections until after the first successful install.
+
+## What this repo actually does
+
+The packet installs guidance files, commands, scripts, config, and health checks into an Obsidian vault or repo workspace so agents can operate against one stable contract.
+
+That means the installed system can:
+
+- search repo-local evidence
+- route between evidence, graph, memory, and skills
+- maintain a local skill index for proactive suggestions
+- record failures and draft reducer packets
+- expose repeatable setup and verification helpers
 
 The installer can also seed packet-owned `kade-hq`, `gstack`, `g-kade`, and `llm-wiki-skills` wrapper skills into the user's home skill roots when you explicitly opt in with `--install-home-skills` or `LLM_WIKI_INSTALL_HOME_SKILLS=1`:
 
@@ -23,7 +66,7 @@ Those wrappers live in this repo under `skills/home/` and are intentionally ligh
 
 ## Quick Install
 
-**One command - wire this packet into the repo or vault you are sitting in.**
+**One command installs the packet into the repo or vault you are sitting in.**
 
 Windows (PowerShell) - download then invoke (BOM-immune; flags are guaranteed to propagate):
 ```powershell
@@ -35,7 +78,18 @@ macOS / Linux:
 curl -fsSL https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.sh | bash -s -- --wire-repo
 ```
 
-`-WireRepo` / `--wire-repo` runs preflight (detects missing tools), installs the packet into the current directory as a workspace, automates global Claude wiring (`~/.claude/CLAUDE.md` plus `~/.claude/commands/wiki-*.md`), and runs the health check as the closing step. The closing health check propagates its exit code so chained commands honor failure (set `LLM_WIKI_HEALTH_CHECK_NONFATAL=1` to keep warn-only behavior). Global Claude wiring writes a timestamped `.bak` of `~/.claude/CLAUDE.md` before any mutation.
+`-WireRepo` / `--wire-repo` does the normal user install path:
+
+- runs preflight and tells you what is missing
+- installs the packet into the current directory as a workspace
+- wires global Claude commands when enabled
+- runs setup
+- builds the skill suggestion index automatically
+- runs the health check as the closing step
+
+The closing health check propagates its exit code so chained commands honor failure (set `LLM_WIKI_HEALTH_CHECK_NONFATAL=1` to keep warn-only behavior). Global Claude wiring writes a timestamped `.bak` of `~/.claude/CLAUDE.md` before any mutation.
+
+**What success looks like:** after install, you should be able to run `scripts/check_llm_wiki_memory.*` from the repo/vault root and get a clean result.
 
 See [`QUICKSTART.md`](QUICKSTART.md) for the 30-second walkthrough, or run `bash install.sh --help` / `install.ps1 -Help` for the full flag set.
 
@@ -51,6 +105,24 @@ $f="$env:TEMP\llm-wiki-install.ps1"; iwr https://raw.githubusercontent.com/kingk
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.sh | bash
 ```
+
+## Core concepts in plain English
+
+If you are trying to understand the stack quickly, use this mental model:
+
+| Concept | Meaning |
+|---|---|
+| **Evidence** | Facts from your repo, notes, prompts, and docs. Retrieved with `pk-qmd`. |
+| **Memory** | Durable preferences and repeated decisions. Stored in `brv` or staged locally when needed. |
+| **Skills** | Reusable task shortcuts like "how we do X here." Stored as markdown-backed memory objects. |
+| **Graph** | Structural repo understanding like routes, relationships, and topology. Exposed by GitVizz. |
+| **Packet** | The glue layer that wires all of the above into one predictable surface. |
+
+The packet tries to keep the user experience simple:
+
+- ask the agent a normal question
+- let the packet route to the right plane
+- keep maintenance tasks automatic whenever possible
 
 ## Architecture
 
@@ -177,7 +249,15 @@ Three opt-in HF surfaces are wired into the packet:
 
 ## Bootstrap path
 
-The packet configures the stack, but the easiest path is now the hosted installer. It prompts for the vault folder when you do not pass one, lays down the packet, and then runs the vault setup helper unless you explicitly skip it.
+The hosted installer is the default path. If you do nothing special, it:
+
+1. copies the packet into the current repo or vault
+2. writes `.llm-wiki/config.json`
+3. installs or verifies the runtime helpers
+4. wires MCP/config surfaces
+5. bootstraps retrieval and memory helpers
+6. builds or refreshes `.llm-wiki/skill-index.json`
+7. runs the health check
 
 During setup and health-check runs, the packet now also **builds or refreshes the skill suggestion index automatically**. Interactive agent launches and the dashboard will lazily rebuild the index if the active skills, retired skills, feedback log, or config changed. Users should not need to understand or manually maintain `.llm-wiki/skill-index.json`.
 
@@ -471,22 +551,22 @@ bash ./scripts/check_llm_wiki_memory.sh
 
 ### Hosted one-command install
 
-Run these from inside the target vault if you want the current directory used automatically. If you omit the vault path, the installers now prompt for it and then run the full setup helper.
+Run these from inside the target vault or repo if you want the current directory used automatically. If you omit the vault path, the installers prompt for it and then run the full setup helper.
 
 Set `LLM_WIKI_SKIP_SETUP=1` if you only want the packet files and plan to run the helper later.
 Home skill install is now opt-in: pass `--install-home-skills` or set `LLM_WIKI_INSTALL_HOME_SKILLS=1` if you want packet-owned wrappers in `~/.agents`, `~/.codex`, `~/.claude`, or `~/.pi/agent`.
 Set `LLM_WIKI_ALLOW_GLOBAL_TOOL_INSTALL=1` if you want setup to fall back to global npm installs after packet-local install paths fail.
 
-PowerShell:
+PowerShell (recommended temp-file form):
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1)))
+$f="$env:TEMP\llm-wiki-install.ps1"; iwr https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1 -OutFile $f; & $f
 ```
 
 `cmd.exe`:
 
 ```bat
-%windir%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1)))"
+%windir%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$f=Join-Path $env:TEMP 'llm-wiki-install.ps1'; iwr https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1 -OutFile $f; & $f"
 ```
 
 Shell:
@@ -498,7 +578,7 @@ curl -fsSL https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/
 Override the vault path explicitly:
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1))) -Vault "C:\path\to\Your Vault"
+$f="$env:TEMP\llm-wiki-install.ps1"; iwr https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1 -OutFile $f; & $f -Vault "C:\path\to\Your Vault"
 ```
 
 ```bash
@@ -961,7 +1041,35 @@ These checks verify:
 - the expected vault QMD collection exists when the richer fork is installed
 - `brv` is on PATH
 - `.brv/config.json` exists in the vault
+- the skill pipeline folders exist
+- the skill suggestion index exists or can be refreshed automatically
 - the configured GitVizz frontend and backend ports are reachable
+
+### Optional post-install sanity checks
+
+These are useful when you want to confirm the user-facing surfaces, not just the base runtime:
+
+```bash
+python scripts/build_skill_index.py --workspace .
+python scripts/skill_trigger.py --workspace . --task "how do I rebase my branch"
+python scripts/dashboard_server.py --workspace .
+```
+
+Expected behavior:
+
+- `build_skill_index.py` should print the indexed skill count
+- `skill_trigger.py` should print nothing or a short suggestion block; both are valid depending on your current skills
+- `dashboard_server.py` should serve the dashboard locally and auto-refresh the skill index if needed
+
+## Common setup gaps and fixes
+
+| Symptom | Likely cause | What to do |
+|---|---|---|
+| `pk-qmd status` fails | `pk-qmd` is missing or not reachable | Re-run `scripts/setup_llm_wiki_memory.*`; if needed allow global install fallback or point to a local checkout with `--qmd-source` / `--qmd-source-checkout` |
+| `brv query` fails but `brv status` works | provider not connected | Run `brv providers connect byterover` or your preferred provider |
+| GitVizz health fails | frontend/backend not running or URLs wrong | Check `.llm-wiki/config.json` and either start GitVizz or skip it until ready |
+| Skill suggestions seem stale | active/retired skills or feedback changed | Usually nothing: setup, health check, wrapped sessions, and dashboard reads now rebuild the index automatically |
+| Remote MCP works on the VM but not through Cloudflare | edge route or origin URL mismatch | Ensure the Worker points at the origin root, not `.../mcp`, and verify route/custom domain and Access secrets |
 
 ## Assumptions
 
