@@ -71,6 +71,14 @@
     "feedback_dir": "wiki/skills/feedback",
     "retired_dir": "wiki/skills/retired",
     "retire_below_score": -3,
+    "index": {
+      "backend": "keyword",
+      "tei_url": "http://127.0.0.1:8182/embed",
+      "top_n": 3,
+      "threshold": 0.3,
+      "halflife_days": 30.0,
+      "output_path": ".llm-wiki/skill-index.json"
+    },
     "pipeline": {
       "pipeline_dir": ".llm-wiki/skill-pipeline",
       "brief_dir": ".llm-wiki/skill-pipeline/briefs",

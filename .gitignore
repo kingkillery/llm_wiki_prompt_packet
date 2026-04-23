@@ -7,5 +7,6 @@ __pycache__/
 node_modules/
 npm-debug.log*
 .llm-wiki/tools/
+.llm-wiki/skill-index.json
 support/scripts/.llm-wiki/
 .artifacts/pokemon-benchmark/

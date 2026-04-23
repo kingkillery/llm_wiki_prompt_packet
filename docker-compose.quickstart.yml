@@ -1,0 +1,45 @@
+# Quick-start Docker Compose for llm-wiki-memory
+# Usage: docker compose -f docker-compose.quickstart.yml up
+#
+# This spins up the packet with local-first defaults:
+#   - pk-qmd MCP on port 8181
+#   - Vault mounted from ./ (current directory)
+#   - GitVizz disabled by default (set LLM_WIKI_ENABLE_GITVIZZ=1 to enable)
+#   - TEI embeddings available via --profile tei
+
+services:
+  llm-wiki:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: llm-wiki-prompt-packet:local
+    container_name: llm-wiki-quickstart
+    environment:
+      LLM_WIKI_VAULT: /workspace
+      LLM_WIKI_TARGETS: ${LLM_WIKI_TARGETS:-claude,codex,droid,pi}
+      LLM_WIKI_FORCE_INSTALL: ${LLM_WIKI_FORCE_INSTALL:-0}
+      LLM_WIKI_SKIP_GITVIZZ: ${LLM_WIKI_SKIP_GITVIZZ:-1}
+      LLM_WIKI_ENABLE_GITVIZZ: ${LLM_WIKI_ENABLE_GITVIZZ:-0}
+      LLM_WIKI_QMD_MCP_URL: ${LLM_WIKI_QMD_MCP_URL:-http://localhost:8181/mcp}
+      LLM_WIKI_BRV_COMMAND: brv
+      BYTEROVER_API_KEY: ${BYTEROVER_API_KEY:-}
+      LLM_WIKI_AGENT_API_TOKEN: ${LLM_WIKI_AGENT_API_TOKEN:-}
+    ports:
+      - "${LLM_WIKI_MCP_BIND_HOST:-127.0.0.1}:${LLM_WIKI_MCP_PORT:-8181}:8181"
+    volumes:
+      - ${LLM_WIKI_VAULT_PATH:-.}:/workspace
+    command: ["serve"]
+    healthcheck:
+      test: ["CMD-SHELL", "bash /workspace/scripts/check_llm_wiki_memory.sh --skip-gitvizz"]
+      interval: 30s
+      timeout: 45s
+      retries: 5
+      start_period: 180s
+
+  tei:
+    profiles: ["tei"]
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.5
+    container_name: llm-wiki-tei-quickstart
+    command: ["--model-id", "${LLM_WIKI_TEI_MODEL:-BAAI/bge-small-en-v1.5}"]
+    ports:
+      - "${LLM_WIKI_TEI_BIND_HOST:-127.0.0.1}:${LLM_WIKI_TEI_PORT:-8182}:80"

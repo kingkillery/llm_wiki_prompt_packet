@@ -1,0 +1,10 @@
+{"episode": 0, "condition": "baseline", "task": "git-workflow", "steps": 9, "success": true, "timestamp": "2026-04-23T04:43:53.227206+00:00"}
+{"episode": 1, "condition": "baseline", "task": "git-workflow", "steps": 10, "success": true, "timestamp": "2026-04-23T04:43:53.227243+00:00"}
+{"episode": 2, "condition": "baseline", "task": "git-workflow", "steps": 14, "success": true, "timestamp": "2026-04-23T04:43:53.227249+00:00"}
+{"episode": 3, "condition": "baseline", "task": "git-workflow", "steps": 11, "success": true, "timestamp": "2026-04-23T04:43:53.227252+00:00"}
+{"episode": 4, "condition": "baseline", "task": "git-workflow", "steps": 12, "success": true, "timestamp": "2026-04-23T04:43:53.227255+00:00"}
+{"episode": 5, "condition": "baseline", "task": "git-workflow", "steps": 12, "success": false, "timestamp": "2026-04-23T04:43:53.227257+00:00"}
+{"episode": 6, "condition": "baseline", "task": "git-workflow", "steps": 10, "success": true, "timestamp": "2026-04-23T04:43:53.227260+00:00"}
+{"episode": 7, "condition": "baseline", "task": "git-workflow", "steps": 8, "success": false, "timestamp": "2026-04-23T04:43:53.227262+00:00"}
+{"episode": 8, "condition": "baseline", "task": "git-workflow", "steps": 10, "success": false, "timestamp": "2026-04-23T04:43:53.227265+00:00"}
+{"episode": 9, "condition": "baseline", "task": "git-workflow", "steps": 13, "success": true, "timestamp": "2026-04-23T04:43:53.227267+00:00"}

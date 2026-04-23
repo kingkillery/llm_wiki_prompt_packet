@@ -11,6 +11,7 @@ param(
     [switch]$WireRepo,
     [switch]$GlobalWire,
     [switch]$NoGlobalWire,
+    [switch]$Unattended,
     [switch]$Force,
     [switch]$Help
 )
@@ -98,10 +99,14 @@ if ($NoGlobalWire) { $effectiveGlobalWire = $false }
 $env:LLM_WIKI_INSTALL_MODE = $Mode
 
 if (-not $Vault) {
-    $promptLabel = if ($Mode -eq "g-kade") { "Project root to wire" } else { "Vault folder to index" }
-    $Vault = Read-Host "$promptLabel [current directory]"
-    if (-not $Vault) {
+    if ($Unattended) {
         $Vault = (Get-Location).Path
+    } else {
+        $promptLabel = if ($Mode -eq "g-kade") { "Project root to wire" } else { "Vault folder to index" }
+        $Vault = Read-Host "$promptLabel [current directory]"
+        if (-not $Vault) {
+            $Vault = (Get-Location).Path
+        }
     }
 }
 

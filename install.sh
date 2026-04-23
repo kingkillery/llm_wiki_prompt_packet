@@ -24,6 +24,7 @@ Convenience:
                       ~/.claude/CLAUDE.md and copy wiki-*.md commands into
                       ~/.claude/commands/. Default-on for --wire-repo.
   --no-global-wire    Disable global Claude wiring even with --wire-repo.
+  --unattended        Skip all interactive prompts; use defaults or env vars.
   -g | --global-install   Install scope: global (vs default local).
 
 Environment overrides (CLI flags win):
@@ -123,6 +124,10 @@ while [[ $# -gt 0 ]]; do
       GLOBAL_WIRE_FLAG="0"
       shift
       ;;
+    --unattended)
+      LLM_WIKI_UNATTENDED=1
+      shift
+      ;;
     *)
       POSITIONAL+=("$1")
       shift
@@ -192,7 +197,7 @@ if (is_windows_bash || is_wsl) && command -v powershell.exe >/dev/null 2>&1; the
 fi
 
 if [[ -z "$VAULT" ]]; then
-  if [[ -r /dev/tty ]]; then
+  if [[ "${LLM_WIKI_UNATTENDED:-0}" != "1" && -r /dev/tty ]]; then
     exec 3</dev/tty
     if [[ "$INSTALL_MODE" == "g-kade" ]]; then
       read -r -p "Project root to wire [current directory]: " VAULT <&3

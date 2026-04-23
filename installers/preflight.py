@@ -11,7 +11,9 @@ Exit 1 if any required tool is missing.
 import argparse
 import os
 import platform
+import re
 import shutil
+import subprocess
 import sys
 
 # ---------------------------------------------------------------------------
@@ -143,6 +145,21 @@ TOOLS = [
 # Main
 # ---------------------------------------------------------------------------
 
+def _get_version(cmd: str) -> str:
+    """Try to get a version string from a command."""
+    try:
+        result = subprocess.run([cmd, "--version"], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            first_line = result.stdout.strip().splitlines()[0]
+            # Extract version-like substring (e.g., "v20.1.0" or "1.2.3")
+            import re
+            m = re.search(r"v?\d+\.\d+(?:\.\d+)?", first_line)
+            return m.group(0) if m else first_line[:40]
+    except Exception:
+        pass
+    return ""
+
+
 def build_parser():
     p = argparse.ArgumentParser(
         description="Pre-install tool checker.",
@@ -194,11 +211,13 @@ def main():
             label = "[ok]"
             colored_label = colorize(label, GREEN, use_color)
             b_name, b_path = resolved
+            version = _get_version(b_name)
+            version_str = f" {version}" if version else ""
             # Only show resolved path when it adds info (not just bare name on PATH)
             if b_path and b_path != b_name:
-                print("{}   {:<12} (resolved: {})".format(colored_label, b_name, b_path))
+                print("{}   {:<12}{} (resolved: {})".format(colored_label, b_name, version_str, b_path))
             else:
-                print("{}   {:<12}".format(colored_label, b_name))
+                print("{}   {:<12}{}".format(colored_label, b_name, version_str))
         elif req:
             label = "[miss]"
             colored_label = colorize(label, RED, use_color)

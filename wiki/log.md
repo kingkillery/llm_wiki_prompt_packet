@@ -1,5 +1,120 @@
 # Wiki Log
 
+## 2026-04-22T14:30:00Z - implement: negative-example filtering
+
+- Added `SkillIndex.penalties` dict and `_penalty_multiplier()` method.
+- Retired skills (in `wiki/skills/retired/`) incur +0.5 penalty.
+- Negative feedback entries (in `.llm-wiki/skill-pipeline/feedback.jsonl`) incur +0.25 per -1 verdict, capped at +0.5 from feedback.
+- Total penalty capped at 0.75, so minimum multiplier is 0.25 (skill never fully disappears).
+- Updated `build_index()` to merge both penalty sources at index build time.
+- Added 5 tests: retired skill penalty, feedback penalty, custom active-dir workspace lookup, score reduction, and cap at 0.75.
+- All 16 skill-trigger tests pass.
+
+## 2026-04-22T14:00:00Z - polish: remaining flow items
+
+- Dashboard: added `/dashboard/api/log` endpoint (reads recent `wiki/log.md` entries), Obsidian deep-links in wiki page list, log card in frontend.
+- README: documented unattended install env vars (`LLM_WIKI_VAULT`, `LLM_WIKI_TARGETS`, `LLM_WIKI_INSTALL_MODE`, `LLM_WIKI_GLOBAL_WIRE`, `BYTEROVER_API_KEY`, `HF_TOKEN`).
+- Preflight: added `_get_version()` helper; now prints detected versions for all found tools (python, git, node, bun, docker, etc.).
+- CI: created `.github/workflows/docker-publish.yml` for GitHub Container Registry builds on push to main and version tags.
+- Benchmark: ran 10-episode stub-mode benchmark (Packet vs Baseline). Results: 100% completion rate (packet) vs 70% (baseline), 27.5% step reduction. Harness and analysis pipeline verified.
+- All tracking files updated: `TODO.md`, `CHANGELOG.md`, `ROADMAP.md`.
+
+## 2026-04-22T13:30:00Z - implement: M5 read-only memory dashboard
+
+- Created `support/scripts/dashboard_server.py` — stdlib-only HTTP dashboard (no external dependencies).
+- Serves at `http://127.0.0.1:8183/dashboard` by default.
+- Endpoints:
+  - `GET /dashboard` — SPA with wiki search, skill list, BRV status
+  - `GET /dashboard/api/pages?q=` — keyword search across `wiki/**/*.md`
+  - `GET /dashboard/api/skills` — active skills from `.llm-wiki/skill-index.json`
+  - `GET /dashboard/api/skills/<id>` — skill detail
+  - `GET /dashboard/api/brv/status` — proxies `brv status`
+- Responsive CSS with flex/grid; zero frontend frameworks.
+- Read-only: no write endpoints.
+- Added `tests/test_dashboard_server.py` with 4 passing tests.
+- Synced `scripts/dashboard_server.py` to deployed surface.
+
+## 2026-04-22T13:00:00Z - implement: M4 Docker bootstrap + unattended installer
+
+- Created `docker-compose.quickstart.yml` — minimal compose file for one-command `docker compose up`.
+- Added `--unattended` flag to `install.sh`:
+  - Skips `read -r -p` prompts when `LLM_WIKI_UNATTENDED=1`.
+  - Falls back to `$PWD` for vault path.
+- Added `-Unattended` switch to `install.ps1`:
+  - Skips `Read-Host` prompts.
+  - Falls back to `(Get-Location).Path`.
+- Added `tests/test_installer_flags.py` with 4 tests (3 pass, 1 skipped on Windows).
+- Deferred: Dockerfile.gateway (existing docker/Dockerfile suffices), CI publishing, README env var docs, preflight version checks.
+
+## 2026-04-22T12:30:00Z - implement: M2 auto-reducer packets MVP
+
+- Completed `scripts/auto_reducer_watcher.py` with full lifecycle: `start`, `end`, `list`, `approve`, `reject`, `show`.
+- Integrated start/end markers into `llm_wiki_agent_failure_capture.py`:
+  - `start` runs before agent launch (captures goal, agent, git status snapshot).
+  - `end` runs after agent exit (captures returncode, diffs git status, writes draft to `auto-packets/`).
+- Draft includes: task summary, files changed, outcome signal, skill candidacy heuristic.
+- Added `tests/test_auto_reducer_watcher.py` with 7 passing tests.
+- Synced `scripts/auto_reducer_watcher.py` to deployed surface.
+- Open items deferred: mid-session crash draft (SIGINT), BRV/Ollama summarizer upgrade, optional `skill_pipeline_run` trigger on approve.
+
+## 2026-04-22T12:00:00Z - implement: recency decay + graph traversal (QuickScope²)
+
+- Implemented both retrieval improvements in a single pass through `skill_index.py`:
+  1. **Recency decay**: `_recency_multiplier()` applies exponential decay `0.5 + 0.5 * exp(-age/halflife)` to skill scores. Fresh skills rank higher than stale ones. Configurable via `skills.index.halflife_days` (default 30).
+  2. **Graph traversal**: Skills can declare `related_skills` edges in YAML frontmatter with `id` and `relation` (prerequisite, conflict, successor, etc.). `SkillIndex.neighbors()` walks edges and `format_suggestions()` emits a neighborhood block.
+- Updated `.llm-wiki/config.json` with `halflife_days: 30.0`.
+- Extended `discover_skills()` to parse `related_skills` and `build_index()` to populate the edge index.
+- Added 3 new tests: `TestRecencyDecay`, `TestGraphTraversal.test_neighbors_returned_from_edges`, `TestGraphTraversal.test_suggest_skills_includes_neighbors`. All 11 tests pass.
+- Synced `scripts/skill_index.py` and `scripts/llm_wiki_agent_failure_capture.py` with latest deployed copies.
+
+## 2026-04-22T11:30:00Z - research: SOTA memory retrieval gaps
+
+- Analyzed current retrieval mechanics vs. Zep, Mem0, WorldDB, Titans/MIRAS, and Agent-Native Memory literature.
+- Identified two concrete gaps: (1) no temporal decay in scoring, (2) flat skill list instead of graph traversal.
+- Wrote `wiki/syntheses/quickscope-memory-retrieval-improvements-2026.md` with exact file-by-file changes and 6-step execution order.
+- Gap 1 (recency decay): ~30 min, touches `skill_index.py`, config, tests.
+- Gap 2 (graph traversal): ~2 hrs, touches skill schema, edge index, `_graph_neighbors()`, formatter, tests.
+
+## 2026-04-22T11:00:00Z - implement: M1 skill trigger classifier MVP
+
+- Created `support/scripts/skill_index.py` — shared module for skill discovery, indexing, and scoring.
+  - Supports three backends: `keyword` (weighted lexical overlap, dependency-free), `tei` (local HTTP embeddings), `stub` (deterministic unit vectors for tests).
+  - Extracts YAML frontmatter and body sections (trigger, fast_path, failure_modes) from skill markdown.
+  - `SkillIndex.score()` combines keyword and embedding scores with configurable weighting.
+- Created `support/scripts/build_skill_index.py` — CLI to build `.llm-wiki/skill-index.json` from `wiki/skills/active/`.
+- Created `support/scripts/skill_trigger.py` — CLI to query the index and return formatted suggestions.
+- Integrated skill trigger into `llm_wiki_agent_failure_capture.py`: prints suggestions to stderr before launching interactive agents.
+- Added `LLM_WIKI_SKILL_SUGGEST=0` escape hatch.
+- Added `skills.index` section to `.llm-wiki/config.json`.
+- Created `tests/test_skill_trigger.py` with 8 passing tests covering frontmatter extraction, keyword scoring, threshold filtering, stub embedder determinism, and CLI integration.
+- Synced all new/updated Python files to `scripts/` deployed surface.
+- Updated `TODO.md` to reflect completed M1 tasks.
+
+## 2026-04-22T10:30:00Z - solidify: roadmap and todo canonical tracking
+
+- Promoted the gap-closure plan from wiki synthesis to canonical project tracking.
+- Created `ROADMAP.md` with milestones M1–M5, dates, success criteria, dependency graph, and explicit anti-goals.
+- Created `TODO.md` with granular checkbox tasks mapped to each milestone, plus a backlog/icebox.
+- Updated `CHANGELOG.md` Unreleased section to reference the new tracking files.
+- Added cross-references between `ROADMAP.md`, `TODO.md`, `wiki/syntheses/packet-gap-closure-roadmap-2026.md`, and `wiki/comparisons/llm-wiki-vs-sota-memory-systems.md`.
+
+## 2026-04-22T10:15:00Z - plan: packet gap closure roadmap
+
+- Broke the four strategic gaps into five executable experiments with MVP scope, acceptance criteria, dependencies, and risk.
+- Added the phased roadmap at `wiki/syntheses/packet-gap-closure-roadmap-2026.md`.
+- Recommended execution order: (1) skill trigger classifier, (2) auto-reducer packets, (3) RFC + benchmark, (4) Docker/installer hardening, (5) dashboard, (6) hosted path (if justified).
+- Surfaced open questions on hook architecture, suggestion injection channel, gateway capacity, and hosted-path budget.
+- Updated `wiki/index.md`.
+
+## 2026-04-22T10:00:00Z - compare: packet vs. state-of-the-art memory systems
+
+- Reviewed the packet's memory architecture against Mem0, Zep, LangChain Memory, LlamaIndex Chat Engine, MemGPT/Letta, CrewAI, Claude native memory, and OpenAI memory.
+- Identified two core differentiators: (1) first-class procedural memory with skill lifecycle, and (2) explicit write-path curation via ACE-style loops.
+- Identified two major gaps: (1) lack of automatic episodic capture compared to auto-ingest competitors, and (2) no user-facing chat-native memory editing surface.
+- Added a structured comparison matrix and deep-dive analysis at `wiki/comparisons/llm-wiki-vs-sota-memory-systems.md`.
+- Updated `wiki/index.md` with the new comparison section.
+- Recommended five strategic experiments: publish taxonomy spec, head-to-head benchmark, auto-reducer packets, skill trigger classifier, and hybrid cloud mode.
+
 ## 2026-04-21T00:30:00Z - synthesize: recent cs.AI actionable agent memory patterns
 
 - Captured WorldDB-style write-time reconciliation, controller-driven memory use, capability-aware routing, and stable-summary reuse as packet-relevant design patterns.

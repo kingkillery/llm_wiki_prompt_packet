@@ -176,6 +176,34 @@ The packet configures the stack, but the easiest path is now the hosted installe
 
 Local-first use remains supported. When you want a single hosted surface, the intended Docker mode should be able to host the qmd + gitvizz + brv stack together while keeping the same contract boundaries.
 
+### Docker quickstart
+
+```bash
+docker compose -f docker-compose.quickstart.yml up
+```
+
+This spins up the core stack on `http://127.0.0.1:8181` with your current directory mounted as the vault.
+
+### Unattended install (CI / devcontainer)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.sh | bash -s -- --unattended
+```
+
+Required environment variables for unattended mode:
+
+| Variable | Default | Description |
+|---|---|---|
+| `LLM_WIKI_VAULT` | `$PWD` | Vault / project path |
+| `LLM_WIKI_TARGETS` | `claude,codex,droid,pi` | Agent targets |
+| `LLM_WIKI_INSTALL_MODE` | `packet` | `packet` or `g-kade` |
+| `LLM_WIKI_GLOBAL_WIRE` | `0` | Wire into `~/.claude/CLAUDE.md` |
+| `LLM_WIKI_FORCE` | `0` | Force overwrite |
+| `LLM_WIKI_SKIP_SETUP` | `0` | Skip setup helper |
+| `LLM_WIKI_SKIP_HOME_SKILLS` | `0` | Skip home skill install |
+| `BYTEROVER_API_KEY` | — | BRV auth (optional) |
+| `HF_TOKEN` | — | Hugging Face Hub (optional) |
+
 Use the installed helpers from the vault root when you want machine-level setup, repeatable verification, or a re-run after changing config:
 
 - `scripts/setup_llm_wiki_memory.ps1`
