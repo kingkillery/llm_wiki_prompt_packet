@@ -1,5 +1,12 @@
 # Wiki Log
 
+## 2026-04-23T01:05:00Z - fix: PowerShell installer invokes check wrapper with bound switch, not argv array
+
+- Fixed the remaining PowerShell hosted-installer health-check bug.
+- Root cause: `install.ps1` invoked `check_llm_wiki_memory.ps1` via `& $checkHelper @checkArgs`, so `-SkipGitvizz` was treated as a positional string and landed in `$WorkspaceRoot`.
+- Updated the installer to call the wrapper directly with `& $checkHelper -SkipGitvizz` when appropriate.
+- Verification: `python -m pytest tests/test_installer_flags.py -q` -> `6 passed, 1 skipped`.
+
 ## 2026-04-23T00:50:00Z - fix: PowerShell hosted installer now uses native -SkipGitvizz switch
 
 - Fixed a PowerShell-specific argument forwarding bug in `install.ps1`.

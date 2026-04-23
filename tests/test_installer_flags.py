@@ -29,7 +29,8 @@ class TestInstallerFlags(unittest.TestCase):
     def test_install_ps1_skips_gitvizz_in_wire_repo_health_check_by_default(self) -> None:
         text = INSTALL_PS1.read_text(encoding="utf-8")
         self.assertIn('$Mode -eq "g-kade" -and $env:LLM_WIKI_SKIP_GITVIZZ -ne "0"', text)
-        self.assertIn('$checkArgs += "-SkipGitvizz"', text)
+        self.assertIn('& $checkHelper -SkipGitvizz', text)
+        self.assertNotIn('$checkArgs += "-SkipGitvizz"', text)
 
     @unittest.skipIf(sys.platform == "win32", "bash not available on Windows")
     def test_install_sh_unattended_skips_prompt(self) -> None:

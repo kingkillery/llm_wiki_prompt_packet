@@ -257,11 +257,11 @@ try {
         $checkHelper = Join-Path $Vault "scripts/check_llm_wiki_memory.ps1"
         if (Test-Path $checkHelper) {
             Write-Host ">> running health check"
-            $checkArgs = @()
             if ($Mode -eq "g-kade" -and $env:LLM_WIKI_SKIP_GITVIZZ -ne "0") {
-                $checkArgs += "-SkipGitvizz"
+                & $checkHelper -SkipGitvizz
+            } else {
+                & $checkHelper
             }
-            & $checkHelper @checkArgs
             $healthRc = $LASTEXITCODE
             if ($healthRc -ne 0) {
                 # Exit code propagates so chained commands honor failure.
