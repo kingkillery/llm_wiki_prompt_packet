@@ -327,10 +327,14 @@ if [[ "$WIRE_REPO" == "1" || "${LLM_WIKI_RUN_HEALTH_CHECK:-0}" == "1" ]]; then
   CHECK_HELPER="$VAULT/scripts/check_llm_wiki_memory.sh"
   if [[ -f "$CHECK_HELPER" ]]; then
     echo ">> running health check"
+    CHECK_ARGS=()
+    if [[ "$INSTALL_MODE" == "g-kade" && "${LLM_WIKI_SKIP_GITVIZZ:-1}" != "0" ]]; then
+      CHECK_ARGS+=(--skip-gitvizz)
+    fi
     # Capture exit code BEFORE any compound conditional ($? would otherwise
     # reflect the conditional's own evaluation, not the underlying command).
     set +e
-    bash "$CHECK_HELPER"
+    bash "$CHECK_HELPER" "${CHECK_ARGS[@]}"
     HEALTH_RC=$?
     set -e
     if [[ "$HEALTH_RC" -ne 0 ]]; then

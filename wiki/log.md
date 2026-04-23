@@ -1,5 +1,12 @@
 # Wiki Log
 
+## 2026-04-23T00:35:00Z - fix: wire-repo health check now skips GitVizz by default
+
+- Updated both `install.ps1` and `install.sh` so the final hosted-installer health check passes `--skip-gitvizz` by default for `g-kade` / `--wire-repo` installs.
+- This aligns the closing health check with the repo bootstrap path, which intentionally skips GitVizz until the user explicitly enables it.
+- Added regression coverage in `tests/test_installer_flags.py` for both PowerShell and shell installer variants.
+- Verification: `python -m pytest tests/test_installer_flags.py -q` -> `6 passed, 1 skipped`.
+
 ## 2026-04-22T17:05:00Z - fix: shorter PowerShell temp extraction root for hosted install
 
 - Shortened `install.ps1` temp extraction directory prefix from the long packet name to `lwpk-<id>`.
