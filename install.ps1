@@ -259,7 +259,7 @@ try {
             Write-Host ">> running health check"
             $checkArgs = @()
             if ($Mode -eq "g-kade" -and $env:LLM_WIKI_SKIP_GITVIZZ -ne "0") {
-                $checkArgs += "--skip-gitvizz"
+                $checkArgs += "-SkipGitvizz"
             }
             & $checkHelper @checkArgs
             $healthRc = $LASTEXITCODE

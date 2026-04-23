@@ -1,5 +1,12 @@
 # Wiki Log
 
+## 2026-04-23T00:50:00Z - fix: PowerShell hosted installer now uses native -SkipGitvizz switch
+
+- Fixed a PowerShell-specific argument forwarding bug in `install.ps1`.
+- The hosted installer was invoking `check_llm_wiki_memory.ps1` with the GNU-style string `--skip-gitvizz`, which the PowerShell wrapper mis-bound and then forwarded as a broken runtime argument set.
+- Updated the closing health-check path to pass the native wrapper switch `-SkipGitvizz` instead.
+- Verification: `python -m pytest tests/test_installer_flags.py -q` -> `6 passed, 1 skipped`.
+
 ## 2026-04-23T00:35:00Z - fix: wire-repo health check now skips GitVizz by default
 
 - Updated both `install.ps1` and `install.sh` so the final hosted-installer health check passes `--skip-gitvizz` by default for `g-kade` / `--wire-repo` installs.
