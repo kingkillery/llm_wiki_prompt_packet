@@ -6,10 +6,10 @@
   "llm-wiki-skills": {
     "command": "python",
     "args": [
-      "${CLAUDE_PLUGIN_ROOT}/support/scripts/llm_wiki_skill_mcp.py",
+      "support/scripts/llm_wiki_skill_mcp.py",
       "mcp",
       "--workspace",
-      "${CLAUDE_PLUGIN_ROOT}"
+      "."
     ]
   },
   "obsidian": {

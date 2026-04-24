@@ -2,15 +2,17 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import shutil
 import subprocess
 import sys
-import tempfile
 import unittest
+import uuid
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MODULE_PATH = REPO_ROOT / "support" / "scripts" / "llm_wiki_skill_mcp.py"
+CLI_ALIAS_PATH = REPO_ROOT / "support" / "scripts" / "llm_wiki_skills.py"
 
 
 def load_module():
@@ -24,11 +26,13 @@ def load_module():
 class SkillPipelineTests(unittest.TestCase):
     def setUp(self) -> None:
         self.module = load_module()
-        self.tempdir = tempfile.TemporaryDirectory()
-        self.workspace = Path(self.tempdir.name)
+        temp_root = REPO_ROOT / ".tmp"
+        temp_root.mkdir(exist_ok=True)
+        self.workspace = temp_root / f"test-skill-mcp-{uuid.uuid4().hex}"
+        self.workspace.mkdir()
 
     def tearDown(self) -> None:
-        self.tempdir.cleanup()
+        shutil.rmtree(self.workspace, ignore_errors=True)
 
     def make_store(self):
         return self.module.SkillStore(self.workspace)
@@ -92,6 +96,75 @@ class SkillPipelineTests(unittest.TestCase):
         self.assertIn("## Reconciliation Keys", skill_text)
         self.assertIn("packets", store.data)
         self.assertEqual(len(store.data["packets"]), 1)
+
+    def test_lookup_tolerates_legacy_registry_skill_records(self) -> None:
+        registry_dir = self.workspace / ".llm-wiki"
+        registry_dir.mkdir(parents=True)
+        (registry_dir / "skills-registry.json").write_text(
+            json.dumps(
+                {
+                    "skills": {
+                        "skill-legacy": {
+                            "id": "skill-legacy",
+                            "title": "Legacy registry row",
+                            "kind": "workflow",
+                            "applies_to": ["legacy*"],
+                            "created_at": "2026-04-21T00:00:00Z",
+                            "updated_at": "2026-04-21T00:00:00Z",
+                            "feedback_score": 2,
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        store = self.make_store()
+
+        result = store.lookup(goal="legacy registry")
+
+        self.assertEqual(result["count"], 1)
+        self.assertEqual(result["matches"][0]["id"], "skill-legacy")
+        self.assertEqual(result["matches"][0]["status"], "active")
+
+    def test_cli_alias_runs_lookup(self) -> None:
+        registry_dir = self.workspace / ".llm-wiki"
+        registry_dir.mkdir(parents=True)
+        (registry_dir / "skills-registry.json").write_text(
+            json.dumps(
+                {
+                    "skills": {
+                        "skill-cli-alias": {
+                            "id": "skill-cli-alias",
+                            "title": "CLI alias lookup",
+                            "kind": "workflow",
+                            "trigger": "Use the normal CLI alias for skill lookup.",
+                            "applies_to": ["cli*"],
+                            "updated_at": "2026-04-21T00:00:00Z",
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        proc = subprocess.run(
+            [
+                sys.executable,
+                str(CLI_ALIAS_PATH),
+                "--workspace",
+                str(self.workspace),
+                "lookup",
+                "--goal",
+                "normal CLI alias lookup",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        result = json.loads(proc.stdout)
+
+        self.assertEqual(result["count"], 1)
+        self.assertEqual(result["matches"][0]["id"], "skill-cli-alias")
 
     def test_reflect_long_task_writes_packet_and_artifact_refs(self) -> None:
         store = self.make_store()

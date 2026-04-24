@@ -294,6 +294,9 @@ These vault-local helpers are installed with the packet:
 - `scripts/gitvizz_api.sh`
 - `scripts/launch_gitvizz.ps1`
 - `scripts/launch_gitvizz.sh`
+- `scripts/llm_wiki_skills.py`
+- `scripts/llm_wiki_skills.ps1`
+- `scripts/llm_wiki_skills.cmd`
 
 Use the setup helper to:
 

@@ -1,5 +1,12 @@
 # Wiki Log
 
+## 2026-04-24T02:56:00Z - fix: llm-wiki-skills MCP lookup and CLI alias
+
+- Fixed `SkillStore.lookup` so legacy registry rows without a `status` field are normalized instead of crashing with `KeyError`.
+- Added first-class `llm_wiki_skills` CLI aliases for Python, PowerShell, and cmd in source and deployed script surfaces.
+- Updated `.mcp.json` to use a repo-relative script path instead of the unresolved `${CLAUDE_PLUGIN_ROOT}` placeholder.
+- Added regression coverage for legacy registry lookup and the CLI alias.
+
 ## 2026-04-23T01:05:00Z - fix: PowerShell installer invokes check wrapper with bound switch, not argv array
 
 - Fixed the remaining PowerShell hosted-installer health-check bug.

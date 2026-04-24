@@ -24,7 +24,7 @@ Use it when the job is not just "answer this once", but "make this reusable, rev
 Every MCP tool in this skill has an identical CLI subcommand. When MCP is not wired, call the script directly:
 
 ```
-python scripts/llm_wiki_skill_mcp.py <subcommand> [options]
+python scripts/llm_wiki_skills.py <subcommand> [options]
 ```
 
 The script prints a JSON result to stdout and exits 0 on success, 1 on `blocked` or `missing`.
@@ -48,12 +48,12 @@ The script prints a JSON result to stdout and exits 0 on success, 1 on `blocked`
 
 Look up before starting work:
 ```
-python scripts/llm_wiki_skill_mcp.py lookup --goal "select airport from Google Flights dropdown"
+python scripts/llm_wiki_skills.py lookup --goal "select airport from Google Flights dropdown"
 ```
 
 Capture a reusable shortcut in one pass:
 ```
-python scripts/llm_wiki_skill_mcp.py pipeline-run \
+python scripts/llm_wiki_skills.py pipeline-run \
   --title "Google Flights airport row click" \
   --kind ui \
   --goal "Select the exact airport row from the Google Flights suggestion list" \
@@ -67,7 +67,7 @@ python scripts/llm_wiki_skill_mcp.py pipeline-run \
 
 Run an evolution cycle against an existing skill:
 ```
-python scripts/llm_wiki_skill_mcp.py evolve \
+python scripts/llm_wiki_skills.py evolve \
   --title "Google Flights airport row click" \
   --kind ui \
   --goal "Select the exact airport row from the Google Flights suggestion list" \
@@ -82,17 +82,17 @@ python scripts/llm_wiki_skill_mcp.py evolve \
 
 Check the current frontier:
 ```
-python scripts/llm_wiki_skill_mcp.py frontier --limit 5
+python scripts/llm_wiki_skills.py frontier --limit 5
 ```
 
 Inspect a skill record with full lineage:
 ```
-python scripts/llm_wiki_skill_mcp.py get --skill-id skill-google-flights-airport-row-click
+python scripts/llm_wiki_skills.py get --skill-id skill-google-flights-airport-row-click
 ```
 
 Record feedback after applying a skill:
 ```
-python scripts/llm_wiki_skill_mcp.py feedback \
+python scripts/llm_wiki_skills.py feedback \
   --skill-id skill-google-flights-airport-row-click \
   --verdict upvote \
   --reason "Saved approximately 8 steps in a repeated Google Flights booking flow"
@@ -100,7 +100,7 @@ python scripts/llm_wiki_skill_mcp.py feedback \
 
 Retire a stale skill:
 ```
-python scripts/llm_wiki_skill_mcp.py retire \
+python scripts/llm_wiki_skills.py retire \
   --skill-id skill-legacy-google-flights-enter \
   --reason "Superseded by the click-based airport selection skill"
 ```
@@ -145,7 +145,7 @@ Subjective pairwise flags (when `--verification-mode subjective_pairwise`):
 - `--judge-choice` — `A` or `B`
 - `--judge-summary`, `--judge-finding` (repeatable) — judge rationale
 
-Run `python scripts/llm_wiki_skill_mcp.py <subcommand> --help` for the full flag list.
+Run `python scripts/llm_wiki_skills.py <subcommand> --help` for the full flag list.
 
 ## What This Surface Is For
 
