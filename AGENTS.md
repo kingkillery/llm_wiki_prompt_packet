@@ -128,6 +128,7 @@ Use this workspace as a KADE-HQ-backed memory workspace. Treat `AGENTS.md`, `LLM
 - Use GitVizz for repo topology, API surface, route relationships, and graph-oriented navigation after retrieval has identified the likely area.
 - Prefer current source evidence over memory when sources and memory conflict.
 - Start with `llm-wiki-packet context --task "..."` for a compact task bundle; use `llm-wiki-packet evidence --query "..."`, `llm-wiki-packet evidence --plane source --query "..."`, or `llm-wiki-packet context --mode deep` only when broader hybrid/source search is useful.
+- For graph-heavy work, prefer configured `gitvizz.repo_id`; if GitVizz reports auth-required, use the configured auth env vars or treat graph results as degraded hints.
 - Treat Hugging Face embedding/reranking settings as optional disabled-by-default planner hints, not required bootstrap tools.
 
 ### KADE-HQ System Use
@@ -144,7 +145,7 @@ Use this workspace as a KADE-HQ-backed memory workspace. Treat `AGENTS.md`, `LLM
 - Keep raw immutable sources under `raw/`; never edit `raw/` unless explicitly asked.
 - Update `wiki/index.md` when adding or moving durable pages.
 - Update `wiki/log.md` for meaningful wiki changes, tool fallbacks, setup changes, and unresolved questions.
-- For long-running harness work, use `llm-wiki-packet manifest`, `reduce`, `evaluate`, `promote`, and `improve` so artifacts, retrieval metadata, memory promotion, and self-improvement gates share the same run id.
+- For long-running harness work, use `llm-wiki-packet manifest`, `context --run-id`, `evidence --run-id`, `reduce`, `evaluate`, `promote`, and `improve` so artifacts, retrieval metadata, memory promotion, and self-improvement gates share the same run id.
 <!-- llm-wiki-prompt-packet:agents-guidance:end -->
 
 ## Done when

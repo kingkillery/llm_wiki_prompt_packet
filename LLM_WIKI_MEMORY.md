@@ -135,6 +135,7 @@ Use the packet CLI to keep long-running agent work replayable and auditable:
 - `llm-wiki-packet evaluate --run-id <id>` scores the run for task success, citation quality, retrieval sufficiency, retrieval-plane health, and promotion readiness.
 - `llm-wiki-packet promote --run-id <id>` records a memory-routing decision; add `--apply` only when the promotion is intentionally approved.
 - `llm-wiki-packet improve --run-id <id>` creates a gated improvement proposal; it is accepted only when benchmark and no-regression gates pass.
+- Add `--run-id <id>` to `context` or `evidence` when retrieval metadata should be written directly into the run manifest.
 
 ### Skill-index maintenance
 
@@ -389,12 +390,17 @@ Managed GitVizz acquisition config lives alongside the endpoint URLs:
 - `gitvizz.repo_url`
 - `gitvizz.checkout_path`
 - `gitvizz.repo_path`
+- `gitvizz.repo_id`
+- `gitvizz.authorization_env`
+- `gitvizz.auth_token_env`
 
 Environment overrides:
 
 - `LLM_WIKI_GITVIZZ_REPO_URL`
 - `LLM_WIKI_GITVIZZ_CHECKOUT_PATH`
 - `LLM_WIKI_GITVIZZ_REPO_PATH`
+- `LLM_WIKI_GITVIZZ_AUTHORIZATION`
+- `LLM_WIKI_GITVIZZ_TOKEN`
 
 PowerShell:
 

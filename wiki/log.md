@@ -237,3 +237,12 @@
 - Added optional disabled-by-default Hugging Face embedding/reranking planner defaults based on HF discovery.
 - Extended run manifests and evaluations with retrieval-plane metadata and degraded/error summaries.
 - Added `wiki/syntheses/retrieval-spine-hardening-2026-04-25.md` and updated `wiki/index.md`.
+
+## 2026-04-25T00:00:00Z - implement: retrieval quality and graph layer
+
+- Added configured GitVizz `repo_id`, authorization header env, and token env support.
+- Extended GitVizz health checks to probe context search and report auth-required/degraded states.
+- Added matched terms, confidence reasons, and source-precedence reasons to retrieval records.
+- Added per-section context budgets to prevent any retrieval plane from crowding out the compact bundle.
+- Added `--run-id` support to `context` and `evidence` so retrieval status can be written directly to run manifests.
+- Added `wiki/syntheses/retrieval-quality-graph-layer-2026-04-25.md` and updated `wiki/index.md`.

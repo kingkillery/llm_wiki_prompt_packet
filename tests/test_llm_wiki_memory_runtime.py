@@ -254,6 +254,9 @@ class RuntimeTests(unittest.TestCase):
                     "frontend_url": "http://localhost:3000",
                     "backend_url": "http://localhost:8003",
                     "repo_url": "https://github.com/example/gitvizz.git",
+                    "repo_id": "repo-123",
+                    "authorization_env": "GITVIZZ_AUTH",
+                    "auth_token_env": "GITVIZZ_TOKEN",
                     "checkout_path": ".llm-wiki/tools/gitvizz",
                 },
                 "skills": {
@@ -323,6 +326,31 @@ class RuntimeTests(unittest.TestCase):
         self.assertTrue(str(runtime["agent_failure_capture_script_path"]).endswith("scripts\\llm_wiki_agent_failure_capture.py") or str(runtime["agent_failure_capture_script_path"]).endswith("scripts/llm_wiki_agent_failure_capture.py"))
         self.assertIn("pi", runtime["agent_failure_commands"])
         self.assertTrue(str(runtime["qmd_checkout_path"]).endswith(".llm-wiki\\tools\\pk-qmd") or str(runtime["qmd_checkout_path"]).endswith(".llm-wiki/tools/pk-qmd"))
+        self.assertEqual(runtime["gitvizz_repo_id"], "repo-123")
+        self.assertEqual(runtime["gitvizz_authorization_env"], "GITVIZZ_AUTH")
+        self.assertEqual(runtime["gitvizz_auth_token_env"], "GITVIZZ_TOKEN")
+
+    def test_verify_gitvizz_reports_context_search_auth_gap(self) -> None:
+        runtime = {
+            "gitvizz_frontend_url": "http://localhost:3000",
+            "gitvizz_backend_url": "http://localhost:8003",
+            "gitvizz_repo_id": "repo-123",
+            "gitvizz_authorization_env": "GITVIZZ_AUTH",
+            "gitvizz_auth_token_env": "GITVIZZ_TOKEN",
+            "gitvizz_auth_scheme": "Bearer",
+            "gitvizz_checkout_path": None,
+            "gitvizz_repo_path": None,
+        }
+        summary: list[str] = []
+        failures: list[str] = []
+
+        with mock.patch.object(self.module, "check_tcp_url", return_value=True):
+            with mock.patch.object(self.module, "post_form_json", return_value=(401, None, "Unauthorized")):
+                self.module.verify_gitvizz(runtime, summary, failures)
+
+        self.assertEqual(failures, [])
+        self.assertIn("GitVizz configured repo id: repo-123", summary)
+        self.assertTrue(any("auth required" in line for line in summary))
 
     def test_qmd_runtime_env_sets_workspace_local_config_dir(self) -> None:
         runtime = {"qmd_config_dir": self.workspace / ".llm-wiki" / "qmd-config"}

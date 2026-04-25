@@ -4,6 +4,7 @@ import importlib.util
 import contextlib
 import io
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -393,6 +394,14 @@ class PacketCliTests(unittest.TestCase):
             self.assertEqual(graph_mock.call_args.args[1]["repository_id"], "69ec012a9f5293551a7d3dd3")
             payload = json.loads(stdout.getvalue())
             self.assertEqual(payload["graph_hints"][0]["retrieval"], "gitvizz-context-search")
+            self.assertIn("routes", payload["graph_hints"][0]["matched_terms"])
+            self.assertIn("graph evidence", payload["graph_hints"][0]["source_precedence_reason"])
+
+    def test_gitvizz_authorization_uses_token_env_when_header_missing(self) -> None:
+        with mock.patch.dict(os.environ, {"LLM_WIKI_GITVIZZ_TOKEN": "abc123"}, clear=False):
+            header = self.module.gitvizz_authorization({"auth_token_env": "LLM_WIKI_GITVIZZ_TOKEN"})
+
+        self.assertEqual(header, "Bearer abc123")
 
     def test_graph_mode_degrades_cleanly_when_gitvizz_requires_auth(self) -> None:
         with tempfile.TemporaryDirectory() as workspace_dir:
@@ -569,6 +578,62 @@ class PacketCliTests(unittest.TestCase):
             self.assertIn("preference: degraded", evaluation["retrieval"]["degraded_or_error"])
             proposal = json.loads((run_root / "improvement_proposal.json").read_text(encoding="utf-8"))
             self.assertEqual(proposal["status"], "accepted")
+
+    def test_context_and_evidence_can_record_retrieval_metadata_to_run_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as workspace_dir:
+            workspace_root = Path(workspace_dir)
+            (workspace_root / ".llm-wiki").mkdir(parents=True, exist_ok=True)
+            (workspace_root / ".llm-wiki" / "config.json").write_text("{}", encoding="utf-8")
+            (workspace_root / "wiki").mkdir(parents=True, exist_ok=True)
+            (workspace_root / "wiki" / "note.md").write_text("run metadata evidence marker\n", encoding="utf-8")
+
+            args = self.module.build_parser().parse_args(
+                [
+                    "evidence",
+                    "--workspace-root",
+                    workspace_dir,
+                    "--run-id",
+                    "retrieval-run",
+                    "--plane",
+                    "local",
+                    "--query",
+                    "run metadata evidence marker",
+                    "--json",
+                ]
+            )
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                self.assertEqual(self.module.main_from_args(args), 0)
+
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["run_id"], "retrieval-run")
+            manifest = json.loads(
+                (workspace_root / ".llm-wiki" / "skill-pipeline" / "runs" / "retrieval-run" / "manifest.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(manifest["retrieval"]["last_event"]["command"], "evidence")
+            self.assertEqual(manifest["retrieval"]["plane_statuses"]["local"], "ok")
+
+    def test_context_section_budgets_limit_each_section(self) -> None:
+        records = [
+            self.module.result_record(plane="source", retrieval="test", source=f"source-{idx}", snippet="x " * 100, score=1.0)
+            for idx in range(20)
+        ]
+        bundle = {
+            "instruction_records": records,
+            "skills": records,
+            "evidence": records,
+            "recent_lessons": records,
+            "preference_hints": records,
+            "graph_hints": records,
+        }
+
+        trimmed = self.module.apply_context_section_budgets(bundle, token_budget=1200)
+
+        self.assertLessEqual(len(trimmed["evidence"]), 8)
+        self.assertLessEqual(len(trimmed["preference_hints"]), 3)
+        self.assertEqual(trimmed["section_budgets"]["evidence"]["original_items"], 20)
 
     def test_mixed_plane_evidence_ranks_source_above_preference(self) -> None:
         results = self.module.dedupe_results(

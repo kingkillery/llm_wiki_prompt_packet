@@ -13,7 +13,10 @@ import sys
 import time
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
+from urllib.request import Request, urlopen
+from urllib.parse import urlencode
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
@@ -253,6 +256,37 @@ def check_tcp_url(url: str) -> bool:
         return False
 
 
+def runtime_gitvizz_authorization(runtime: dict[str, Any]) -> str:
+    authorization = os.getenv(str(runtime.get("gitvizz_authorization_env") or "LLM_WIKI_GITVIZZ_AUTHORIZATION"), "").strip()
+    if authorization:
+        return authorization
+    token = os.getenv(str(runtime.get("gitvizz_auth_token_env") or "LLM_WIKI_GITVIZZ_TOKEN"), "").strip()
+    if token:
+        scheme = str(runtime.get("gitvizz_auth_scheme") or "Bearer").strip() or "Bearer"
+        return f"{scheme} {token}"
+    return ""
+
+
+def post_form_json(url: str, fields: dict[str, Any], *, timeout: int = 5, authorization: str = "") -> tuple[int, Any, str]:
+    data = urlencode({key: str(value) for key, value in fields.items() if value is not None}).encode("utf-8")
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    if authorization:
+        headers["Authorization"] = authorization
+    request = Request(url, data=data, headers=headers, method="POST")  # noqa: S310 - configured local/dev endpoint
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            raw = response.read(200000).decode("utf-8", errors="ignore")
+            return response.status, last_json_line(raw), raw
+    except HTTPError as exc:
+        try:
+            raw = exc.read(200000).decode("utf-8", errors="ignore")
+        except Exception:
+            raw = ""
+        return exc.code, last_json_line(raw), raw
+    except (OSError, TimeoutError, socket.timeout, URLError) as exc:
+        return 0, None, str(exc)
+
+
 def package_has_script(package_dir: Path, script_name: str) -> bool:
     package_json = package_dir / "package.json"
     if not package_json.exists():
@@ -483,6 +517,10 @@ def default_runtime_settings(workspace_root: Path, config_path: Path) -> dict[st
         "gitvizz_frontend_url": str(gitvizz.get("frontend_url") or "http://localhost:3000"),
         "gitvizz_backend_url": str(gitvizz.get("backend_url") or "http://localhost:8003"),
         "gitvizz_repo_url": str(gitvizz.get("repo_url") or ""),
+        "gitvizz_repo_id": str(gitvizz.get("repo_id") or gitvizz.get("indexed_repo_id") or gitvizz.get("repository_id") or ""),
+        "gitvizz_authorization_env": str(gitvizz.get("authorization_env") or "LLM_WIKI_GITVIZZ_AUTHORIZATION"),
+        "gitvizz_auth_token_env": str(gitvizz.get("auth_token_env") or "LLM_WIKI_GITVIZZ_TOKEN"),
+        "gitvizz_auth_scheme": str(gitvizz.get("auth_scheme") or "Bearer"),
         "gitvizz_checkout_path": gitvizz_checkout_path,
         "gitvizz_repo_path": gitvizz_repo_path,
         "skill_server_key": str(skills.get("mcp_server_key") or DEFAULT_SKILL_SERVER_KEY),
@@ -1365,8 +1403,10 @@ def maybe_start_gitvizz(runtime: dict[str, Any], summary: list[str], failures: l
 def verify_gitvizz(runtime: dict[str, Any], summary: list[str], failures: list[str]) -> None:
     frontend = str(runtime["gitvizz_frontend_url"])
     backend = str(runtime["gitvizz_backend_url"])
+    repo_id = str(runtime.get("gitvizz_repo_id") or "")
     summary.append(f"GitVizz configured frontend: {frontend}")
     summary.append(f"GitVizz configured backend: {backend}")
+    summary.append(f"GitVizz configured repo id: {repo_id or 'missing'}")
     managed_path = resolve_gitvizz_managed_path(runtime)
     managed = managed_path is not None
     if check_tcp_url(frontend):
@@ -1378,6 +1418,29 @@ def verify_gitvizz(runtime: dict[str, Any], summary: list[str], failures: list[s
 
     if check_tcp_url(backend):
         summary.append(f"GitVizz backend reachable: {backend}")
+        if repo_id:
+            status, payload, raw = post_form_json(
+                f"{backend.rstrip('/')}/api/backend-chat/context/search",
+                {"repository_id": repo_id, "query": "health check", "max_results": 1},
+                timeout=5,
+                authorization=runtime_gitvizz_authorization(runtime),
+            )
+            if status == 200:
+                summary.append("GitVizz context search reachable: ok")
+            elif status in {401, 403}:
+                summary.append(
+                    "GitVizz context search reachable: auth required "
+                    f"(set {runtime.get('gitvizz_authorization_env')} or {runtime.get('gitvizz_auth_token_env')})"
+                )
+            elif status:
+                summary.append(f"GitVizz context search reachable: degraded HTTP {status}")
+            else:
+                summary.append(f"GitVizz context search reachable: degraded ({str(raw)[:160]})")
+            if isinstance(payload, dict):
+                count = len(payload.get("results", [])) if isinstance(payload.get("results"), list) else 0
+                summary.append(f"GitVizz context search sample results: {count}")
+        else:
+            summary.append("GitVizz context search reachable: skipped (repo id missing)")
     elif managed:
         failures.append(f"GitVizz backend unreachable: {backend}")
     else:

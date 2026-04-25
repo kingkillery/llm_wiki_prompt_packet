@@ -64,6 +64,8 @@ When `brv` has no connected provider, skip `brv query`/`brv curate` and continue
 - `llm-wiki-packet manifest`, `reduce`, `evaluate`, `promote`, and `improve` create a versioned run lifecycle for auditable memory promotion and gated self-improvement.
 - Broad retrieval results carry provenance and confidence; current source evidence has priority over stale memory.
 - Optional Hugging Face embedding and reranking model settings are config-only planner hints unless `hf_enabled` is explicitly turned on by an integrator.
+- `context` and `evidence` accept `--run-id` to append retrieval-plane status metadata to the matching run manifest.
+- GitVizz graph retrieval uses configured `repo_id` plus optional `authorization_env` or `auth_token_env`; missing auth degrades to graph/config hints.
 
 ## Durable Memory Contract
 

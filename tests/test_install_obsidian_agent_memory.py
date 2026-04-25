@@ -228,6 +228,8 @@ class InstallerHomeSkillTests(unittest.TestCase):
         self.assertIn("brv", "\n".join(config["byterover"]["local_command_candidates"]))
         self.assertEqual(config["gitvizz"]["repo_url"], "https://github.com/example/gitvizz.git")
         self.assertEqual(config["gitvizz"]["checkout_path"], "deps/gitvizz")
+        self.assertEqual(config["gitvizz"]["authorization_env"], "LLM_WIKI_GITVIZZ_AUTHORIZATION")
+        self.assertEqual(config["gitvizz"]["auth_token_env"], "LLM_WIKI_GITVIZZ_TOKEN")
         self.assertEqual(config["skills"]["failure_collector_script_path"], "scripts/llm_wiki_failure_collector.py")
         self.assertEqual(config["skills"]["failure_hook_script_path"], "scripts/llm_wiki_failure_hook.py")
         self.assertEqual(config["skills"]["pipeline"]["proposal_dir"], ".llm-wiki/skill-pipeline/proposals")

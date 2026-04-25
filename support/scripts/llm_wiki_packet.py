@@ -161,6 +161,36 @@ def confidence_for_score(score: float) -> str:
     return "low"
 
 
+def matched_terms(query: str, text: str) -> list[str]:
+    query_terms = set(tokenize(query))
+    if not query_terms:
+        return []
+    text_terms = set(tokenize(text))
+    return sorted(query_terms & text_terms)
+
+
+def confidence_reason(record: dict[str, Any]) -> str:
+    status = str(record.get("status") or "ok")
+    if status != "ok":
+        return f"{status} retrieval status"
+    confidence = str(record.get("confidence") or "")
+    score = record.get("score", 0.0)
+    return f"{confidence or 'low'} confidence from score {score}"
+
+
+def source_precedence_reason(record: dict[str, Any]) -> str:
+    plane = str(record.get("plane") or "")
+    if plane == "source":
+        return "current source evidence outranks memory"
+    if plane == "graph":
+        return "graph evidence supports topology and API relationships after source evidence"
+    if plane == "preference":
+        return "preference memory cannot override current source evidence"
+    if plane == "local":
+        return "local fallback is used when richer retrieval is unavailable or unnecessary"
+    return "ranked by retrieval plane priority and score"
+
+
 def result_record(
     *,
     plane: str,
@@ -195,6 +225,9 @@ def result_record(
         "stale": stale,
         "contradicts": contradicts or [],
         "error": error,
+        "matched_terms": [],
+        "confidence_reason": "",
+        "source_precedence_reason": "",
     }
     payload.update(extra)
     return payload
@@ -632,6 +665,21 @@ def rank_results(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(results, key=result_sort_key)
 
 
+def annotate_results(results: list[dict[str, Any]], query: str) -> list[dict[str, Any]]:
+    annotated: list[dict[str, Any]] = []
+    for result in results:
+        item = dict(result)
+        haystack = " ".join(
+            str(item.get(key) or "")
+            for key in ("title", "source", "locator", "snippet", "provenance")
+        )
+        item["matched_terms"] = matched_terms(query, haystack)
+        item["confidence_reason"] = item.get("confidence_reason") or confidence_reason(item)
+        item["source_precedence_reason"] = item.get("source_precedence_reason") or source_precedence_reason(item)
+        annotated.append(item)
+    return annotated
+
+
 def dedupe_results(results: list[dict[str, Any]], limit: int | None = None) -> list[dict[str, Any]]:
     seen: set[str] = set()
     deduped: list[dict[str, Any]] = []
@@ -666,6 +714,41 @@ def trim_results_to_budget(results: list[dict[str, Any]], token_budget: int) -> 
         used += len(str(item.get("snippet") or ""))
         kept.append(item)
     return kept
+
+
+def trim_result_list(results: list[dict[str, Any]], token_budget: int, max_items: int) -> list[dict[str, Any]]:
+    return trim_results_to_budget(results[:max(0, max_items)], token_budget)
+
+
+def context_section_budgets(token_budget: int) -> dict[str, tuple[int, int]]:
+    budget = max(token_budget, 1000)
+    return {
+        "instruction_records": (max(600, int(budget * 0.22)), 4),
+        "skills": (max(400, int(budget * 0.16)), 5),
+        "evidence": (max(700, int(budget * 0.26)), 8),
+        "recent_lessons": (max(300, int(budget * 0.10)), 3),
+        "preference_hints": (max(300, int(budget * 0.08)), 3),
+        "graph_hints": (max(400, int(budget * 0.12)), 5),
+    }
+
+
+def apply_context_section_budgets(bundle: dict[str, Any], token_budget: int) -> dict[str, Any]:
+    budgets = context_section_budgets(token_budget)
+    section_budget_report: dict[str, dict[str, int]] = {}
+    for section, (section_tokens, max_items) in budgets.items():
+        value = bundle.get(section)
+        if isinstance(value, list):
+            original = len(value)
+            trimmed = trim_result_list(value, section_tokens, max_items)
+            bundle[section] = trimmed
+            section_budget_report[section] = {
+                "token_budget": section_tokens,
+                "max_items": max_items,
+                "original_items": original,
+                "kept_items": len(trimmed),
+            }
+    bundle["section_budgets"] = section_budget_report
+    return bundle
 
 
 def read_task_arg(primary: str, file_path: str) -> str:
@@ -907,6 +990,22 @@ def http_form_json(url: str, fields: dict[str, Any], *, timeout_sec: int, author
     return parse_jsonish(raw)
 
 
+def gitvizz_authorization(gitvizz: dict[str, Any]) -> str:
+    direct = gitvizz.get("authorization")
+    if isinstance(direct, str) and direct.strip():
+        return direct.strip()
+    authorization_env = str(gitvizz.get("authorization_env") or "LLM_WIKI_GITVIZZ_AUTHORIZATION")
+    authorization = os.getenv(authorization_env, "").strip()
+    if authorization:
+        return authorization
+    token_env = str(gitvizz.get("auth_token_env") or "LLM_WIKI_GITVIZZ_TOKEN")
+    token = os.getenv(token_env, "").strip()
+    if token:
+        scheme = str(gitvizz.get("auth_scheme") or "Bearer").strip() or "Bearer"
+        return f"{scheme} {token}"
+    return ""
+
+
 def gitvizz_repo_id_from_config_or_log(workspace_root: Path, gitvizz: dict[str, Any]) -> str:
     for key in ("indexed_repo_id", "repo_id", "repository_id"):
         value = gitvizz.get(key)
@@ -932,7 +1031,7 @@ def retrieve_gitvizz_records(workspace_root: Path, query: str, *, limit: int, ti
     config = load_json(workspace_root / ".llm-wiki" / "config.json")
     gitvizz = config.get("gitvizz", {}) if isinstance(config.get("gitvizz"), dict) else {}
     backend = str(gitvizz.get("backend_url") or "").rstrip("/")
-    authorization = os.getenv("LLM_WIKI_GITVIZZ_AUTHORIZATION", "")
+    authorization = gitvizz_authorization(gitvizz)
     records: list[dict[str, Any]] = []
     if not backend:
         records.append(status_record("graph", "gitvizz-config", "unavailable", "GitVizz backend URL is not configured."))
@@ -978,7 +1077,10 @@ def graph_config_records(workspace_root: Path, task: str, *, limit: int) -> list
                 provenance="config",
                 frontend_url=gitvizz.get("frontend_url", ""),
                 backend_url=gitvizz.get("backend_url", ""),
+                repo_id=gitvizz_repo_id_from_config_or_log(workspace_root, gitvizz),
                 repo_path=gitvizz.get("repo_path") or gitvizz.get("checkout_path") or "",
+                authorization_env=gitvizz.get("authorization_env", "LLM_WIKI_GITVIZZ_AUTHORIZATION"),
+                auth_token_env=gitvizz.get("auth_token_env", "LLM_WIKI_GITVIZZ_TOKEN"),
             )
         )
     code_hits = search_workspace(workspace_root, task, limit=limit, include_raw=False, plane="graph", retrieval="local-graph-hints")
@@ -1077,6 +1179,12 @@ def build_context_bundle(
     if mode == "default":
         graph = graph_config_records(workspace_root, task, limit=max_results_per_plane)
 
+    instruction_records = annotate_results(instruction_records, task)
+    skills = annotate_results(skills, task)
+    evidence = annotate_results(evidence, task)
+    recent = annotate_results(recent, task)
+    preferences = annotate_results(preferences, task)
+    graph = annotate_results(graph, task)
     all_records = dedupe_results([*instruction_records, *skills, *evidence, *recent, *preferences, *graph])
     all_records = trim_results_to_budget(all_records, token_budget)
     bundle = {
@@ -1098,7 +1206,7 @@ def build_context_bundle(
         "results": all_records,
         "expansion_suggestions": expansion_suggestions(task),
     }
-    return bundle
+    return apply_context_section_budgets(bundle, token_budget)
 
 
 def preference_hints(workspace_root: Path, task: str) -> list[dict[str, Any]]:
@@ -1214,7 +1322,7 @@ def build_evidence_bundle(
             results.extend(retrieve_gitvizz_records(workspace_root, query, limit=per_plane_limit, timeout_sec=timeout_sec))
         elif selected == "local":
             results.extend(retrieve_local_records(workspace_root, query, limit=per_plane_limit, include_raw=raw_enabled))
-    results = dedupe_results(results, limit=limit)
+    results = annotate_results(dedupe_results(results, limit=limit), query)
     return {
         "command": "llm-wiki-packet evidence",
         "version": 1,
@@ -1238,6 +1346,51 @@ def build_evidence_bundle(
             f"llm-wiki-packet evidence --plane preference --query {json.dumps(query)}",
         ],
     }
+
+
+def record_retrieval_event(workspace_root: Path, run_id: str, command_name: str, payload: dict[str, Any]) -> None:
+    if not run_id:
+        return
+    root = run_root(workspace_root, run_id)
+    root.mkdir(parents=True, exist_ok=True)
+    manifest_path = root / "manifest.json"
+    manifest = load_json(manifest_path)
+    if not manifest:
+        manifest = ensure_manifest(workspace_root, run_id, task=str(payload.get("task") or payload.get("query") or ""))
+    retrieval = manifest.get("retrieval") if isinstance(manifest.get("retrieval"), dict) else {}
+    statuses = payload.get("retrieval_status") if isinstance(payload.get("retrieval_status"), dict) else {}
+    planes = sorted(statuses.keys())
+    events = retrieval.get("events") if isinstance(retrieval.get("events"), list) else []
+    event = {
+        "created_at": utc_now(),
+        "command": command_name,
+        "mode": payload.get("mode", ""),
+        "plane": payload.get("plane", "context"),
+        "planes_used": planes,
+        "plane_statuses": statuses,
+        "result_count": len(payload.get("results", [])) if isinstance(payload.get("results"), list) else 0,
+        "default_context_sufficient": "unknown",
+    }
+    events.append(event)
+    merged_statuses = dict(retrieval.get("plane_statuses") if isinstance(retrieval.get("plane_statuses"), dict) else {})
+    merged_statuses.update(statuses)
+    merged_planes = list(dict.fromkeys([*(retrieval.get("planes_used") if isinstance(retrieval.get("planes_used"), list) else []), *planes]))
+    retrieval.update(
+        {
+            "planes_used": merged_planes,
+            "plane_statuses": merged_statuses,
+            "default_context_sufficient": retrieval.get("default_context_sufficient", "unknown"),
+            "degraded_or_error": [
+                f"{plane}: {status}"
+                for plane, status in merged_statuses.items()
+                if str(status).lower() in {"degraded", "unavailable", "error", "timeout"}
+            ],
+            "last_event": event,
+            "events": events[-20:],
+        }
+    )
+    manifest["retrieval"] = retrieval
+    write_json(manifest_path, manifest)
 
 
 def command_init(args: argparse.Namespace) -> int:
@@ -1346,6 +1499,9 @@ def command_context(args: argparse.Namespace) -> int:
         max_results_per_plane=args.max_results_per_plane,
     )
     payload["command"] = "llm-wiki-packet context"
+    if args.run_id:
+        record_retrieval_event(workspace_root, args.run_id, "context", payload)
+        payload["run_id"] = args.run_id
     print_payload(payload, args.json)
     return 0
 
@@ -1365,6 +1521,9 @@ def command_evidence(args: argparse.Namespace) -> int:
         timeout_sec=args.timeout_sec,
         max_results_per_plane=args.max_results_per_plane,
     )
+    if args.run_id:
+        record_retrieval_event(workspace_root, args.run_id, "evidence", payload)
+        payload["run_id"] = args.run_id
     print_payload(payload, args.json)
     return 0
 
@@ -1725,6 +1884,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Build a compact task-shaped context bundle with explicit expansion suggestions.",
     )
     context_parser.add_argument("--workspace-root", help="Activated workspace root. Defaults to the current repo.")
+    context_parser.add_argument("--run-id", default="", help="Optional run id whose manifest should record retrieval metadata.")
     context_parser.add_argument("--task", default="", help="Task text to plan retrieval for.")
     context_parser.add_argument("--task-file", default="", help="Read task text from a file.")
     context_parser.add_argument(
@@ -1744,6 +1904,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run explicit broad local hybrid/source-backed evidence search.",
     )
     evidence_parser.add_argument("--workspace-root", help="Activated workspace root. Defaults to the current repo.")
+    evidence_parser.add_argument("--run-id", default="", help="Optional run id whose manifest should record retrieval metadata.")
     evidence_parser.add_argument("--query", default="", help="Evidence query.")
     evidence_parser.add_argument("--query-file", default="", help="Read evidence query from a file.")
     evidence_parser.add_argument("--limit", type=int, default=10, help="Maximum result count.")
