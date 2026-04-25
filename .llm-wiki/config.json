@@ -1,10 +1,41 @@
 {
   "version": 1,
+  "toolset": {
+    "preferred_project_bootstrap_command": "init",
+    "preferred_project_runtime_commands": [
+      "setup",
+      "check",
+      "context",
+      "evidence",
+      "manifest",
+      "reduce",
+      "evaluate",
+      "promote",
+      "improve",
+      "pokemon-benchmark"
+    ]
+  },
   "stack": {
     "retrieval": {
       "primary": "pk-qmd",
       "memory": "byterover",
       "graph": "gitvizz"
+    },
+    "retrieval_planner": {
+      "default_context_mode": "default",
+      "default_evidence_plane": "all",
+      "planes": [
+        "source",
+        "skills",
+        "preference",
+        "graph",
+        "local"
+      ],
+      "default_timeout_sec": 20,
+      "default_max_results_per_plane": 5,
+      "broad_retrieval": "explicit-only",
+      "source_precedence": "current source evidence overrides memory",
+      "fallback_policy": "degrade to local lexical/config hints without blocking task completion"
     },
     "policy": {
       "hide_tool_names_from_end_users": true,
@@ -85,6 +116,7 @@
       "delta_dir": ".llm-wiki/skill-pipeline/deltas",
       "validation_dir": ".llm-wiki/skill-pipeline/validations",
       "packet_dir": ".llm-wiki/skill-pipeline/packets",
+      "run_dir": ".llm-wiki/skill-pipeline/runs",
       "proposal_dir": ".llm-wiki/skill-pipeline/proposals",
       "surrogate_review_dir": ".llm-wiki/skill-pipeline/surrogate-reviews",
       "evolution_run_dir": ".llm-wiki/skill-pipeline/evolution-runs",

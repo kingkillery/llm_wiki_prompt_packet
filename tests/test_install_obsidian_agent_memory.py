@@ -199,6 +199,8 @@ class InstallerHomeSkillTests(unittest.TestCase):
         self.assertIn("context", config["toolset"]["preferred_project_runtime_commands"])
         self.assertIn("evidence", config["toolset"]["preferred_project_runtime_commands"])
         self.assertIn("improve", config["toolset"]["preferred_project_runtime_commands"])
+        self.assertEqual(config["stack"]["retrieval_planner"]["default_evidence_plane"], "all")
+        self.assertEqual(config["stack"]["retrieval_planner"]["planes"], ["source", "skills", "preference", "graph", "local"])
         self.assertEqual(config["docs"]["contract_path"], "SYSTEM_CONTRACT.md")
         self.assertEqual(config["memory_base"]["name"], "kade-hq")
         self.assertEqual(config["memory_base"]["vault_id"], "fd8411f00d3a9d21")
@@ -297,6 +299,7 @@ class InstallerHomeSkillTests(unittest.TestCase):
         self.assertIn("# Project Agents", text)
         self.assertIn("## KADE-HQ, Memory, and Retrieval Routing", text)
         self.assertIn("Use `pk-qmd` first", text)
+        self.assertIn("evidence --plane source", text)
         self.assertIn("Treat `g-kade` as the bridge/router", text)
         self.assertIn("## Done when", text)
         self.assertIn("Keep project rule.", text)
@@ -381,7 +384,70 @@ class InstallerHomeSkillTests(unittest.TestCase):
 
         self.assertEqual(index_path.read_text(encoding="utf-8"), preserved_text)
         self.assertTrue(any(str(index_path) in action and "(exists)" in action for action in second_actions))
-        self.assertTrue(any(str(config_path) in action and "(exists)" in action for action in second_actions))
+        self.assertTrue(any(str(config_path) in action and "(config current)" in action for action in second_actions))
+
+    def test_stack_config_refreshes_managed_defaults_and_preserves_project_values(self) -> None:
+        vault = self.home_root / "vault"
+        vault.mkdir(parents=True, exist_ok=True)
+        config_path = vault / self.module.STACK_CONFIG_PATH
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "project_local": {"keep": True},
+                    "toolset": {"preferred_project_runtime_commands": ["setup"]},
+                    "stack": {"retrieval_planner": {"default_evidence_plane": "local"}},
+                    "skills": {"pipeline": {"custom_dir": ".custom"}},
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        args = argparse.Namespace(
+            vault=str(vault),
+            home_root=str(self.home_root / "home"),
+            install_home_skills=False,
+            skip_home_skills=True,
+            install_scope="local",
+            gitvizz_frontend_url="http://localhost:3000",
+            gitvizz_backend_url="http://localhost:8003",
+            qmd_mcp_url="http://localhost:8181/mcp",
+            qmd_command="pk-qmd",
+            qmd_repo_url="https://github.com/kingkillery/pk-qmd",
+            qmd_repo_ref=self.module.DEFAULT_QMD_REPO_REF,
+            qmd_source_checkout="",
+            brv_command="brv",
+            allow_global_tool_install=False,
+            gitvizz_repo_url="https://github.com/example/gitvizz.git",
+            gitvizz_checkout_path="deps/gitvizz",
+            gitvizz_repo_path="",
+            g_kade_dependency_path=self.module.REPO_RUNTIME_DEFAULT_PATHS["g-kade"],
+            gstack_dependency_path=self.module.REPO_RUNTIME_DEFAULT_PATHS["gstack"],
+            memory_vault_path="",
+            memory_vault_name="",
+            memory_vault_id="",
+        )
+
+        actions = self.module.install_packet_workspace(
+            vault,
+            ["codex"],
+            self.home_root / "home",
+            force=False,
+            dry_run=False,
+            skip_home_skills=True,
+            args=args,
+        )
+
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        self.assertTrue(config["project_local"]["keep"])
+        self.assertEqual(config["skills"]["pipeline"]["custom_dir"], ".custom")
+        self.assertIn("evidence", config["toolset"]["preferred_project_runtime_commands"])
+        self.assertEqual(config["stack"]["retrieval_planner"]["default_evidence_plane"], "all")
+        self.assertEqual(config["skills"]["pipeline"]["run_dir"], ".llm-wiki/skill-pipeline/runs")
+        self.assertTrue(any(str(config_path) in action and action.startswith("update") for action in actions))
 
 
 if __name__ == "__main__":

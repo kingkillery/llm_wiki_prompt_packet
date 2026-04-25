@@ -1,5 +1,14 @@
 # Wiki Log
 
+## 2026-04-25T19:40:00Z - implement: real retrieval spine
+
+- Added plane-aware retrieval orchestration to `llm-wiki-packet context` and `llm-wiki-packet evidence`.
+- Added explicit evidence plane routing for `source`, `skills`, `preference`, `graph`, `local`, and `all`.
+- Standardized retrieval result records with status, provenance, confidence, stale, contradiction, and error fields.
+- Updated installer config generation and merge behavior so managed retrieval defaults refresh while project-local config keys are preserved.
+- Updated AGENTS, memory docs, and system contract language to match the explicit retrieval ladder.
+- Verification: `python -m pytest tests\test_llm_wiki_packet.py tests\test_install_obsidian_agent_memory.py -q` passed with `31 passed`; smoke context/evidence commands returned structured JSON.
+
 ## 2026-04-25T09:10:00Z - implement: harness control-plane retrieval lifecycle
 
 - Implemented v1 `llm-wiki-packet` control-plane commands for compact context, explicit evidence expansion, run manifests, reducer packets, promotion decisions, evaluation, and gated improvement proposals.

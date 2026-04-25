@@ -58,7 +58,7 @@ Use this workspace as a KADE-HQ-backed memory workspace. Treat `AGENTS.md`, `LLM
 - Use BRV only for durable preferences, repeated workflow quirks, and decisions; do not rely on it when no provider is connected.
 - Use GitVizz for repo topology, API surface, route relationships, and graph-oriented navigation after retrieval has identified the likely area.
 - Prefer current source evidence over memory when sources and memory conflict.
-- Start with `llm-wiki-packet context --task "..."` for a compact task bundle; use `llm-wiki-packet evidence --query "..."` or `llm-wiki-packet context --mode deep` only when broader hybrid/source search is useful.
+- Start with `llm-wiki-packet context --task "..."` for a compact task bundle; use `llm-wiki-packet evidence --query "..."`, `llm-wiki-packet evidence --plane source --query "..."`, or `llm-wiki-packet context --mode deep` only when broader hybrid/source search is useful.
 
 ### KADE-HQ System Use
 

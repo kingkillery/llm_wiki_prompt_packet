@@ -82,7 +82,7 @@ Use this workspace as a KADE-HQ-backed memory workspace. Treat `AGENTS.md`, `LLM
 - Use BRV only for durable preferences, repeated workflow quirks, and decisions; do not rely on it when no provider is connected.
 - Use GitVizz for repo topology, API surface, route relationships, and graph-oriented navigation after retrieval has identified the likely area.
 - Prefer current source evidence over memory when sources and memory conflict.
-- Start with `llm-wiki-packet context --task "..."` for a compact task bundle; use `llm-wiki-packet evidence --query "..."` or `llm-wiki-packet context --mode deep` only when broader hybrid/source search is useful.
+- Start with `llm-wiki-packet context --task "..."` for a compact task bundle; use `llm-wiki-packet evidence --query "..."`, `llm-wiki-packet evidence --plane source --query "..."`, or `llm-wiki-packet context --mode deep` only when broader hybrid/source search is useful.
 
 ### KADE-HQ System Use
 
@@ -793,6 +793,44 @@ def write_json(dst: Path, data: dict[str, object], force: bool, dry_run: bool) -
     return f"write  {dst}"
 
 
+def merge_managed_config(existing: dict[str, object], desired: dict[str, object], path: tuple[str, ...] = ()) -> dict[str, object]:
+    managed_overwrite_paths = {
+        ("toolset", "preferred_project_runtime_commands"),
+        ("stack", "retrieval_planner"),
+    }
+    if path in managed_overwrite_paths:
+        return desired
+    merged: dict[str, object] = dict(existing)
+    for key, desired_value in desired.items():
+        current_path = (*path, key)
+        existing_value = merged.get(key)
+        if isinstance(existing_value, dict) and isinstance(desired_value, dict):
+            merged[key] = merge_managed_config(existing_value, desired_value, current_path)
+        elif key not in merged or current_path in managed_overwrite_paths:
+            merged[key] = desired_value
+    return merged
+
+
+def write_stack_config(dst: Path, data: dict[str, object], force: bool, dry_run: bool) -> str:
+    payload = data
+    action = "write"
+    if dst.exists() and not force:
+        try:
+            existing = json.loads(dst.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            existing = {}
+        if isinstance(existing, dict):
+            payload = merge_managed_config(existing, data)
+            action = "update"
+            if json.dumps(existing, sort_keys=True) == json.dumps(payload, sort_keys=True):
+                return f"skip   {dst} (config current)"
+    if dry_run:
+        return f"{action:<6} {dst}"
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    dst.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    return f"{action:<6} {dst}"
+
+
 def copy_file(src: Path, dst: Path, force: bool, dry_run: bool) -> str:
     if dst.exists() and not force:
         return f"skip   {dst} (exists)"
@@ -1008,6 +1046,16 @@ def build_stack_config(args: argparse.Namespace) -> dict[str, object]:
                 "memory": "byterover",
                 "graph": "gitvizz",
             },
+            "retrieval_planner": {
+                "default_context_mode": "default",
+                "default_evidence_plane": "all",
+                "planes": ["source", "skills", "preference", "graph", "local"],
+                "default_timeout_sec": 20,
+                "default_max_results_per_plane": 5,
+                "broad_retrieval": "explicit-only",
+                "source_precedence": "current source evidence overrides memory",
+                "fallback_policy": "degrade to local lexical/config hints without blocking task completion",
+            },
             "policy": {
                 "hide_tool_names_from_end_users": True,
                 "prefer_source_evidence_over_memory": True,
@@ -1216,7 +1264,7 @@ def install_packet_workspace(
 
     actions.extend(install_map(vault, STACK_FILES, force=force, dry_run=dry_run))
     actions.append(
-        write_json(vault / STACK_CONFIG_PATH, build_stack_config(args), force=force, dry_run=dry_run)
+        write_stack_config(vault / STACK_CONFIG_PATH, build_stack_config(args), force=force, dry_run=dry_run)
     )
     actions.append(
         write_json(vault / STACK_DEPENDENCY_MANIFEST_PATH, build_stack_dependency_manifest(args), force=force, dry_run=dry_run)

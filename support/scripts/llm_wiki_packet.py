@@ -3,14 +3,19 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+from urllib.error import URLError
+from urllib.parse import urljoin
+from urllib.request import urlopen
 
 
 DEFAULT_TARGETS = "claude,antigravity,codex,droid,pi"
@@ -34,6 +39,8 @@ EXCLUDED_SEARCH_PARTS = {
     "deps",
 }
 WORD_RE = re.compile(r"[A-Za-z0-9_./:-]+")
+RESULT_STATUSES = {"ok", "skipped", "degraded", "unavailable", "error"}
+EVIDENCE_PLANES = ("source", "skills", "preference", "graph", "local")
 
 
 def python_command() -> list[str]:
@@ -145,6 +152,58 @@ def confidence_for_score(score: float) -> str:
     return "low"
 
 
+def result_record(
+    *,
+    plane: str,
+    retrieval: str,
+    status: str = "ok",
+    source: str = "",
+    locator: str = "",
+    title: str = "",
+    snippet: str = "",
+    score: float = 0.0,
+    confidence: str = "",
+    last_modified: str = "",
+    provenance: str = "",
+    stale: bool = False,
+    contradicts: list[str] | None = None,
+    error: str = "",
+    **extra: Any,
+) -> dict[str, Any]:
+    normalized_status = status if status in RESULT_STATUSES else "error"
+    payload: dict[str, Any] = {
+        "plane": plane,
+        "retrieval": retrieval,
+        "status": normalized_status,
+        "source": source,
+        "locator": locator,
+        "title": title,
+        "snippet": " ".join(str(snippet).split())[:420],
+        "score": round(float(score), 4),
+        "confidence": confidence or confidence_for_score(float(score)),
+        "last_modified": last_modified,
+        "provenance": provenance,
+        "stale": stale,
+        "contradicts": contradicts or [],
+        "error": error,
+    }
+    payload.update(extra)
+    return payload
+
+
+def status_record(plane: str, retrieval: str, status: str, message: str, *, source: str = "", confidence: str = "low") -> dict[str, Any]:
+    return result_record(
+        plane=plane,
+        retrieval=retrieval,
+        status=status,
+        source=source,
+        title=f"{plane} {status}",
+        snippet=message,
+        confidence=confidence,
+        error=message if status in {"error", "unavailable"} else "",
+    )
+
+
 def workspace_rel(workspace_root: Path, path: Path) -> str:
     try:
         return path.resolve(strict=False).relative_to(workspace_root.resolve(strict=False)).as_posix()
@@ -197,7 +256,16 @@ def iter_search_files(workspace_root: Path, *, include_raw: bool = False) -> lis
     return sorted(set(out))
 
 
-def search_workspace(workspace_root: Path, query: str, *, limit: int = 8, include_raw: bool = False) -> list[dict[str, Any]]:
+def search_workspace(
+    workspace_root: Path,
+    query: str,
+    *,
+    limit: int = 8,
+    include_raw: bool = False,
+    plane: str = "local",
+    retrieval: str = "local-hybrid-lite",
+    status: str = "ok",
+) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
     for path in iter_search_files(workspace_root, include_raw=include_raw):
         text = read_text(path)
@@ -210,15 +278,21 @@ def search_workspace(workspace_root: Path, query: str, *, limit: int = 8, includ
             mtime = dt.datetime.fromtimestamp(path.stat().st_mtime, dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
         except OSError:
             pass
+        rel = workspace_rel(workspace_root, path)
         results.append(
-            {
-                "source": workspace_rel(workspace_root, path),
-                "retrieval": "local-hybrid-lite",
-                "score": round(score, 4),
-                "confidence": confidence_for_score(score),
-                "last_modified": mtime,
-                "snippet": snippet,
-            }
+            result_record(
+                plane=plane,
+                retrieval=retrieval,
+                status=status,
+                source=rel,
+                locator=rel,
+                title=path.stem,
+                score=score,
+                confidence=confidence_for_score(score),
+                last_modified=mtime,
+                snippet=snippet,
+                provenance="workspace-file",
+            )
         )
     results.sort(key=lambda item: (item["score"], item["last_modified"]), reverse=True)
     return results[:limit]
@@ -234,6 +308,219 @@ def make_snippet(text: str, query: str, max_chars: int = 420) -> str:
     return snippet
 
 
+def resolve_workspace_path(workspace_root: Path, value: str | None) -> Path | None:
+    if not value:
+        return None
+    candidate = Path(value).expanduser()
+    if candidate.is_absolute():
+        return candidate.resolve(strict=False)
+    return (workspace_root / candidate).resolve(strict=False)
+
+
+def sort_command_candidates(candidates: list[str]) -> list[str]:
+    if os.name != "nt":
+        return candidates
+    suffix_rank = {".cmd": 0, ".bat": 0, ".exe": 0, ".ps1": 1, ".js": 2, ".mjs": 2, ".cjs": 2}
+    return sorted(candidates, key=lambda value: suffix_rank.get(Path(value).suffix.lower(), 3))
+
+
+def configured_command_candidates(workspace_root: Path, config: dict[str, Any], section: str, command_key: str = "command") -> list[str]:
+    section_payload = config.get(section) if isinstance(config.get(section), dict) else {}
+    candidates: list[str] = []
+    for item in section_payload.get("local_command_candidates", []):
+        if isinstance(item, str) and item.strip():
+            resolved = resolve_workspace_path(workspace_root, item)
+            if os.name == "nt" and resolved and not resolved.suffix:
+                executable_sibling = any(resolved.with_suffix(suffix).exists() for suffix in (".cmd", ".bat", ".exe", ".ps1"))
+                if executable_sibling:
+                    continue
+            if resolved and resolved.exists():
+                candidates.append(str(resolved))
+    command = section_payload.get(command_key)
+    if isinstance(command, str) and command.strip():
+        resolved = resolve_workspace_path(workspace_root, command.strip())
+        if resolved and resolved.exists():
+            candidates.append(str(resolved))
+        else:
+            found = shutil.which(command.strip())
+            candidates.append(found or command.strip())
+    return sort_command_candidates(list(dict.fromkeys(candidates)))
+
+
+def command_invocation(command_name: str, args: list[str]) -> list[str]:
+    path = Path(command_name)
+    suffix = path.suffix.lower()
+    if suffix in {".js", ".mjs", ".cjs"}:
+        node = shutil.which("node")
+        if not node:
+            raise RuntimeError("node is required to execute JavaScript entrypoints")
+        return [node, command_name, *args]
+    if suffix == ".py":
+        return [*python_command(), command_name, *args]
+    if suffix == ".ps1":
+        powershell = shutil.which("pwsh") or shutil.which("powershell") or "powershell"
+        return [powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", command_name, *args]
+    if suffix in {".cmd", ".bat"}:
+        return ["cmd", "/c", command_name, *args]
+    return [command_name, *args]
+
+
+def run_capture(command_name: str, args: list[str], *, cwd: Path, timeout_sec: int) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        command_invocation(command_name, args),
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        timeout=timeout_sec,
+        check=False,
+    )
+
+
+def parse_jsonish(text: str) -> Any:
+    raw = text.strip()
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        pass
+    for line in reversed(raw.splitlines()):
+        stripped = line.strip()
+        if not stripped or stripped[0] not in "[{":
+            continue
+        try:
+            return json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+    return None
+
+
+def flatten_json_items(payload: Any) -> list[Any]:
+    if isinstance(payload, list):
+        return payload
+    if not isinstance(payload, dict):
+        return []
+    for key in ("results", "items", "hits", "matches", "evidence", "documents", "data"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return value
+        if isinstance(value, dict):
+            nested = flatten_json_items(value)
+            if nested:
+                return nested
+    return [payload]
+
+
+def records_from_tool_payload(
+    payload: Any,
+    *,
+    plane: str,
+    retrieval: str,
+    query: str,
+    limit: int,
+    provenance: str,
+) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for item in flatten_json_items(payload)[:limit]:
+        if isinstance(item, str):
+            records.append(
+                result_record(
+                    plane=plane,
+                    retrieval=retrieval,
+                    source=provenance,
+                    snippet=item,
+                    score=lexical_score(query, item) or 0.1,
+                    provenance=provenance,
+                )
+            )
+            continue
+        if not isinstance(item, dict):
+            continue
+        source = str(
+            item.get("source")
+            or item.get("path")
+            or item.get("file")
+            or item.get("url")
+            or item.get("id")
+            or provenance
+        )
+        snippet = str(
+            item.get("snippet")
+            or item.get("text")
+            or item.get("content")
+            or item.get("summary")
+            or item.get("description")
+            or ""
+        )
+        title = str(item.get("title") or item.get("name") or Path(source).stem)
+        score_value = item.get("score")
+        try:
+            score = float(score_value)
+        except (TypeError, ValueError):
+            score = lexical_score(query, snippet + " " + title + " " + source) or 0.1
+        records.append(
+            result_record(
+                plane=plane,
+                retrieval=retrieval,
+                source=source,
+                locator=str(item.get("locator") or item.get("line") or item.get("url") or source),
+                title=title,
+                snippet=snippet or json.dumps(item, sort_keys=True)[:420],
+                score=score,
+                confidence=str(item.get("confidence") or confidence_for_score(score)),
+                last_modified=str(item.get("last_modified") or item.get("mtime") or item.get("updated_at") or ""),
+                provenance=provenance,
+                stale=bool(item.get("stale", False)),
+                contradicts=item.get("contradicts") if isinstance(item.get("contradicts"), list) else [],
+            )
+        )
+    return records
+
+
+def dedupe_results(results: list[dict[str, Any]], limit: int | None = None) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    deduped: list[dict[str, Any]] = []
+    for result in results:
+        source = str(result.get("source") or result.get("locator") or "")
+        snippet = str(result.get("snippet") or "")
+        digest = hashlib.sha1(snippet.encode("utf-8", errors="ignore")).hexdigest()[:12]
+        key = f"{source.lower()}::{digest}"
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(result)
+        if limit and len(deduped) >= limit:
+            break
+    return deduped
+
+
+def trim_results_to_budget(results: list[dict[str, Any]], token_budget: int) -> list[dict[str, Any]]:
+    if token_budget <= 0:
+        return results
+    char_budget = max(1000, token_budget * 4)
+    used = 0
+    kept: list[dict[str, Any]] = []
+    for result in results:
+        item = dict(result)
+        snippet = str(item.get("snippet") or "")
+        remaining = char_budget - used
+        if remaining <= 0:
+            break
+        if len(snippet) > remaining:
+            item["snippet"] = snippet[: max(0, remaining)]
+        used += len(str(item.get("snippet") or ""))
+        kept.append(item)
+    return kept
+
+
+def read_task_arg(primary: str, file_path: str) -> str:
+    if primary:
+        return primary
+    if file_path:
+        return read_text(Path(file_path), limit=12000)
+    return ""
+
+
 def load_skill_suggestions(workspace_root: Path, task: str, top_n: int = 5) -> list[dict[str, Any]]:
     script_dir = Path(__file__).resolve().parent
     if str(script_dir) not in sys.path:
@@ -246,69 +533,136 @@ def load_skill_suggestions(workspace_root: Path, task: str, top_n: int = 5) -> l
         return [{"error": f"skill suggestions unavailable: {exc}"}]
 
 
-def recent_log_lessons(workspace_root: Path, task: str, limit: int = 5) -> list[dict[str, Any]]:
-    log_path = workspace_root / "wiki" / "log.md"
-    text = read_text(log_path, limit=50000)
-    if not text:
-        return []
-    chunks = [chunk.strip() for chunk in re.split(r"\n(?=#+\s|\d{4}-\d{2}-\d{2}|- )", text) if chunk.strip()]
-    scored = [(lexical_score(task, chunk), chunk) for chunk in chunks]
-    scored = [(score, chunk) for score, chunk in scored if score > 0]
-    scored.sort(key=lambda item: item[0], reverse=True)
-    return [
-        {
-            "source": "wiki/log.md",
-            "score": round(score, 4),
-            "confidence": confidence_for_score(score),
-            "snippet": " ".join(chunk.split())[:420],
-        }
-        for score, chunk in scored[:limit]
+def retrieve_instruction_records(workspace_root: Path) -> list[dict[str, Any]]:
+    paths = [
+        "AGENTS.md",
+        "LLM_WIKI_MEMORY.md",
+        "kade/AGENTS.md",
+        "kade/KADE.md",
     ]
+    records = []
+    for rel in paths:
+        path = workspace_root / rel
+        if not path.exists():
+            continue
+        records.append(
+            result_record(
+                plane="instructions",
+                retrieval="workspace-guidance",
+                source=rel,
+                locator=rel,
+                title=rel,
+                snippet=make_snippet(read_text(path, limit=4000), rel),
+                score=1.0,
+                confidence="high",
+                provenance="workspace-file",
+            )
+        )
+    return records
 
 
-def build_context_bundle(workspace_root: Path, task: str, *, mode: str = "default", token_budget: int = 4000) -> dict[str, Any]:
-    include_raw = mode in {"deep", "evidence"}
-    evidence_limit = 10 if mode in {"deep", "evidence"} else 5
-    bundle = {
-        "version": 1,
-        "generated_at": utc_now(),
-        "workspace": str(workspace_root),
-        "task": task,
-        "mode": mode,
-        "token_budget": token_budget,
-        "policy": {
-            "default_injection": "compact",
-            "source_precedence": "current source evidence overrides memory",
-            "broad_search": "explicit evidence expansion only",
-        },
-        "instructions": [
-            item
-            for item in [
-                "AGENTS.md" if (workspace_root / "AGENTS.md").exists() else "",
-                "LLM_WIKI_MEMORY.md" if (workspace_root / "LLM_WIKI_MEMORY.md").exists() else "",
-                "kade/AGENTS.md" if (workspace_root / "kade" / "AGENTS.md").exists() else "",
-                "kade/KADE.md" if (workspace_root / "kade" / "KADE.md").exists() else "",
-            ]
-            if item
-        ],
-        "skills": load_skill_suggestions(workspace_root, task, top_n=5) if mode in {"default", "deep", "skills"} else [],
-        "evidence": search_workspace(workspace_root, task, limit=evidence_limit, include_raw=include_raw)
-        if mode in {"default", "deep", "evidence", "graph"}
-        else [],
-        "recent_lessons": recent_log_lessons(workspace_root, task, limit=3) if mode in {"default", "deep"} else [],
-        "preference_hints": preference_hints(workspace_root, task) if mode in {"default", "deep", "preference"} else [],
-        "graph_hints": graph_hints(workspace_root, task) if mode in {"default", "deep", "graph"} else [],
-        "expansion_suggestions": [
-            f"llm-wiki-packet evidence --query {json.dumps(task)}",
-            f"llm-wiki-packet context --mode deep --task {json.dumps(task)}",
-            f"llm-wiki-packet context --mode graph --task {json.dumps(task)}",
-            f"llm-wiki-packet context --mode skills --task {json.dumps(task)}",
-        ],
-    }
-    return bundle
+def retrieve_skill_records(workspace_root: Path, task: str, *, limit: int) -> list[dict[str, Any]]:
+    suggestions = load_skill_suggestions(workspace_root, task, top_n=limit)
+    records: list[dict[str, Any]] = []
+    for item in suggestions:
+        if item.get("error"):
+            records.append(status_record("skills", "skill-index", "degraded", str(item["error"])))
+            continue
+        source = str(item.get("path") or item.get("source") or item.get("id") or item.get("name") or "skill-index")
+        title = str(item.get("name") or item.get("title") or item.get("id") or Path(source).stem)
+        score_value = item.get("score", item.get("rank_score", 0.1))
+        try:
+            score = float(score_value)
+        except (TypeError, ValueError):
+            score = lexical_score(task, title + " " + source) or 0.1
+        records.append(
+            result_record(
+                plane="skills",
+                retrieval="skill-index",
+                source=source,
+                locator=source,
+                title=title,
+                snippet=str(item.get("snippet") or item.get("summary") or item.get("fast_path") or title),
+                score=score,
+                confidence=str(item.get("confidence") or confidence_for_score(score)),
+                provenance="skill-index",
+                **{key: value for key, value in item.items() if key not in {"source", "path", "name", "title", "snippet", "summary", "score", "confidence"}},
+            )
+        )
+    return records
 
 
-def preference_hints(workspace_root: Path, task: str) -> list[dict[str, Any]]:
+def retrieve_local_records(workspace_root: Path, query: str, *, limit: int, include_raw: bool, status: str = "ok") -> list[dict[str, Any]]:
+    return search_workspace(
+        workspace_root,
+        query,
+        limit=limit,
+        include_raw=include_raw,
+        plane="local",
+        retrieval="local-hybrid-lite",
+        status=status,
+    )
+
+
+def retrieve_qmd_records(
+    workspace_root: Path,
+    query: str,
+    *,
+    limit: int,
+    timeout_sec: int,
+    include_raw: bool,
+) -> list[dict[str, Any]]:
+    config = load_json(workspace_root / ".llm-wiki" / "config.json")
+    candidates = configured_command_candidates(workspace_root, config, "pk_qmd")
+    if not candidates:
+        fallback = retrieve_local_records(workspace_root, query, limit=limit, include_raw=include_raw, status="degraded")
+        if fallback:
+            return fallback
+        return [status_record("source", "pk-qmd", "unavailable", "pk-qmd command is not configured or not found.")]
+
+    attempts = [
+        ["search", query, "--json", "--limit", str(limit)],
+        ["query", query, "--json", "--limit", str(limit)],
+        ["context", query, "--json", "--limit", str(limit)],
+    ]
+    errors: list[str] = []
+    for command in candidates:
+        for args in attempts:
+            try:
+                completed = run_capture(command, args, cwd=workspace_root, timeout_sec=timeout_sec)
+            except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
+                errors.append(f"{command} {' '.join(args)}: {exc}")
+                continue
+            if completed.returncode != 0:
+                detail = completed.stderr.strip() or completed.stdout.strip() or f"exit code {completed.returncode}"
+                errors.append(f"{command} {' '.join(args)}: {detail[:240]}")
+                continue
+            parsed = parse_jsonish(completed.stdout)
+            if parsed is None:
+                errors.append(f"{command} {' '.join(args)}: no JSON output")
+                continue
+            records = records_from_tool_payload(
+                parsed,
+                plane="source",
+                retrieval="pk-qmd",
+                query=query,
+                limit=limit,
+                provenance="pk-qmd",
+            )
+            if records:
+                return records
+
+    fallback = retrieve_local_records(workspace_root, query, limit=limit, include_raw=include_raw, status="degraded")
+    if fallback:
+        for item in fallback:
+            item["plane"] = "source"
+            item["retrieval"] = "local-fallback-after-pk-qmd"
+            item["error"] = "; ".join(errors[-2:])
+        return fallback
+    return [status_record("source", "pk-qmd", "error", "; ".join(errors[-3:]) or "pk-qmd returned no usable results")]
+
+
+def retrieve_preference_file_records(workspace_root: Path, task: str, *, limit: int = 3, status: str = "ok") -> list[dict[str, Any]]:
     candidates = [workspace_root / ".factory" / "memories.md", Path.home() / ".kade" / "HUMAN.md"]
     results = []
     for path in candidates:
@@ -319,38 +673,256 @@ def preference_hints(workspace_root: Path, task: str) -> list[dict[str, Any]]:
         if score <= 0 and path.name == "HUMAN.md":
             score = 0.05
         results.append(
-            {
-                "source": workspace_rel(workspace_root, path) if path.is_relative_to(workspace_root) else str(path),
-                "retrieval": "preference-file",
-                "score": round(score, 4),
-                "confidence": confidence_for_score(score),
-                "snippet": make_snippet(text, task),
-            }
+            result_record(
+                plane="preference",
+                retrieval="preference-file",
+                status=status,
+                source=workspace_rel(workspace_root, path) if path.is_relative_to(workspace_root) else str(path),
+                locator=str(path),
+                title=path.name,
+                score=score,
+                confidence=confidence_for_score(score),
+                snippet=make_snippet(text, task),
+                provenance="preference-file",
+            )
         )
-    return results[:3]
+    return results[:limit]
 
 
-def graph_hints(workspace_root: Path, task: str) -> list[dict[str, Any]]:
+def retrieve_brv_records(workspace_root: Path, query: str, *, limit: int, timeout_sec: int) -> list[dict[str, Any]]:
+    config = load_json(workspace_root / ".llm-wiki" / "config.json")
+    candidates = configured_command_candidates(workspace_root, config, "byterover")
+    if not candidates:
+        fallback = retrieve_preference_file_records(workspace_root, query, limit=limit, status="degraded")
+        if fallback:
+            return fallback
+        return [status_record("preference", "brv", "unavailable", "BRV command is not configured or not found.")]
+
+    errors: list[str] = []
+    for command in candidates:
+        try:
+            completed = run_capture(command, ["query", query, "--format", "json"], cwd=workspace_root, timeout_sec=timeout_sec)
+        except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
+            errors.append(f"{command} query: {exc}")
+            continue
+        if completed.returncode != 0:
+            detail = completed.stderr.strip() or completed.stdout.strip() or f"exit code {completed.returncode}"
+            errors.append(detail[:240])
+            continue
+        parsed = parse_jsonish(completed.stdout)
+        records = records_from_tool_payload(
+            parsed,
+            plane="preference",
+            retrieval="brv",
+            query=query,
+            limit=limit,
+            provenance="brv",
+        )
+        if records:
+            return records
+    fallback = retrieve_preference_file_records(workspace_root, query, limit=limit, status="degraded")
+    if fallback:
+        for item in fallback:
+            item["error"] = "; ".join(errors[-2:])
+        return fallback
+    return [status_record("preference", "brv", "degraded", "; ".join(errors[-3:]) or "BRV returned no usable results")]
+
+
+def http_json(url: str, timeout_sec: int) -> Any:
+    with urlopen(url, timeout=timeout_sec) as response:  # noqa: S310 - configured local/dev endpoint
+        raw = response.read(200000).decode("utf-8", errors="ignore")
+    return parse_jsonish(raw)
+
+
+def retrieve_gitvizz_records(workspace_root: Path, query: str, *, limit: int, timeout_sec: int) -> list[dict[str, Any]]:
     config = load_json(workspace_root / ".llm-wiki" / "config.json")
     gitvizz = config.get("gitvizz", {}) if isinstance(config.get("gitvizz"), dict) else {}
-    hints = []
+    backend = str(gitvizz.get("backend_url") or "").rstrip("/")
+    api_base = str(gitvizz.get("api_base_url") or "").rstrip("/")
+    records: list[dict[str, Any]] = []
+    if backend:
+        try:
+            payload = http_json(urljoin(backend + "/", "openapi.json"), min(timeout_sec, 5))
+            api_records = records_from_tool_payload(
+                payload,
+                plane="graph",
+                retrieval="gitvizz-api",
+                query=query,
+                limit=limit,
+                provenance="gitvizz",
+            )
+            if api_records:
+                for item in api_records:
+                    item["source"] = item["source"] or backend
+                records.extend(api_records)
+            else:
+                records.append(
+                    result_record(
+                        plane="graph",
+                        retrieval="gitvizz-api",
+                        source=backend,
+                        locator=api_base or backend,
+                        title="GitVizz API reachable",
+                        snippet="GitVizz backend is reachable; use graph-specific endpoints for topology expansion.",
+                        score=0.2,
+                        confidence="medium",
+                        provenance="gitvizz",
+                    )
+                )
+        except (OSError, TimeoutError, socket.timeout, URLError, ValueError) as exc:
+            records.append(status_record("graph", "gitvizz-api", "degraded", f"GitVizz backend unavailable: {exc}", source=backend))
+
+    records.extend(graph_config_records(workspace_root, query, limit=limit))
+    return dedupe_results(records, limit=limit)
+
+
+def graph_config_records(workspace_root: Path, task: str, *, limit: int) -> list[dict[str, Any]]:
+    config = load_json(workspace_root / ".llm-wiki" / "config.json")
+    gitvizz = config.get("gitvizz", {}) if isinstance(config.get("gitvizz"), dict) else {}
+    hints: list[dict[str, Any]] = []
     if gitvizz:
         hints.append(
-            {
-                "source": ".llm-wiki/config.json",
-                "retrieval": "gitvizz-config",
-                "confidence": "medium",
-                "frontend_url": gitvizz.get("frontend_url", ""),
-                "backend_url": gitvizz.get("backend_url", ""),
-                "repo_path": gitvizz.get("repo_path") or gitvizz.get("checkout_path") or "",
-                "suggested_next": "Use GitVizz when code topology, routes, or API relationships matter.",
-            }
+            result_record(
+                plane="graph",
+                retrieval="gitvizz-config",
+                source=".llm-wiki/config.json",
+                locator=str(gitvizz.get("backend_url") or gitvizz.get("frontend_url") or ""),
+                title="GitVizz configuration",
+                score=0.2,
+                confidence="medium",
+                snippet="Use GitVizz when code topology, routes, API surfaces, or repository relationships matter.",
+                provenance="config",
+                frontend_url=gitvizz.get("frontend_url", ""),
+                backend_url=gitvizz.get("backend_url", ""),
+                repo_path=gitvizz.get("repo_path") or gitvizz.get("checkout_path") or "",
+            )
         )
-    code_hits = search_workspace(workspace_root, task, limit=3, include_raw=False)
+    code_hits = search_workspace(workspace_root, task, limit=limit, include_raw=False, plane="graph", retrieval="local-graph-hints")
     for hit in code_hits:
         if hit["source"].startswith(("support/", "scripts/", "installers/")):
             hints.append(hit)
-    return hints[:5]
+    return hints[:limit]
+
+
+def recent_log_lessons(workspace_root: Path, task: str, limit: int = 5) -> list[dict[str, Any]]:
+    log_path = workspace_root / "wiki" / "log.md"
+    text = read_text(log_path, limit=50000)
+    if not text:
+        return []
+    chunks = [chunk.strip() for chunk in re.split(r"\n(?=#+\s|\d{4}-\d{2}-\d{2}|- )", text) if chunk.strip()]
+    scored = [(lexical_score(task, chunk), chunk) for chunk in chunks]
+    scored = [(score, chunk) for score, chunk in scored if score > 0]
+    scored.sort(key=lambda item: item[0], reverse=True)
+    return [
+        result_record(
+            plane="recent",
+            retrieval="wiki-log",
+            source="wiki/log.md",
+            locator="wiki/log.md",
+            title="wiki log lesson",
+            score=score,
+            confidence=confidence_for_score(score),
+            snippet=" ".join(chunk.split())[:420],
+            provenance="wiki-log",
+        )
+        for score, chunk in scored[:limit]
+    ]
+
+
+def planner_policy() -> dict[str, str]:
+    return {
+        "default_injection": "compact",
+        "source_precedence": "current source evidence overrides memory",
+        "broad_search": "explicit evidence expansion only",
+    }
+
+
+def expansion_suggestions(task: str) -> list[str]:
+    return [
+        f"llm-wiki-packet evidence --query {json.dumps(task)}",
+        f"llm-wiki-packet context --mode deep --task {json.dumps(task)}",
+        f"llm-wiki-packet context --mode graph --task {json.dumps(task)}",
+        f"llm-wiki-packet context --mode skills --task {json.dumps(task)}",
+        f"llm-wiki-packet context --mode preference --task {json.dumps(task)}",
+    ]
+
+
+def result_statuses(results: list[dict[str, Any]]) -> dict[str, str]:
+    statuses: dict[str, str] = {}
+    rank = {"error": 5, "unavailable": 4, "degraded": 3, "skipped": 2, "ok": 1}
+    for item in results:
+        plane = str(item.get("plane") or "unknown")
+        status = str(item.get("status") or "ok")
+        current = statuses.get(plane)
+        if current is None or rank.get(status, 0) > rank.get(current, 0):
+            statuses[plane] = status
+    return statuses
+
+
+def build_context_bundle(
+    workspace_root: Path,
+    task: str,
+    *,
+    mode: str = "default",
+    token_budget: int = 4000,
+    timeout_sec: int = 20,
+    max_results_per_plane: int = 5,
+) -> dict[str, Any]:
+    include_raw = mode in {"deep", "evidence"}
+    evidence_limit = max_results_per_plane * 2 if mode in {"deep", "evidence"} else max_results_per_plane
+    instruction_records = retrieve_instruction_records(workspace_root)
+    skills = retrieve_skill_records(workspace_root, task, limit=max_results_per_plane) if mode in {"default", "deep", "skills"} else []
+    recent = recent_log_lessons(workspace_root, task, limit=3) if mode in {"default", "deep"} else []
+
+    if mode in {"deep", "evidence"}:
+        evidence = retrieve_qmd_records(workspace_root, task, limit=evidence_limit, timeout_sec=timeout_sec, include_raw=include_raw)
+    elif mode == "graph":
+        evidence = retrieve_local_records(workspace_root, task, limit=max_results_per_plane, include_raw=False)
+    elif mode == "default":
+        evidence = retrieve_local_records(workspace_root, task, limit=evidence_limit, include_raw=False)
+    else:
+        evidence = []
+
+    preferences = []
+    if mode in {"deep", "preference"}:
+        preferences = retrieve_brv_records(workspace_root, task, limit=max_results_per_plane, timeout_sec=timeout_sec)
+    elif mode == "default":
+        preferences = retrieve_preference_file_records(workspace_root, task, limit=3)
+
+    graph = retrieve_gitvizz_records(workspace_root, task, limit=max_results_per_plane, timeout_sec=timeout_sec) if mode in {"deep", "graph"} else []
+    if mode == "default":
+        graph = graph_config_records(workspace_root, task, limit=max_results_per_plane)
+
+    all_records = dedupe_results([*instruction_records, *skills, *evidence, *recent, *preferences, *graph])
+    all_records = trim_results_to_budget(all_records, token_budget)
+    bundle = {
+        "version": 1,
+        "generated_at": utc_now(),
+        "workspace": str(workspace_root),
+        "task": task,
+        "mode": mode,
+        "token_budget": token_budget,
+        "policy": planner_policy(),
+        "retrieval_status": result_statuses(all_records),
+        "instructions": [item["source"] for item in instruction_records],
+        "instruction_records": instruction_records,
+        "skills": skills,
+        "evidence": evidence,
+        "recent_lessons": recent,
+        "preference_hints": preferences,
+        "graph_hints": graph,
+        "results": all_records,
+        "expansion_suggestions": expansion_suggestions(task),
+    }
+    return bundle
+
+
+def preference_hints(workspace_root: Path, task: str) -> list[dict[str, Any]]:
+    return retrieve_preference_file_records(workspace_root, task)
+
+
+def graph_hints(workspace_root: Path, task: str) -> list[dict[str, Any]]:
+    return graph_config_records(workspace_root, task, limit=5)
 
 
 def print_payload(payload: dict[str, Any], as_json: bool) -> None:
@@ -369,7 +941,18 @@ def markdown_payload(payload: dict[str, Any]) -> str:
         lines.extend(["", "## Policy"])
         for key, value in payload["policy"].items():
             lines.append(f"- {key}: {value}")
-    for section in ("instructions", "skills", "evidence", "recent_lessons", "preference_hints", "graph_hints", "expansion_suggestions", "artifacts", "decision"):
+    for section in (
+        "retrieval_status",
+        "instructions",
+        "skills",
+        "evidence",
+        "recent_lessons",
+        "preference_hints",
+        "graph_hints",
+        "expansion_suggestions",
+        "artifacts",
+        "decision",
+    ):
         value = payload.get(section)
         if not value:
             continue
@@ -378,7 +961,9 @@ def markdown_payload(payload: dict[str, Any]) -> str:
             for item in value:
                 if isinstance(item, dict):
                     label = item.get("title") or item.get("source") or item.get("id") or item.get("suggested_next") or "item"
-                    detail = item.get("snippet") or item.get("fast_path") or item.get("confidence") or ""
+                    detail = item.get("snippet") or item.get("fast_path") or item.get("confidence") or item.get("status") or ""
+                    if item.get("status") and item.get("status") != "ok":
+                        detail = f"[{item['status']}] {detail}".strip()
                     lines.append(f"- **{label}** {detail}".rstrip())
                 else:
                     lines.append(f"- `{item}`" if "/" in str(item) else f"- {item}")
@@ -409,6 +994,66 @@ def packet_script(workspace_root: Path, packet_root: Path | None, relative_path:
             return packet_candidate
 
     raise SystemExit(f"Missing required script: {workspace_candidate}")
+
+
+def build_evidence_bundle(
+    workspace_root: Path,
+    query: str,
+    *,
+    plane: str = "all",
+    limit: int = 10,
+    deep: bool = False,
+    include_raw: bool = False,
+    timeout_sec: int = 20,
+    max_results_per_plane: int = 5,
+) -> dict[str, Any]:
+    requested_planes = list(EVIDENCE_PLANES) if plane == "all" else [plane]
+    per_plane_limit = max(1, max_results_per_plane)
+    raw_enabled = include_raw or deep
+    results: list[dict[str, Any]] = []
+    for selected in requested_planes:
+        if selected == "source":
+            results.extend(
+                retrieve_qmd_records(
+                    workspace_root,
+                    query,
+                    limit=per_plane_limit,
+                    timeout_sec=timeout_sec,
+                    include_raw=raw_enabled,
+                )
+            )
+        elif selected == "skills":
+            results.extend(retrieve_skill_records(workspace_root, query, limit=per_plane_limit))
+        elif selected == "preference":
+            results.extend(retrieve_brv_records(workspace_root, query, limit=per_plane_limit, timeout_sec=timeout_sec))
+        elif selected == "graph":
+            results.extend(retrieve_gitvizz_records(workspace_root, query, limit=per_plane_limit, timeout_sec=timeout_sec))
+        elif selected == "local":
+            results.extend(retrieve_local_records(workspace_root, query, limit=per_plane_limit, include_raw=raw_enabled))
+    results = dedupe_results(results, limit=limit)
+    return {
+        "command": "llm-wiki-packet evidence",
+        "version": 1,
+        "generated_at": utc_now(),
+        "workspace": str(workspace_root),
+        "query": query,
+        "mode": "deep" if deep else "evidence",
+        "plane": plane,
+        "policy": {
+            "retrieval": "broad search is explicit",
+            "injection": "rerank and inject only cited results needed for the task",
+            "source_precedence": "current source evidence overrides memory",
+        },
+        "retrieval_status": result_statuses(results),
+        "evidence": results,
+        "results": results,
+        "expansion_suggestions": [
+            f"llm-wiki-packet context --mode default --task {json.dumps(query)}",
+            f"llm-wiki-packet context --mode graph --task {json.dumps(query)}",
+            f"llm-wiki-packet evidence --plane source --query {json.dumps(query)}",
+            f"llm-wiki-packet evidence --plane preference --query {json.dumps(query)}",
+        ],
+    }
 
 
 def command_init(args: argparse.Namespace) -> int:
@@ -505,10 +1150,17 @@ def command_pokemon_benchmark(args: argparse.Namespace) -> int:
 
 def command_context(args: argparse.Namespace) -> int:
     workspace_root = resolve_workspace_root(args.workspace_root)
-    task = args.task or read_text(Path(args.task_file), limit=12000) if args.task_file else args.task
+    task = read_task_arg(args.task, args.task_file)
     if not task:
         raise SystemExit("context requires --task or --task-file")
-    payload = build_context_bundle(workspace_root, task, mode=args.mode, token_budget=args.token_budget)
+    payload = build_context_bundle(
+        workspace_root,
+        task,
+        mode=args.mode,
+        token_budget=args.token_budget,
+        timeout_sec=args.timeout_sec,
+        max_results_per_plane=args.max_results_per_plane,
+    )
     payload["command"] = "llm-wiki-packet context"
     print_payload(payload, args.json)
     return 0
@@ -516,28 +1168,19 @@ def command_context(args: argparse.Namespace) -> int:
 
 def command_evidence(args: argparse.Namespace) -> int:
     workspace_root = resolve_workspace_root(args.workspace_root)
-    query = args.query or read_text(Path(args.query_file), limit=12000) if args.query_file else args.query
+    query = read_task_arg(args.query, args.query_file)
     if not query:
         raise SystemExit("evidence requires --query or --query-file")
-    results = search_workspace(workspace_root, query, limit=args.limit, include_raw=args.include_raw or args.deep)
-    payload = {
-        "command": "llm-wiki-packet evidence",
-        "version": 1,
-        "generated_at": utc_now(),
-        "workspace": str(workspace_root),
-        "query": query,
-        "mode": "deep" if args.deep else "evidence",
-        "policy": {
-            "retrieval": "broad search is explicit",
-            "injection": "rerank and inject only cited results needed for the task",
-            "source_precedence": "current source evidence overrides memory",
-        },
-        "evidence": results,
-        "expansion_suggestions": [
-            f"llm-wiki-packet context --mode default --task {json.dumps(query)}",
-            f"llm-wiki-packet context --mode graph --task {json.dumps(query)}",
-        ],
-    }
+    payload = build_evidence_bundle(
+        workspace_root,
+        query,
+        plane=args.plane,
+        limit=args.limit,
+        deep=args.deep,
+        include_raw=args.include_raw,
+        timeout_sec=args.timeout_sec,
+        max_results_per_plane=args.max_results_per_plane,
+    )
     print_payload(payload, args.json)
     return 0
 
@@ -887,6 +1530,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Context mode. Default stays compact; deep and evidence expand retrieval.",
     )
     context_parser.add_argument("--token-budget", type=int, default=4000, help="Intended context budget for downstream injection.")
+    context_parser.add_argument("--timeout-sec", type=int, default=20, help="Timeout per external retrieval plane.")
+    context_parser.add_argument("--max-results-per-plane", type=int, default=5, help="Maximum results to request per retrieval plane.")
     context_parser.add_argument("--json", action="store_true", help="Emit JSON instead of markdown.")
     context_parser.set_defaults(func=command_context)
 
@@ -898,8 +1543,11 @@ def build_parser() -> argparse.ArgumentParser:
     evidence_parser.add_argument("--query", default="", help="Evidence query.")
     evidence_parser.add_argument("--query-file", default="", help="Read evidence query from a file.")
     evidence_parser.add_argument("--limit", type=int, default=10, help="Maximum result count.")
+    evidence_parser.add_argument("--plane", choices=(*EVIDENCE_PLANES, "all"), default="all", help="Retrieval plane to run.")
     evidence_parser.add_argument("--deep", action="store_true", help="Include raw source folders in search.")
     evidence_parser.add_argument("--include-raw", action="store_true", help="Include raw source folders in search.")
+    evidence_parser.add_argument("--timeout-sec", type=int, default=20, help="Timeout per external retrieval plane.")
+    evidence_parser.add_argument("--max-results-per-plane", type=int, default=5, help="Maximum results to request per retrieval plane.")
     evidence_parser.add_argument("--json", action="store_true", help="Emit JSON instead of markdown.")
     evidence_parser.set_defaults(func=command_evidence)
 

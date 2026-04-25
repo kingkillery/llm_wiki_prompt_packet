@@ -15,6 +15,7 @@
 - [Obsidian Wiki Update Setup Validation (2026-04-24)](syntheses/obsidian-wiki-update-setup-validation-2026-04-24.md) - validation and fixes for Obsidian/wiki update readiness
 - [GitVizz Local Indexing Fix (2026-04-24)](syntheses/gitvizz-local-indexing-2026-04-24.md) - durable local ingest path that creates Mongo indexed-repository records and usable repo IDs
 - [Harness Control Plane Retrieval Lifecycle (2026-04-25)](syntheses/harness-control-plane-retrieval-lifecycle-2026-04-25.md) - v1 compact context, explicit evidence expansion, run lifecycle, and gated improvement commands
+- [Real Retrieval Spine (2026-04-25)](syntheses/real-retrieval-spine-2026-04-25.md) - plane-aware retrieval orchestration with explicit deep expansion and degraded fallbacks
 
 ## Comparisons
 

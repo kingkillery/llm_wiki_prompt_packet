@@ -70,7 +70,7 @@ Controller rule of thumb:
 - prefer lean state plus targeted retrieval over replaying large history
 - reuse stable summaries when possible instead of re-reading the same long context
 - use `llm-wiki-packet context --task "..."` for the default compact context bundle
-- use `llm-wiki-packet evidence --query "..."` or `llm-wiki-packet context --mode deep` when broad hybrid/source-backed retrieval is specifically useful
+- use `llm-wiki-packet evidence --query "..."`, `llm-wiki-packet evidence --plane source --query "..."`, or `llm-wiki-packet context --mode deep` when broad hybrid/source-backed retrieval is specifically useful
 
 Treat active skills as typed memory objects, not just markdown blobs. Each skill should carry:
 
