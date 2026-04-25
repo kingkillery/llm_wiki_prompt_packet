@@ -15,6 +15,7 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, unquote_plus, urlsplit
 
 # Use stdlib only; no external framework dependencies
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -33,17 +34,26 @@ class DashboardHandler(BaseHTTPRequestHandler):
         # Suppress default logging for cleaner output
         pass
 
+    def _send_localhost_cors(self) -> None:
+        origin = self.headers.get("Origin", "")
+        if not origin:
+            return
+        parsed = urlsplit(origin)
+        if parsed.scheme in {"http", "https"} and parsed.hostname in {"localhost", "127.0.0.1", "::1"}:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+
     def _send_json(self, data: dict) -> None:
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self._send_localhost_cors()
         self.end_headers()
         self.wfile.write(json.dumps(data).encode("utf-8"))
 
     def _send_html(self, body: str, status: int = 200) -> None:
         self.send_response(status)
         self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self._send_localhost_cors()
         self.end_headers()
         self.wfile.write(body.encode("utf-8"))
 
@@ -119,20 +129,22 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return [{"heading": e["heading"], "body": "\n".join(e["lines"]).strip()} for e in reversed(entries[-limit:])]
 
     def do_GET(self) -> None:
-        if self.path == "/dashboard" or self.path == "/dashboard/":
+        parsed = urlsplit(self.path)
+        path = parsed.path
+        if path == "/dashboard" or path == "/dashboard/":
             self._serve_index()
-        elif self.path == "/dashboard/api/pages":
+        elif path == "/dashboard/api/pages":
             self._serve_api_pages()
-        elif self.path == "/dashboard/api/skills":
+        elif path == "/dashboard/api/skills":
             self._serve_api_skills()
-        elif self.path.startswith("/dashboard/api/skills/"):
-            skill_id = self.path.split("/")[-1]
+        elif path.startswith("/dashboard/api/skills/"):
+            skill_id = unquote_plus(path.split("/")[-1])
             self._serve_api_skill_detail(skill_id)
-        elif self.path == "/dashboard/api/brv/status":
+        elif path == "/dashboard/api/brv/status":
             self._serve_api_brv_status()
-        elif self.path == "/dashboard/api/log":
+        elif path == "/dashboard/api/log":
             self._serve_api_log()
-        elif self.path == "/dashboard/api/config":
+        elif path == "/dashboard/api/config":
             self._serve_api_config()
         else:
             self._send_html("<h1>Not Found</h1>", 404)
@@ -241,12 +253,8 @@ loadLog();
         self._send_html(html_body)
 
     def _serve_api_pages(self) -> None:
-        qs = self.path.split("?")[1] if "?" in self.path else ""
-        query = ""
-        for part in qs.split("&"):
-            if part.startswith("q="):
-                query = part[2:].replace("+", " ")
-                break
+        query_values = parse_qs(urlsplit(self.path).query).get("q", [""])
+        query = query_values[0]
         self._send_json({"pages": self._wiki_pages(query)})
 
     def _serve_api_skills(self) -> None:

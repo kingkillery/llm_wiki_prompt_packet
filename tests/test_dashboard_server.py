@@ -6,9 +6,10 @@ import importlib.util
 import json
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DASHBOARD_MODULE_PATH = REPO_ROOT / "support" / "scripts" / "dashboard_server.py"
@@ -92,6 +93,46 @@ class TestDashboardServer(unittest.TestCase):
         pages = handler._wiki_pages(handler, "")
         self.assertEqual(len(pages), 1)
         self.assertIn("obsidian://", pages[0]["obsidian_url"])
+
+    def test_http_pages_route_accepts_query_string(self) -> None:
+        self.dashboard.DashboardHandler.workspace = self.workspace
+        server = self.dashboard.HTTPServer(("127.0.0.1", 0), self.dashboard.DashboardHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            port = server.server_address[1]
+            with urlopen(f"http://127.0.0.1:{port}/dashboard/api/pages?q=memory", timeout=3) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            self.assertEqual(len(payload["pages"]), 1)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=3)
+
+    def test_cors_only_echoes_loopback_origins(self) -> None:
+        self.dashboard.DashboardHandler.workspace = self.workspace
+        server = self.dashboard.HTTPServer(("127.0.0.1", 0), self.dashboard.DashboardHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            port = server.server_address[1]
+            local_request = Request(
+                f"http://127.0.0.1:{port}/dashboard/api/pages",
+                headers={"Origin": "http://localhost:3000"},
+            )
+            with urlopen(local_request, timeout=3) as response:
+                self.assertEqual(response.headers.get("Access-Control-Allow-Origin"), "http://localhost:3000")
+
+            remote_request = Request(
+                f"http://127.0.0.1:{port}/dashboard/api/pages",
+                headers={"Origin": "https://example.com"},
+            )
+            with urlopen(remote_request, timeout=3) as response:
+                self.assertIsNone(response.headers.get("Access-Control-Allow-Origin"))
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=3)
 
 
 if __name__ == "__main__":

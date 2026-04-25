@@ -21,7 +21,7 @@
       "--ensure-install"
     ],
     "env": {
-      "OBSIDIAN_VAULT_PATH": "C:\\dev\\Desktop-Projects\\Helpful-Docs-Prompts\\VAULTS-OBSIDIAN\\Kade-HQ"
+      "OBSIDIAN_VAULT_PATH": "${OBSIDIAN_VAULT_PATH}"
     }
   },
   "brv": {

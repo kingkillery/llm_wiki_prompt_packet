@@ -246,3 +246,11 @@
 - Added per-section context budgets to prevent any retrieval plane from crowding out the compact bundle.
 - Added `--run-id` support to `context` and `evidence` so retrieval status can be written directly to run manifests.
 - Added `wiki/syntheses/retrieval-quality-graph-layer-2026-04-25.md` and updated `wiki/index.md`.
+
+## 2026-04-25T20:58:37Z - fix: dashboard route/CORS and portable MCP config
+
+- Fixed dashboard API routing so `/dashboard/api/pages?q=...` is handled by path parsing instead of exact raw-path matching.
+- Restricted dashboard CORS responses to loopback origins instead of `*`.
+- Replaced the tracked `.mcp.json` Obsidian vault path with an `OBSIDIAN_VAULT_PATH` environment placeholder.
+- Confirmed `.brv/config.json` and `.brv/context-tree/.snapshot.json` are ignored and untracked, so no BRV repo cleanup was needed.
+- Updated dashboard TODO status for log and Obsidian-link work that had already shipped.

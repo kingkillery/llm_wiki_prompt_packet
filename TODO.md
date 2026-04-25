@@ -1,7 +1,7 @@
 # TODO
 
 > **Source of truth:** This file tracks granular, assignable tasks. Milestone context lives in `ROADMAP.md`.
-> **Last updated:** 2026-04-22
+> **Last updated:** 2026-04-25
 
 ---
 
@@ -164,7 +164,7 @@
     - [x] `GET /dashboard/api/skills` -> list active skills from registry.
     - [x] `GET /dashboard/api/skills/<id>` -> skill detail.
     - [x] `GET /dashboard/api/brv/status` -> BRV provider status.
-    - [ ] `GET /dashboard/api/log` -> recent `wiki/log.md` entries (defer).
+    - [x] `GET /dashboard/api/log` -> recent `wiki/log.md` entries.
 
 ### Frontend
 - [x] Single-page HTML + vanilla JS (no build step):
@@ -172,12 +172,12 @@
   - [x] Skill list with score and feedback count.
   - [x] BRV status indicator (connected / disconnected).
   - [x] Mobile-responsive CSS (flex/grid, no framework).
-- [ ] Obsidian deep-link (defer).
+- [x] Obsidian deep-link.
 
 ### Safety
 - [x] Explicitly NO write endpoints in MVP.
 - [x] CORS restricted to localhost.
-- [x] Tests: `tests/test_dashboard_server.py` (4 pass).
+- [x] Tests: `tests/test_dashboard_server.py`.
 
 ---
 
