@@ -57,6 +57,13 @@ When `brv` has no connected provider, skip `brv query`/`brv curate` and continue
 - Managed installs prefer workspace or home `tooling.managed_tool_root` over global npm installs
 - `pk-qmd` is pinned to commit `ef26cb62bb8132bc3a851b23f450af8e382e4c4e`
 
+## Harness Control Plane Contract
+
+- `llm-wiki-packet context` builds compact default task context from instructions, skills, wiki memory, recent lessons, preferences, and graph hints.
+- `llm-wiki-packet evidence` performs explicit broad local hybrid/source-backed retrieval without automatically bloating default context.
+- `llm-wiki-packet manifest`, `reduce`, `evaluate`, `promote`, and `improve` create a versioned run lifecycle for auditable memory promotion and gated self-improvement.
+- Broad retrieval results carry provenance and confidence; current source evidence has priority over stale memory.
+
 ## Durable Memory Contract
 
 - Official Obsidian vault name: `kade-hq`

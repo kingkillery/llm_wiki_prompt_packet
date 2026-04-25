@@ -1,5 +1,7 @@
 # LLM Wiki Memory Stack
 
+> **Audience:** Agents operating inside an installed llm-wiki vault. For repo-level architecture and the canonical-layer contract, see [`SYSTEM_CONTRACT.md`](SYSTEM_CONTRACT.md).
+
 This vault expects the following tooling stack around the markdown wiki:
 
 - `Kade-HQ` and `G-Stack` for the agent harness and local bootstrap surface
@@ -25,6 +27,59 @@ Typical flow:
 The canonical stack settings live in `.llm-wiki/config.json`.
 The local dependency manifest for packet-managed installs lives in `.llm-wiki/package.json`.
 The current repo may only ship thin wrappers for some harness pieces; bootstrap is responsible for surfacing the expected dependency or submodule paths when present.
+
+## wiki/ vs brv routing
+
+Use this table to decide where new knowledge belongs:
+
+| What you have | Write to |
+|---|---|
+| Durable repo fact, concept, or synthesis | `wiki/concepts/`, `wiki/syntheses/`, etc. |
+| Reusable task shortcut (procedural) | `wiki/skills/active/` via skill pipeline |
+| Stable user preference or repeated workflow quirk | `brv` (curate) |
+| Prior architecture or tooling decision | `wiki/` if it affects future agents; `brv` if it is a personal/workflow preference |
+| Session transcript or raw run evidence | `.llm-wiki/skill-pipeline/` as a reducer packet — do NOT write directly to wiki or brv |
+| Contradicted or outdated content | Update/retire the existing wiki page or skill; use `brv curate` only for the preference delta |
+
+Rules:
+- `wiki/` is for knowledge that future agents should find via `pk-qmd` search.
+- `brv` is for preferences and decisions that only matter at runtime and should survive project boundaries.
+- Do not write to both for the same fact — pick one based on the table above.
+- When `brv` has no connected provider, write preference-class knowledge to `wiki/concepts/` temporarily and note it should be migrated to `brv` once the provider is connected.
+
+## Modern memory layering
+
+Adopt a modular memory stack instead of treating all memory as one bucket:
+
+- **Working memory**: active prompt context, `AGENTS.md`, `CLAUDE.md`, and currently open files.
+- **Episodic memory**: task briefs, reducer packets, and failure/evolution artifacts under `.llm-wiki/skill-pipeline/`.
+- **Semantic memory**: durable repo knowledge in `wiki/` pages such as concepts, syntheses, comparisons, and timelines.
+- **Procedural memory**: reusable skills under `wiki/skills/active/` plus their feedback and retirement history.
+- **Preference memory**: durable user/workflow preferences in `brv`.
+
+Preferred promotion flow:
+
+1. a task produces raw evidence
+2. a reducer packet captures the episode
+3. durable facts are promoted into wiki pages or skills only after validation
+4. stale or conflicting procedural memory is amended, merged, or retired instead of silently accumulating
+
+Controller rule of thumb:
+
+- decide explicitly whether the current turn needs a **READ**, **WRITE**, **UPDATE**, or no memory operation
+- prefer lean state plus targeted retrieval over replaying large history
+- reuse stable summaries when possible instead of re-reading the same long context
+- use `llm-wiki-packet context --task "..."` for the default compact context bundle
+- use `llm-wiki-packet evidence --query "..."` or `llm-wiki-packet context --mode deep` when broad hybrid/source-backed retrieval is specifically useful
+
+Treat active skills as typed memory objects, not just markdown blobs. Each skill should carry:
+
+- a primary memory scope (`procedural`, `episodic`, `semantic`, `working`, or `hybrid`)
+- a memory strategy (`hierarchical` or `knowledge_object` by default; `flat` only for legacy/simple cases)
+- durable facts worth preserving
+- provenance refs for audit and deprecation
+- an update strategy such as merge, replace-on-validation, or deprecate-on-conflict
+- canonical reconciliation keys so write-time merge/update decisions are explicit instead of purely append-only
 
 ## Skill creation at expert level
 
@@ -63,24 +118,28 @@ Prefer the pipeline tools when the local MCP server is installed:
 - `skill_pipeline_run`
 - `skill_propose`
 - `skill_feedback`
-- `skill_evolve`
-- `skill_frontier`
 - `skill_get`
 - `skill_retire`
-
-Recommended lifecycle:
-
-1. `skill_lookup` before rediscovery.
-2. `skill_reflect` when a task produced a reusable shortcut or reducer packet.
-3. `skill_validate` when privacy, overlap, or promotion confidence is unclear.
-4. `skill_pipeline_run` when you want the standard reflect-plus-validate packet workflow in one pass.
-5. `skill_propose` when the candidate should be reviewed as a new skill or merge delta.
-6. `skill_feedback` after real use, then `skill_evolve` and `skill_frontier` when repeated evidence suggests a stronger version should replace the current one.
-7. `skill_get` to inspect the exact stored record and `skill_retire` when a shortcut is stale, unsafe, or superseded.
 
 The implementation guide for this lives in `SKILL_CREATION_AT_EXPERT_LEVEL.md`.
 
 For long tasks, the parent path should consume the reducer packet by default and only pull raw detail from referenced artifacts when escalation is necessary.
+
+### Harness lifecycle commands
+
+Use the packet CLI to keep long-running agent work replayable and auditable:
+
+- `llm-wiki-packet manifest --task "..."` creates a run id, success criteria, prompt/tool/model versions, and expected artifact paths.
+- `llm-wiki-packet reduce --run-id <id> --source-file <path>` converts raw run output into claims, evidence, contradictions, durable facts, open questions, and skill candidates.
+- `llm-wiki-packet evaluate --run-id <id>` scores the run for task success, citation quality, retrieval sufficiency, and promotion readiness.
+- `llm-wiki-packet promote --run-id <id>` records a memory-routing decision; add `--apply` only when the promotion is intentionally approved.
+- `llm-wiki-packet improve --run-id <id>` creates a gated improvement proposal; it is accepted only when benchmark and no-regression gates pass.
+
+### Skill-index maintenance
+
+- The packet automatically builds or refreshes `.llm-wiki/skill-index.json` during setup and health-check runs.
+- Interactive wrapped agent launches and the read-only dashboard also lazily refresh the index when the active-skill set, retired-skill set, feedback log, or `.llm-wiki/config.json` changed.
+- Do not ask end users to manually run index maintenance unless you are debugging the maintenance path itself. Manual fallback remains `python scripts/build_skill_index.py --workspace <repo>`.
 
 ## Defaults
 
@@ -247,6 +306,9 @@ These vault-local helpers are installed with the packet:
 - `scripts/gitvizz_api.sh`
 - `scripts/launch_gitvizz.ps1`
 - `scripts/launch_gitvizz.sh`
+- `scripts/llm_wiki_skills.py`
+- `scripts/llm_wiki_skills.ps1`
+- `scripts/llm_wiki_skills.cmd`
 
 Use the setup helper to:
 

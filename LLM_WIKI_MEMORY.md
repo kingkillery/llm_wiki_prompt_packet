@@ -69,6 +69,8 @@ Controller rule of thumb:
 - decide explicitly whether the current turn needs a **READ**, **WRITE**, **UPDATE**, or no memory operation
 - prefer lean state plus targeted retrieval over replaying large history
 - reuse stable summaries when possible instead of re-reading the same long context
+- use `llm-wiki-packet context --task "..."` for the default compact context bundle
+- use `llm-wiki-packet evidence --query "..."` or `llm-wiki-packet context --mode deep` when broad hybrid/source-backed retrieval is specifically useful
 
 Treat active skills as typed memory objects, not just markdown blobs. Each skill should carry:
 
@@ -122,6 +124,16 @@ Prefer the pipeline tools when the local MCP server is installed:
 The implementation guide for this lives in `SKILL_CREATION_AT_EXPERT_LEVEL.md`.
 
 For long tasks, the parent path should consume the reducer packet by default and only pull raw detail from referenced artifacts when escalation is necessary.
+
+### Harness lifecycle commands
+
+Use the packet CLI to keep long-running agent work replayable and auditable:
+
+- `llm-wiki-packet manifest --task "..."` creates a run id, success criteria, prompt/tool/model versions, and expected artifact paths.
+- `llm-wiki-packet reduce --run-id <id> --source-file <path>` converts raw run output into claims, evidence, contradictions, durable facts, open questions, and skill candidates.
+- `llm-wiki-packet evaluate --run-id <id>` scores the run for task success, citation quality, retrieval sufficiency, and promotion readiness.
+- `llm-wiki-packet promote --run-id <id>` records a memory-routing decision; add `--apply` only when the promotion is intentionally approved.
+- `llm-wiki-packet improve --run-id <id>` creates a gated improvement proposal; it is accepted only when benchmark and no-regression gates pass.
 
 ### Skill-index maintenance
 

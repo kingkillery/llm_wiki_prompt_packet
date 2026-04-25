@@ -82,6 +82,7 @@ Use this workspace as a KADE-HQ-backed memory workspace. Treat `AGENTS.md`, `LLM
 - Use BRV only for durable preferences, repeated workflow quirks, and decisions; do not rely on it when no provider is connected.
 - Use GitVizz for repo topology, API surface, route relationships, and graph-oriented navigation after retrieval has identified the likely area.
 - Prefer current source evidence over memory when sources and memory conflict.
+- Start with `llm-wiki-packet context --task "..."` for a compact task bundle; use `llm-wiki-packet evidence --query "..."` or `llm-wiki-packet context --mode deep` only when broader hybrid/source search is useful.
 
 ### KADE-HQ System Use
 
@@ -97,6 +98,7 @@ Use this workspace as a KADE-HQ-backed memory workspace. Treat `AGENTS.md`, `LLM
 - Keep raw immutable sources under `raw/`; never edit `raw/` unless explicitly asked.
 - Update `wiki/index.md` when adding or moving durable pages.
 - Update `wiki/log.md` for meaningful wiki changes, tool fallbacks, setup changes, and unresolved questions.
+- For long-running harness work, use `llm-wiki-packet manifest`, `reduce`, `evaluate`, `promote`, and `improve` so artifacts, memory promotion, and self-improvement gates share the same run id.
 {AGENTS_GUIDANCE_END}"""
 
 ROOT_FILES = {
@@ -185,13 +187,14 @@ BOOTSTRAP_FILES = {
     "templates/.gitkeep": "",
     "scripts/.gitkeep": "",
     ".llm-wiki/.gitkeep": "",
-    ".llm-wiki/.gitignore": "node_modules/\npackage-lock.json\ntools/\nsetup-state.json\n",
+    ".llm-wiki/.gitignore": "node_modules/\npackage-lock.json\ntools/\nsetup-state.json\nskill-pipeline/runs/*\n!skill-pipeline/runs/.gitkeep\n",
     ".llm-wiki/skills-registry.json": "{\n  \"skills\": {},\n  \"feedback\": [],\n  \"briefs\": [],\n  \"deltas\": [],\n  \"validations\": [],\n  \"packets\": [],\n  \"proposals\": [],\n  \"surrogate_reviews\": [],\n  \"evolution_runs\": [],\n  \"frontier\": [],\n  \"events\": []\n}\n",
     ".llm-wiki/skill-pipeline/.gitkeep": "",
     ".llm-wiki/skill-pipeline/briefs/.gitkeep": "",
     ".llm-wiki/skill-pipeline/deltas/.gitkeep": "",
     ".llm-wiki/skill-pipeline/validations/.gitkeep": "",
     ".llm-wiki/skill-pipeline/packets/.gitkeep": "",
+    ".llm-wiki/skill-pipeline/runs/.gitkeep": "",
     ".llm-wiki/skill-pipeline/proposals/.gitkeep": "",
     ".llm-wiki/skill-pipeline/surrogate-reviews/.gitkeep": "",
     ".llm-wiki/skill-pipeline/evolution-runs/.gitkeep": "",
@@ -973,7 +976,18 @@ def build_stack_config(args: argparse.Namespace) -> dict[str, object]:
                 "cmd": "scripts/llm_wiki_packet.cmd",
             },
             "preferred_project_bootstrap_command": "init",
-            "preferred_project_runtime_commands": ["setup", "check", "pokemon-benchmark"],
+            "preferred_project_runtime_commands": [
+                "setup",
+                "check",
+                "context",
+                "evidence",
+                "manifest",
+                "reduce",
+                "evaluate",
+                "promote",
+                "improve",
+                "pokemon-benchmark",
+            ],
         },
         "memory_base": {
             "name": memory_vault_name,
@@ -1117,6 +1131,7 @@ def build_stack_config(args: argparse.Namespace) -> dict[str, object]:
                 "delta_dir": ".llm-wiki/skill-pipeline/deltas",
                 "validation_dir": ".llm-wiki/skill-pipeline/validations",
                 "packet_dir": ".llm-wiki/skill-pipeline/packets",
+                "run_dir": ".llm-wiki/skill-pipeline/runs",
                 "proposal_dir": ".llm-wiki/skill-pipeline/proposals",
                 "surrogate_review_dir": ".llm-wiki/skill-pipeline/surrogate-reviews",
                 "evolution_run_dir": ".llm-wiki/skill-pipeline/evolution-runs",

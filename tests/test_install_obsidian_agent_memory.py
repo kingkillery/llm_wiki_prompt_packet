@@ -196,6 +196,9 @@ class InstallerHomeSkillTests(unittest.TestCase):
         self.assertEqual(config["toolset"]["cli"]["python"], "scripts/llm_wiki_packet.py")
         self.assertEqual(config["toolset"]["cli"]["powershell"], "scripts/llm_wiki_packet.ps1")
         self.assertEqual(config["toolset"]["preferred_project_bootstrap_command"], "init")
+        self.assertIn("context", config["toolset"]["preferred_project_runtime_commands"])
+        self.assertIn("evidence", config["toolset"]["preferred_project_runtime_commands"])
+        self.assertIn("improve", config["toolset"]["preferred_project_runtime_commands"])
         self.assertEqual(config["docs"]["contract_path"], "SYSTEM_CONTRACT.md")
         self.assertEqual(config["memory_base"]["name"], "kade-hq")
         self.assertEqual(config["memory_base"]["vault_id"], "fd8411f00d3a9d21")
@@ -231,6 +234,13 @@ class InstallerHomeSkillTests(unittest.TestCase):
         self.assertEqual(config["agent_failure_capture"]["launcher_paths"]["powershell"], "scripts/run_llm_wiki_agent.ps1")
         self.assertIn("pi", config["agent_failure_capture"]["wrapper_supported_agents"])
         self.assertEqual(config["agent_failure_capture"]["commands"]["droid"], "droid")
+        self.assertEqual(config["skills"]["pipeline"]["run_dir"], ".llm-wiki/skill-pipeline/runs")
+
+    def test_bootstrap_gitignore_excludes_run_artifacts(self) -> None:
+        gitignore = self.module.BOOTSTRAP_FILES[".llm-wiki/.gitignore"]
+
+        self.assertIn("skill-pipeline/runs/*", gitignore)
+        self.assertIn("!skill-pipeline/runs/.gitkeep", gitignore)
 
     def test_build_preflight_report_mentions_repo_runtime_contract(self) -> None:
         lines = self.module.build_preflight_report(

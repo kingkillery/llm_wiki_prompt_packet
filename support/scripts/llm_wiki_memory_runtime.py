@@ -42,6 +42,7 @@ DEFAULT_PIPELINE_DIRS = {
     "delta_dir": ".llm-wiki/skill-pipeline/deltas",
     "validation_dir": ".llm-wiki/skill-pipeline/validations",
     "packet_dir": ".llm-wiki/skill-pipeline/packets",
+    "run_dir": ".llm-wiki/skill-pipeline/runs",
     "proposal_dir": ".llm-wiki/skill-pipeline/proposals",
     "surrogate_review_dir": ".llm-wiki/skill-pipeline/surrogate-reviews",
     "evolution_run_dir": ".llm-wiki/skill-pipeline/evolution-runs",

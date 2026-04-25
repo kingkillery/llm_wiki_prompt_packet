@@ -1,5 +1,13 @@
 # Wiki Log
 
+## 2026-04-25T09:10:00Z - implement: harness control-plane retrieval lifecycle
+
+- Implemented v1 `llm-wiki-packet` control-plane commands for compact context, explicit evidence expansion, run manifests, reducer packets, promotion decisions, evaluation, and gated improvement proposals.
+- Updated installed AGENTS guidance, prompt template, installer-managed guidance, `LLM_WIKI_MEMORY.md`, and `SYSTEM_CONTRACT.md` with the lean-context/deep-retrieval split and lifecycle commands.
+- Added targeted tests for context/evidence outputs, run lifecycle artifacts, decision-only promotion, and installer runtime-command parity.
+- Added `wiki/syntheses/harness-control-plane-retrieval-lifecycle-2026-04-25.md` and updated `wiki/index.md`.
+- Used direct file I/O for this wiki update because Obsidian MCP availability was not confirmed in this session.
+
 ## 2026-04-24T21:25:00Z - validate: Obsidian wiki update readiness
 
 - Validated the packet setup for leaving Obsidian/wiki updates and improvements.
@@ -209,3 +217,4 @@
 - Validated the helper with `working-tree-helper`, producing `repo_id=69ec01c29f5293551a7d3dd4`.
 - Used direct file I/O for this wiki update because Obsidian MCP availability was not confirmed during the Docker validation run.
 - Added `wiki/syntheses/gitvizz-local-indexing-2026-04-24.md` and updated `wiki/index.md`.
+- 2026-04-25 - Created installable Codex skill `dry-skill-consolidation` at `C:\Users\prest\.codex\skills\dry-skill-consolidation` for auditing and consolidating overlapping `SKILL.md` / `SKILLS.md` files. Moved the detailed audit/scoring/output contract into `references/audit-contract.md`, validated the skill with `quick_validate.py`, and added the durable workspace skill note plus index entry.
