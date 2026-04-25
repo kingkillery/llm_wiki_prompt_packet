@@ -63,6 +63,7 @@ When `brv` has no connected provider, skip `brv query`/`brv curate` and continue
 - `llm-wiki-packet evidence` performs explicit broad retrieval across source, skills, preference, graph, and local fallback planes without automatically bloating default context.
 - `llm-wiki-packet manifest`, `reduce`, `evaluate`, `promote`, and `improve` create a versioned run lifecycle for auditable memory promotion and gated self-improvement.
 - Broad retrieval results carry provenance and confidence; current source evidence has priority over stale memory.
+- Optional Hugging Face embedding and reranking model settings are config-only planner hints unless `hf_enabled` is explicitly turned on by an integrator.
 
 ## Durable Memory Contract
 

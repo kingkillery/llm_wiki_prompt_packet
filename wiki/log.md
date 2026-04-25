@@ -227,3 +227,13 @@
 - Used direct file I/O for this wiki update because Obsidian MCP availability was not confirmed during the Docker validation run.
 - Added `wiki/syntheses/gitvizz-local-indexing-2026-04-24.md` and updated `wiki/index.md`.
 - 2026-04-25 - Created installable Codex skill `dry-skill-consolidation` at `C:\Users\prest\.codex\skills\dry-skill-consolidation` for auditing and consolidating overlapping `SKILL.md` / `SKILLS.md` files. Moved the detailed audit/scoring/output contract into `references/audit-contract.md`, validated the skill with `quick_validate.py`, and added the durable workspace skill note plus index entry.
+
+## 2026-04-25T00:00:00Z - implement: retrieval spine hardening pass
+
+- Hardened `pk-qmd` resolution to prefer managed wrappers or `dist/cli/qmd.js` via Node and reject Windows npm shell shims that route through `/bin/sh`.
+- Forced external retrieval subprocess output decoding to UTF-8 with replacement to avoid Windows codepage failures on Unicode `pk-qmd` output.
+- Added BRV provider probing, current `data.result` JSON parsing, and longer preference-query timeout behavior.
+- Replaced OpenAPI-as-evidence GitVizz behavior with task-shaped context-search POSTs and degraded auth/config fallbacks.
+- Added optional disabled-by-default Hugging Face embedding/reranking planner defaults based on HF discovery.
+- Extended run manifests and evaluations with retrieval-plane metadata and degraded/error summaries.
+- Added `wiki/syntheses/retrieval-spine-hardening-2026-04-25.md` and updated `wiki/index.md`.

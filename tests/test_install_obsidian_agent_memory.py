@@ -201,6 +201,12 @@ class InstallerHomeSkillTests(unittest.TestCase):
         self.assertIn("improve", config["toolset"]["preferred_project_runtime_commands"])
         self.assertEqual(config["stack"]["retrieval_planner"]["default_evidence_plane"], "all")
         self.assertEqual(config["stack"]["retrieval_planner"]["planes"], ["source", "skills", "preference", "graph", "local"])
+        self.assertFalse(config["stack"]["retrieval_planner"]["hf_enabled"])
+        self.assertEqual(config["stack"]["retrieval_planner"]["hf_embedding_model"], "BAAI/bge-m3")
+        self.assertEqual(
+            config["stack"]["retrieval_planner"]["hf_reranker_model"],
+            "cross-encoder-testing/reranker-bert-tiny-gooaq-bce",
+        )
         self.assertEqual(config["docs"]["contract_path"], "SYSTEM_CONTRACT.md")
         self.assertEqual(config["memory_base"]["name"], "kade-hq")
         self.assertEqual(config["memory_base"]["vault_id"], "fd8411f00d3a9d21")

@@ -35,7 +35,12 @@
       "default_max_results_per_plane": 5,
       "broad_retrieval": "explicit-only",
       "source_precedence": "current source evidence overrides memory",
-      "fallback_policy": "degrade to local lexical/config hints without blocking task completion"
+      "fallback_policy": "degrade to local lexical/config hints without blocking task completion",
+      "hf_enabled": false,
+      "hf_embedding_model": "BAAI/bge-m3",
+      "hf_reranker_model": "cross-encoder-testing/reranker-bert-tiny-gooaq-bce",
+      "hf_local_embedding_model": "ggml-org/embeddinggemma-300M-GGUF",
+      "hf_local_reranker_model": "ggml-org/Qwen3-Reranker-0.6B-Q8_0-GGUF"
     },
     "policy": {
       "hide_tool_names_from_end_users": true,

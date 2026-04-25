@@ -172,6 +172,9 @@ class PacketCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as workspace_dir:
             workspace_root = Path(workspace_dir)
             (workspace_root / ".llm-wiki").mkdir(parents=True, exist_ok=True)
+            qmd_cmd = workspace_root / ".llm-wiki" / "tools" / "bin" / "pk-qmd.cmd"
+            qmd_cmd.parent.mkdir(parents=True, exist_ok=True)
+            qmd_cmd.write_text("@echo off\n", encoding="utf-8")
             (workspace_root / ".llm-wiki" / "config.json").write_text(
                 json.dumps({"pk_qmd": {"command": "pk-qmd"}, "byterover": {"command": "brv"}}),
                 encoding="utf-8",
@@ -196,6 +199,9 @@ class PacketCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as workspace_dir:
             workspace_root = Path(workspace_dir)
             (workspace_root / ".llm-wiki").mkdir(parents=True, exist_ok=True)
+            qmd_cmd = workspace_root / ".llm-wiki" / "tools" / "bin" / "pk-qmd.cmd"
+            qmd_cmd.parent.mkdir(parents=True, exist_ok=True)
+            qmd_cmd.write_text("@echo off\n", encoding="utf-8")
             (workspace_root / ".llm-wiki" / "config.json").write_text(
                 json.dumps({"pk_qmd": {"command": "pk-qmd"}, "byterover": {"command": "brv"}}),
                 encoding="utf-8",
@@ -207,22 +213,28 @@ class PacketCliTests(unittest.TestCase):
                 stdout=json.dumps([{"source": "wiki/source.md", "snippet": "qmd source evidence", "score": 0.9}]),
                 stderr="",
             )
+            providers_result = mock.Mock(
+                returncode=0,
+                stdout=json.dumps({"data": {"providers": [{"id": "openrouter", "isConnected": True}]}}),
+                stderr="",
+            )
             brv_result = mock.Mock(
                 returncode=0,
-                stdout=json.dumps([{"source": "brv", "snippet": "durable preference", "score": 0.8}]),
+                stdout=json.dumps({"data": {"result": "durable preference\n\nSource: ByteRover Knowledge Base", "status": "completed"}}),
                 stderr="",
             )
             args = self.module.build_parser().parse_args(
                 ["context", "--workspace-root", workspace_dir, "--mode", "deep", "--task", "source preference", "--json"]
             )
             stdout = io.StringIO()
-            with mock.patch.object(self.module, "run_capture", side_effect=[qmd_result, brv_result]) as run_mock:
+            with mock.patch.object(self.module, "run_capture", side_effect=[qmd_result, providers_result, brv_result]) as run_mock:
                 with contextlib.redirect_stdout(stdout):
                     self.assertEqual(self.module.main_from_args(args), 0)
 
             invoked = [call.args[0] for call in run_mock.call_args_list]
             self.assertTrue(invoked[0].lower().endswith(("pk-qmd", "pk-qmd.cmd")))
             self.assertTrue(invoked[1].lower().endswith(("brv", "brv.cmd")))
+            self.assertTrue(invoked[2].lower().endswith(("brv", "brv.cmd")))
             payload = json.loads(stdout.getvalue())
             self.assertEqual(payload["evidence"][0]["retrieval"], "pk-qmd")
             self.assertEqual(payload["preference_hints"][0]["retrieval"], "brv")
@@ -250,7 +262,7 @@ class PacketCliTests(unittest.TestCase):
             self.assertEqual(payload["command"], "llm-wiki-packet evidence")
             self.assertEqual(payload["policy"]["retrieval"], "broad search is explicit")
             self.assertEqual(payload["evidence"][0]["source"], "wiki/note.md")
-            self.assertEqual(payload["evidence"][0]["status"], "degraded")
+            self.assertEqual(payload["evidence"][0]["status"], "ok")
 
     def test_evidence_command_searches_source_directories(self) -> None:
         with tempfile.TemporaryDirectory() as workspace_dir:
@@ -279,6 +291,9 @@ class PacketCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as workspace_dir:
             workspace_root = Path(workspace_dir)
             (workspace_root / ".llm-wiki").mkdir(parents=True, exist_ok=True)
+            qmd_cmd = workspace_root / ".llm-wiki" / "tools" / "bin" / "pk-qmd.cmd"
+            qmd_cmd.parent.mkdir(parents=True, exist_ok=True)
+            qmd_cmd.write_text("@echo off\n", encoding="utf-8")
             (workspace_root / ".llm-wiki" / "config.json").write_text(
                 json.dumps({"pk_qmd": {"command": "pk-qmd"}, "byterover": {"command": "brv"}}),
                 encoding="utf-8",
@@ -301,12 +316,66 @@ class PacketCliTests(unittest.TestCase):
             self.assertEqual(payload["plane"], "source")
             self.assertEqual(payload["evidence"][0]["retrieval"], "pk-qmd")
 
+    def test_qmd_command_candidates_prefer_node_entrypoint_over_windows_shell_shim(self) -> None:
+        with tempfile.TemporaryDirectory() as workspace_dir:
+            workspace_root = Path(workspace_dir)
+            qmd_js = workspace_root / ".llm-wiki" / "tools" / "pk-qmd" / "dist" / "cli" / "qmd.js"
+            qmd_js.parent.mkdir(parents=True, exist_ok=True)
+            qmd_js.write_text("console.log('qmd')\n", encoding="utf-8")
+            shim = workspace_root / ".llm-wiki" / "node_modules" / ".bin" / "pk-qmd.cmd"
+            shim.parent.mkdir(parents=True, exist_ok=True)
+            shim.write_text("@ECHO off\n/bin/sh @kingkillery/pk-qmd/bin/qmd %*\n", encoding="utf-8")
+            config = {"pk_qmd": {"local_command_candidates": [".llm-wiki/node_modules/.bin/pk-qmd.cmd"]}}
+
+            candidates = self.module.qmd_command_candidates(workspace_root, config)
+
+            self.assertEqual(candidates[0], str(qmd_js.resolve(strict=False)))
+            self.assertNotIn(str(shim.resolve(strict=False)), candidates)
+
+    def test_qmd_text_output_falls_back_to_standard_source_records(self) -> None:
+        with tempfile.TemporaryDirectory() as workspace_dir:
+            workspace_root = Path(workspace_dir)
+            (workspace_root / ".llm-wiki").mkdir(parents=True, exist_ok=True)
+            qmd_cmd = workspace_root / ".llm-wiki" / "tools" / "bin" / "pk-qmd.cmd"
+            qmd_cmd.parent.mkdir(parents=True, exist_ok=True)
+            qmd_cmd.write_text("@echo off\n", encoding="utf-8")
+            (workspace_root / ".llm-wiki" / "config.json").write_text(
+                json.dumps({"pk_qmd": {"command": "pk-qmd"}}),
+                encoding="utf-8",
+            )
+            qmd_result = mock.Mock(
+                returncode=0,
+                stdout="qmd://wiki/source.md\nTitle: Source\nScore: 0.82\nbootstrap verification evidence\n",
+                stderr="",
+            )
+
+            records = []
+            with mock.patch.object(self.module, "run_capture", return_value=qmd_result):
+                records = self.module.retrieve_qmd_records(
+                    workspace_root,
+                    "bootstrap verification",
+                    limit=3,
+                    timeout_sec=5,
+                    include_raw=False,
+                )
+
+            self.assertEqual(records[0]["retrieval"], "pk-qmd")
+            self.assertEqual(records[0]["source"], "qmd://wiki/source.md")
+
     def test_graph_mode_uses_gitvizz_when_reachable(self) -> None:
         with tempfile.TemporaryDirectory() as workspace_dir:
             workspace_root = Path(workspace_dir)
             (workspace_root / ".llm-wiki").mkdir(parents=True, exist_ok=True)
             (workspace_root / ".llm-wiki" / "config.json").write_text(
-                json.dumps({"gitvizz": {"backend_url": "http://localhost:8003", "api_base_url": "http://localhost:8003/api"}}),
+                json.dumps(
+                    {
+                        "gitvizz": {
+                            "backend_url": "http://localhost:8003",
+                            "api_base_url": "http://localhost:8003/api",
+                            "repo_id": "69ec012a9f5293551a7d3dd3",
+                        }
+                    }
+                ),
                 encoding="utf-8",
             )
             args = self.module.build_parser().parse_args(
@@ -315,14 +384,33 @@ class PacketCliTests(unittest.TestCase):
             stdout = io.StringIO()
             with mock.patch.object(
                 self.module,
-                "http_json",
+                "http_form_json",
                 return_value={"results": [{"source": "gitvizz:/routes", "snippet": "route graph hit", "score": 0.7}]},
-            ):
+            ) as graph_mock:
                 with contextlib.redirect_stdout(stdout):
                     self.assertEqual(self.module.main_from_args(args), 0)
 
+            self.assertEqual(graph_mock.call_args.args[1]["repository_id"], "69ec012a9f5293551a7d3dd3")
             payload = json.loads(stdout.getvalue())
-            self.assertEqual(payload["graph_hints"][0]["retrieval"], "gitvizz-api")
+            self.assertEqual(payload["graph_hints"][0]["retrieval"], "gitvizz-context-search")
+
+    def test_graph_mode_degrades_cleanly_when_gitvizz_requires_auth(self) -> None:
+        with tempfile.TemporaryDirectory() as workspace_dir:
+            workspace_root = Path(workspace_dir)
+            (workspace_root / ".llm-wiki").mkdir(parents=True, exist_ok=True)
+            (workspace_root / ".llm-wiki" / "config.json").write_text(
+                json.dumps({"gitvizz": {"backend_url": "http://localhost:8003", "repo_id": "repo-1"}}),
+                encoding="utf-8",
+            )
+            auth_error = self.module.HTTPError("http://localhost:8003/api/backend-chat/context/search", 401, "Unauthorized", {}, None)
+
+            with mock.patch.object(self.module, "http_form_json", side_effect=auth_error):
+                records = self.module.retrieve_gitvizz_records(workspace_root, "api routes", limit=5, timeout_sec=5)
+
+            degraded = [record for record in records if record["status"] == "degraded"]
+            self.assertTrue(degraded)
+            self.assertEqual(degraded[0]["plane"], "graph")
+            self.assertIn("HTTP 401", degraded[0]["error"])
 
     def test_preference_mode_falls_back_when_brv_is_disconnected(self) -> None:
         with tempfile.TemporaryDirectory() as workspace_dir:
@@ -334,7 +422,11 @@ class PacketCliTests(unittest.TestCase):
             )
             (workspace_root / ".factory").mkdir(parents=True, exist_ok=True)
             (workspace_root / ".factory" / "memories.md").write_text("Always prefer compact context first.\n", encoding="utf-8")
-            failed_brv = mock.Mock(returncode=1, stdout="", stderr="no connected provider")
+            failed_brv = mock.Mock(
+                returncode=0,
+                stdout=json.dumps({"data": {"providers": [{"id": "openrouter", "isConnected": False}]}}),
+                stderr="",
+            )
 
             args = self.module.build_parser().parse_args(
                 ["context", "--workspace-root", workspace_dir, "--mode", "preference", "--task", "compact context", "--json"]
@@ -347,6 +439,44 @@ class PacketCliTests(unittest.TestCase):
             payload = json.loads(stdout.getvalue())
             self.assertEqual(payload["preference_hints"][0]["retrieval"], "preference-file")
             self.assertEqual(payload["preference_hints"][0]["status"], "degraded")
+
+    def test_brv_connected_provider_query_parses_current_json_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as workspace_dir:
+            workspace_root = Path(workspace_dir)
+            (workspace_root / ".llm-wiki").mkdir(parents=True, exist_ok=True)
+            (workspace_root / ".llm-wiki" / "config.json").write_text(
+                json.dumps({"byterover": {"command": "brv"}}),
+                encoding="utf-8",
+            )
+            provider_result = mock.Mock(
+                returncode=0,
+                stdout=json.dumps({"data": {"providers": [{"id": "openrouter", "isConnected": True}]}}),
+                stderr="",
+            )
+            query_result = mock.Mock(
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "command": "query",
+                        "data": {
+                            "event": "completed",
+                            "result": "**Summary**: Prefer compact context first.\n\nSource: ByteRover Knowledge Base",
+                            "status": "completed",
+                            "taskId": "task-1",
+                        },
+                        "success": True,
+                    }
+                ),
+                stderr="",
+            )
+
+            with mock.patch.object(self.module, "run_capture", side_effect=[provider_result, query_result]) as run_mock:
+                records = self.module.retrieve_brv_records(workspace_root, "compact context", limit=3, timeout_sec=5)
+
+            self.assertEqual(run_mock.call_args_list[1].args[1], ["query", "compact context", "--format", "json"])
+            self.assertEqual(records[0]["retrieval"], "brv")
+            self.assertEqual(records[0]["source"], "ByteRover Knowledge Base")
+            self.assertEqual(records[0]["task_id"], "task-1")
 
     def test_command_invocation_handles_windows_style_entrypoints(self) -> None:
         self.assertEqual(self.module.command_invocation("tool.cmd", ["--help"])[:2], ["cmd", "/c"])
@@ -371,6 +501,14 @@ class PacketCliTests(unittest.TestCase):
                     "test memory loop",
                     "--success-criteria",
                     "creates reducer packet",
+                    "--retrieval-plane",
+                    "source",
+                    "--retrieval-plane",
+                    "preference",
+                    "--retrieval-status-json",
+                    '{"source":"ok","preference":"degraded"}',
+                    "--default-context-sufficient",
+                    "no",
                     "--json",
                 ]
             )
@@ -387,7 +525,16 @@ class PacketCliTests(unittest.TestCase):
                 ]
             )
             evaluate_args = self.module.build_parser().parse_args(
-                ["evaluate", "--workspace-root", workspace_dir, "--run-id", "run-1", "--task-success", "pass", "--json"]
+                [
+                    "evaluate",
+                    "--workspace-root",
+                    workspace_dir,
+                    "--run-id",
+                    "run-1",
+                    "--task-success",
+                    "pass",
+                    "--json",
+                ]
             )
             improve_blocked_args = self.module.build_parser().parse_args(
                 ["improve", "--workspace-root", workspace_dir, "--run-id", "run-1", "--json"]
@@ -414,8 +561,36 @@ class PacketCliTests(unittest.TestCase):
             self.assertTrue((run_root / "reducer_packet.md").exists())
             self.assertTrue((run_root / "claims.json").exists())
             self.assertTrue((run_root / "evaluation.json").exists())
+            manifest = json.loads((run_root / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["retrieval"]["planes_used"], ["source", "preference"])
+            self.assertEqual(manifest["retrieval"]["plane_statuses"]["preference"], "degraded")
+            evaluation = json.loads((run_root / "evaluation.json").read_text(encoding="utf-8"))
+            self.assertEqual(evaluation["retrieval"]["default_context_sufficient"], "no")
+            self.assertIn("preference: degraded", evaluation["retrieval"]["degraded_or_error"])
             proposal = json.loads((run_root / "improvement_proposal.json").read_text(encoding="utf-8"))
             self.assertEqual(proposal["status"], "accepted")
+
+    def test_mixed_plane_evidence_ranks_source_above_preference(self) -> None:
+        results = self.module.dedupe_results(
+            [
+                self.module.result_record(
+                    plane="preference",
+                    retrieval="brv",
+                    source="ByteRover Knowledge Base",
+                    snippet="high score preference memory",
+                    score=1.0,
+                ),
+                self.module.result_record(
+                    plane="source",
+                    retrieval="pk-qmd",
+                    source="qmd://current-source",
+                    snippet="current source evidence",
+                    score=0.2,
+                ),
+            ]
+        )
+
+        self.assertEqual(results[0]["plane"], "source")
 
     def test_promote_command_is_decision_only_until_apply(self) -> None:
         with tempfile.TemporaryDirectory() as workspace_dir:

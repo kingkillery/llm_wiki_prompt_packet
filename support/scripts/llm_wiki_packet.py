@@ -13,9 +13,9 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any
-from urllib.error import URLError
-from urllib.parse import urljoin
-from urllib.request import urlopen
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode, urljoin
+from urllib.request import Request, urlopen
 
 
 DEFAULT_TARGETS = "claude,antigravity,codex,droid,pi"
@@ -41,6 +41,15 @@ EXCLUDED_SEARCH_PARTS = {
 WORD_RE = re.compile(r"[A-Za-z0-9_./:-]+")
 RESULT_STATUSES = {"ok", "skipped", "degraded", "unavailable", "error"}
 EVIDENCE_PLANES = ("source", "skills", "preference", "graph", "local")
+PLANE_PRIORITY = {
+    "source": 0,
+    "graph": 1,
+    "skills": 2,
+    "recent": 3,
+    "preference": 4,
+    "local": 5,
+    "instructions": 6,
+}
 
 
 def python_command() -> list[str]:
@@ -200,7 +209,7 @@ def status_record(plane: str, retrieval: str, status: str, message: str, *, sour
         title=f"{plane} {status}",
         snippet=message,
         confidence=confidence,
-        error=message if status in {"error", "unavailable"} else "",
+        error=message if status in {"degraded", "error", "unavailable"} else "",
     )
 
 
@@ -324,6 +333,22 @@ def sort_command_candidates(candidates: list[str]) -> list[str]:
     return sorted(candidates, key=lambda value: suffix_rank.get(Path(value).suffix.lower(), 3))
 
 
+def unusable_windows_shell_shim(path: Path) -> bool:
+    if os.name != "nt" or path.suffix.lower() not in {"", ".cmd", ".bat", ".ps1"} or not path.exists():
+        return False
+    try:
+        text = path.read_text(encoding="utf-8", errors="ignore")[:3000].lower()
+    except OSError:
+        return False
+    return "/bin/sh" in text or "bin/sh.exe" in text or ("@kingkillery" in text and "bin/qmd" in text)
+
+
+def append_existing_candidate(candidates: list[str], path: Path | None) -> None:
+    if not path or not path.exists() or unusable_windows_shell_shim(path):
+        return
+    candidates.append(str(path.resolve(strict=False)))
+
+
 def configured_command_candidates(workspace_root: Path, config: dict[str, Any], section: str, command_key: str = "command") -> list[str]:
     section_payload = config.get(section) if isinstance(config.get(section), dict) else {}
     candidates: list[str] = []
@@ -334,17 +359,32 @@ def configured_command_candidates(workspace_root: Path, config: dict[str, Any], 
                 executable_sibling = any(resolved.with_suffix(suffix).exists() for suffix in (".cmd", ".bat", ".exe", ".ps1"))
                 if executable_sibling:
                     continue
-            if resolved and resolved.exists():
-                candidates.append(str(resolved))
+            append_existing_candidate(candidates, resolved)
     command = section_payload.get(command_key)
     if isinstance(command, str) and command.strip():
         resolved = resolve_workspace_path(workspace_root, command.strip())
         if resolved and resolved.exists():
-            candidates.append(str(resolved))
+            append_existing_candidate(candidates, resolved)
         else:
             found = shutil.which(command.strip())
-            candidates.append(found or command.strip())
+            if found and not unusable_windows_shell_shim(Path(found)):
+                candidates.append(found)
+            elif not found:
+                candidates.append(command.strip())
     return sort_command_candidates(list(dict.fromkeys(candidates)))
+
+
+def qmd_command_candidates(workspace_root: Path, config: dict[str, Any]) -> list[str]:
+    pk_qmd = config.get("pk_qmd") if isinstance(config.get("pk_qmd"), dict) else {}
+    candidates: list[str] = []
+    append_existing_candidate(candidates, workspace_root / ".llm-wiki" / "tools" / "bin" / "pk-qmd.cmd")
+    append_existing_candidate(candidates, workspace_root / ".llm-wiki" / "tools" / "pk-qmd" / "dist" / "cli" / "qmd.js")
+    for key in ("checkout_path", "source_checkout_path"):
+        configured = resolve_workspace_path(workspace_root, pk_qmd.get(key) if isinstance(pk_qmd.get(key), str) else "")
+        append_existing_candidate(candidates, configured / "dist" / "cli" / "qmd.js" if configured else None)
+    append_existing_candidate(candidates, workspace_root / ".llm-wiki" / "node_modules" / "@kingkillery" / "pk-qmd" / "dist" / "cli" / "qmd.js")
+    candidates.extend(configured_command_candidates(workspace_root, config, "pk_qmd"))
+    return list(dict.fromkeys(candidates))
 
 
 def command_invocation(command_name: str, args: list[str]) -> list[str]:
@@ -371,6 +411,8 @@ def run_capture(command_name: str, args: list[str], *, cwd: Path, timeout_sec: i
         cwd=str(cwd),
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=timeout_sec,
         check=False,
     )
@@ -477,10 +519,123 @@ def records_from_tool_payload(
     return records
 
 
+def parse_qmd_text_records(text: str, *, query: str, limit: int) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    chunks = [chunk.strip() for chunk in re.split(r"\n\s*\n(?=qmd://)", text.strip()) if chunk.strip()]
+    for chunk in chunks[:limit]:
+        lines = chunk.splitlines()
+        if not lines or not lines[0].startswith("qmd://"):
+            continue
+        source = lines[0].split()[0]
+        title = ""
+        score = lexical_score(query, chunk) or 0.1
+        for line in lines[1:6]:
+            if line.lower().startswith("title:"):
+                title = line.split(":", 1)[1].strip()
+            elif line.lower().startswith("score:"):
+                raw_score = re.sub(r"[^0-9.]+", "", line)
+                if raw_score:
+                    try:
+                        score = float(raw_score) / (100 if "%" in line else 1)
+                    except ValueError:
+                        pass
+        records.append(
+            result_record(
+                plane="source",
+                retrieval="pk-qmd",
+                source=source,
+                locator=source,
+                title=title or Path(source).stem,
+                snippet=chunk,
+                score=score,
+                confidence=confidence_for_score(score),
+                provenance="pk-qmd",
+            )
+        )
+    return records
+
+
+def brv_records_from_payload(payload: Any, *, query: str, limit: int) -> list[dict[str, Any]]:
+    if not isinstance(payload, dict):
+        return records_from_tool_payload(payload, plane="preference", retrieval="brv", query=query, limit=limit, provenance="brv")
+    data = payload.get("data")
+    if isinstance(data, dict) and isinstance(data.get("result"), str):
+        text = data["result"]
+        source = "ByteRover Knowledge Base"
+        match = re.search(r"(?im)^source:\s*(.+)$", text)
+        if match:
+            source = match.group(1).strip()
+        return [
+            result_record(
+                plane="preference",
+                retrieval="brv",
+                source=source,
+                locator=source,
+                title="BRV query result",
+                snippet=text,
+                score=lexical_score(query, text) or 0.1,
+                confidence="medium",
+                provenance="brv",
+                brv_status=str(data.get("status") or ""),
+                task_id=str(data.get("taskId") or ""),
+            )
+        ]
+    return records_from_tool_payload(payload, plane="preference", retrieval="brv", query=query, limit=limit, provenance="brv")
+
+
+def parse_status_payload(raw: str) -> Any:
+    parsed = parse_jsonish(raw)
+    if parsed is None:
+        return {}
+    return parsed
+
+
+def retrieval_metadata_from_args(args: argparse.Namespace) -> dict[str, Any]:
+    statuses = parse_status_payload(getattr(args, "retrieval_status_json", "") or "")
+    if not isinstance(statuses, dict):
+        statuses = {"raw": statuses}
+    default_context_sufficient = getattr(args, "default_context_sufficient", "unknown")
+    return {
+        "planes_used": list(getattr(args, "retrieval_plane", []) or []),
+        "plane_statuses": statuses,
+        "default_context_sufficient": default_context_sufficient,
+        "degraded_or_error": [
+            f"{plane}: {status}"
+            for plane, status in statuses.items()
+            if str(status).lower() in {"degraded", "unavailable", "error", "timeout"}
+        ],
+    }
+
+
+def provider_connected(payload: Any) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    data = payload.get("data")
+    providers = data.get("providers") if isinstance(data, dict) else payload.get("providers")
+    if not isinstance(providers, list):
+        return False
+    return any(isinstance(provider, dict) and provider.get("isConnected") for provider in providers)
+
+
+def result_sort_key(item: dict[str, Any]) -> tuple[int, int, float]:
+    plane = str(item.get("plane") or "")
+    status = str(item.get("status") or "ok")
+    try:
+        score = float(item.get("score") or 0.0)
+    except (TypeError, ValueError):
+        score = 0.0
+    status_penalty = 0 if status == "ok" else 1
+    return (status_penalty, PLANE_PRIORITY.get(plane, 99), -score)
+
+
+def rank_results(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(results, key=result_sort_key)
+
+
 def dedupe_results(results: list[dict[str, Any]], limit: int | None = None) -> list[dict[str, Any]]:
     seen: set[str] = set()
     deduped: list[dict[str, Any]] = []
-    for result in results:
+    for result in rank_results(results):
         source = str(result.get("source") or result.get("locator") or "")
         snippet = str(result.get("snippet") or "")
         digest = hashlib.sha1(snippet.encode("utf-8", errors="ignore")).hexdigest()[:12]
@@ -613,7 +768,7 @@ def retrieve_qmd_records(
     include_raw: bool,
 ) -> list[dict[str, Any]]:
     config = load_json(workspace_root / ".llm-wiki" / "config.json")
-    candidates = configured_command_candidates(workspace_root, config, "pk_qmd")
+    candidates = qmd_command_candidates(workspace_root, config)
     if not candidates:
         fallback = retrieve_local_records(workspace_root, query, limit=limit, include_raw=include_raw, status="degraded")
         if fallback:
@@ -621,9 +776,9 @@ def retrieve_qmd_records(
         return [status_record("source", "pk-qmd", "unavailable", "pk-qmd command is not configured or not found.")]
 
     attempts = [
-        ["search", query, "--json", "--limit", str(limit)],
-        ["query", query, "--json", "--limit", str(limit)],
-        ["context", query, "--json", "--limit", str(limit)],
+        ["search", query, "--json", "-n", str(limit)],
+        ["query", query, "--json", "-n", str(limit), "--no-rerank"],
+        ["search", query, "-n", str(limit)],
     ]
     errors: list[str] = []
     for command in candidates:
@@ -639,16 +794,12 @@ def retrieve_qmd_records(
                 continue
             parsed = parse_jsonish(completed.stdout)
             if parsed is None:
-                errors.append(f"{command} {' '.join(args)}: no JSON output")
+                records = parse_qmd_text_records(completed.stdout, query=query, limit=limit)
+                if records:
+                    return records
+                errors.append(f"{command} {' '.join(args)}: no JSON or parsable text output")
                 continue
-            records = records_from_tool_payload(
-                parsed,
-                plane="source",
-                retrieval="pk-qmd",
-                query=query,
-                limit=limit,
-                provenance="pk-qmd",
-            )
+            records = records_from_tool_payload(parsed, plane="source", retrieval="pk-qmd", query=query, limit=limit, provenance="pk-qmd")
             if records:
                 return records
 
@@ -701,7 +852,25 @@ def retrieve_brv_records(workspace_root: Path, query: str, *, limit: int, timeou
     errors: list[str] = []
     for command in candidates:
         try:
-            completed = run_capture(command, ["query", query, "--format", "json"], cwd=workspace_root, timeout_sec=timeout_sec)
+            providers = run_capture(command, ["providers", "list", "--format", "json"], cwd=workspace_root, timeout_sec=min(max(timeout_sec, 10), 20))
+        except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
+            errors.append(f"{command} providers list: {exc}")
+            continue
+        if providers.returncode != 0:
+            detail = providers.stderr.strip() or providers.stdout.strip() or f"exit code {providers.returncode}"
+            errors.append(f"{command} providers list: {detail[:240]}")
+            continue
+        providers_payload = parse_jsonish(providers.stdout)
+        if not provider_connected(providers_payload):
+            fallback = retrieve_preference_file_records(workspace_root, query, limit=limit, status="degraded")
+            message = "BRV has no connected provider; skipped query and used preference files."
+            if fallback:
+                for item in fallback:
+                    item["error"] = message
+                return fallback
+            return [status_record("preference", "brv", "degraded", message)]
+        try:
+            completed = run_capture(command, ["query", query, "--format", "json"], cwd=workspace_root, timeout_sec=max(timeout_sec, 20))
         except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
             errors.append(f"{command} query: {exc}")
             continue
@@ -710,14 +879,7 @@ def retrieve_brv_records(workspace_root: Path, query: str, *, limit: int, timeou
             errors.append(detail[:240])
             continue
         parsed = parse_jsonish(completed.stdout)
-        records = records_from_tool_payload(
-            parsed,
-            plane="preference",
-            retrieval="brv",
-            query=query,
-            limit=limit,
-            provenance="brv",
-        )
+        records = brv_records_from_payload(parsed, query=query, limit=limit)
         if records:
             return records
     fallback = retrieve_preference_file_records(workspace_root, query, limit=limit, status="degraded")
@@ -734,43 +896,65 @@ def http_json(url: str, timeout_sec: int) -> Any:
     return parse_jsonish(raw)
 
 
+def http_form_json(url: str, fields: dict[str, Any], *, timeout_sec: int, authorization: str = "") -> Any:
+    data = urlencode({key: str(value) for key, value in fields.items() if value is not None}).encode("utf-8")
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    if authorization:
+        headers["Authorization"] = authorization
+    request = Request(url, data=data, headers=headers, method="POST")  # noqa: S310 - configured local/dev endpoint
+    with urlopen(request, timeout=timeout_sec) as response:
+        raw = response.read(500000).decode("utf-8", errors="ignore")
+    return parse_jsonish(raw)
+
+
+def gitvizz_repo_id_from_config_or_log(workspace_root: Path, gitvizz: dict[str, Any]) -> str:
+    for key in ("indexed_repo_id", "repo_id", "repository_id"):
+        value = gitvizz.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    for path in (workspace_root / "wiki" / "syntheses" / "gitvizz-local-indexing-2026-04-24.md", workspace_root / "wiki" / "log.md"):
+        text = read_text(path, limit=40000)
+        match = re.search(r"repo_id[=:`\s]+([0-9a-f]{12,})", text)
+        if match:
+            return match.group(1)
+    return ""
+
+
+def gitvizz_context_records(payload: Any, *, query: str, limit: int) -> list[dict[str, Any]]:
+    records = records_from_tool_payload(payload, plane="graph", retrieval="gitvizz-context-search", query=query, limit=limit, provenance="gitvizz")
+    for record in records:
+        record["retrieval"] = "gitvizz-context-search"
+        record["plane"] = "graph"
+    return records
+
+
 def retrieve_gitvizz_records(workspace_root: Path, query: str, *, limit: int, timeout_sec: int) -> list[dict[str, Any]]:
     config = load_json(workspace_root / ".llm-wiki" / "config.json")
     gitvizz = config.get("gitvizz", {}) if isinstance(config.get("gitvizz"), dict) else {}
     backend = str(gitvizz.get("backend_url") or "").rstrip("/")
-    api_base = str(gitvizz.get("api_base_url") or "").rstrip("/")
+    authorization = os.getenv("LLM_WIKI_GITVIZZ_AUTHORIZATION", "")
     records: list[dict[str, Any]] = []
-    if backend:
+    if not backend:
+        records.append(status_record("graph", "gitvizz-config", "unavailable", "GitVizz backend URL is not configured."))
+        return records
+
+    repo_id = gitvizz_repo_id_from_config_or_log(workspace_root, gitvizz)
+    if repo_id:
         try:
-            payload = http_json(urljoin(backend + "/", "openapi.json"), min(timeout_sec, 5))
-            api_records = records_from_tool_payload(
-                payload,
-                plane="graph",
-                retrieval="gitvizz-api",
-                query=query,
-                limit=limit,
-                provenance="gitvizz",
+            payload = http_form_json(
+                urljoin(backend + "/", "api/backend-chat/context/search"),
+                {"repository_id": repo_id, "query": query, "max_results": limit},
+                timeout_sec=timeout_sec,
+                authorization=authorization,
             )
-            if api_records:
-                for item in api_records:
-                    item["source"] = item["source"] or backend
-                records.extend(api_records)
-            else:
-                records.append(
-                    result_record(
-                        plane="graph",
-                        retrieval="gitvizz-api",
-                        source=backend,
-                        locator=api_base or backend,
-                        title="GitVizz API reachable",
-                        snippet="GitVizz backend is reachable; use graph-specific endpoints for topology expansion.",
-                        score=0.2,
-                        confidence="medium",
-                        provenance="gitvizz",
-                    )
-                )
+            records.extend(gitvizz_context_records(payload, query=query, limit=limit))
+        except HTTPError as exc:
+            status = "degraded" if exc.code in {401, 403, 404, 405, 422} else "error"
+            records.append(status_record("graph", "gitvizz-context-search", status, f"GitVizz context search failed with HTTP {exc.code}", source=backend))
         except (OSError, TimeoutError, socket.timeout, URLError, ValueError) as exc:
-            records.append(status_record("graph", "gitvizz-api", "degraded", f"GitVizz backend unavailable: {exc}", source=backend))
+            records.append(status_record("graph", "gitvizz-context-search", "degraded", f"GitVizz context search unavailable: {exc}", source=backend))
+    else:
+        records.append(status_record("graph", "gitvizz-context-search", "degraded", "GitVizz repository id is not configured; returning graph hints only.", source=backend))
 
     records.extend(graph_config_records(workspace_root, query, limit=limit))
     return dedupe_results(records, limit=limit)
@@ -1202,6 +1386,7 @@ def command_manifest(args: argparse.Namespace) -> int:
         "tool_version": args.tool_version,
         "model": args.model,
         "skills": args.skill,
+        "retrieval": retrieval_metadata_from_args(args),
         "budget": {
             "tokens": args.token_budget,
             "seconds": args.timeout_sec,
@@ -1240,6 +1425,12 @@ def ensure_manifest(workspace_root: Path, run_id: str, task: str = "") -> dict[s
         "tool_version": "",
         "model": "",
         "skills": [],
+        "retrieval": {
+            "planes_used": [],
+            "plane_statuses": {},
+            "default_context_sufficient": "unknown",
+            "degraded_or_error": [],
+        },
         "budget": {},
         "artifacts": {
             "root": workspace_rel(workspace_root, root),
@@ -1423,6 +1614,18 @@ def command_evaluate(args: argparse.Namespace) -> int:
     if (root / "reducer_packet.md").exists():
         score += 0.1
     score = round(min(score, 1.0), 4)
+    manifest_retrieval = manifest.get("retrieval") if isinstance(manifest.get("retrieval"), dict) else {}
+    arg_retrieval = retrieval_metadata_from_args(args)
+    retrieval = {
+        "planes_used": arg_retrieval["planes_used"] or manifest_retrieval.get("planes_used", []),
+        "plane_statuses": arg_retrieval["plane_statuses"] or manifest_retrieval.get("plane_statuses", {}),
+        "default_context_sufficient": (
+            arg_retrieval["default_context_sufficient"]
+            if arg_retrieval["default_context_sufficient"] != "unknown"
+            else manifest_retrieval.get("default_context_sufficient", "unknown")
+        ),
+        "degraded_or_error": arg_retrieval["degraded_or_error"] or manifest_retrieval.get("degraded_or_error", []),
+    }
     evaluation = {
         "version": 1,
         "run_id": args.run_id,
@@ -1431,6 +1634,7 @@ def command_evaluate(args: argparse.Namespace) -> int:
         "task_success": "unknown" if not args.task_success else args.task_success,
         "citation_quality": "medium" if cited else "low",
         "retrieval_sufficiency": args.retrieval_sufficiency,
+        "retrieval": retrieval,
         "contradiction_handling": "not-assessed",
         "regressions": [],
         "recommendation": "promote-with-review" if score >= args.threshold else "do-not-promote",
@@ -1561,6 +1765,14 @@ def build_parser() -> argparse.ArgumentParser:
     manifest_parser.add_argument("--tool-version", default="", help="Tool version id.")
     manifest_parser.add_argument("--model", default="", help="Model id.")
     manifest_parser.add_argument("--skill", action="append", default=[], help="Skill id used in the run.")
+    manifest_parser.add_argument("--retrieval-plane", action="append", default=[], help="Repeatable retrieval plane used in the run.")
+    manifest_parser.add_argument("--retrieval-status-json", default="", help="JSON object mapping retrieval planes to statuses.")
+    manifest_parser.add_argument(
+        "--default-context-sufficient",
+        choices=("yes", "no", "unknown"),
+        default="unknown",
+        help="Whether default compact context was sufficient before expansion.",
+    )
     manifest_parser.add_argument("--token-budget", type=int, default=0, help="Optional token budget.")
     manifest_parser.add_argument("--timeout-sec", type=int, default=0, help="Optional run timeout.")
     manifest_parser.add_argument("--json", action="store_true", help="Emit JSON instead of markdown.")
@@ -1588,6 +1800,14 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate_parser.add_argument("--run-id", required=True, help="Run id to evaluate.")
     evaluate_parser.add_argument("--task-success", choices=("pass", "fail", "unknown"), default="")
     evaluate_parser.add_argument("--retrieval-sufficiency", choices=("sufficient", "insufficient", "unknown"), default="unknown")
+    evaluate_parser.add_argument("--retrieval-plane", action="append", default=[], help="Repeatable retrieval plane used in the run.")
+    evaluate_parser.add_argument("--retrieval-status-json", default="", help="JSON object mapping retrieval planes to statuses.")
+    evaluate_parser.add_argument(
+        "--default-context-sufficient",
+        choices=("yes", "no", "unknown"),
+        default="unknown",
+        help="Whether default compact context was sufficient before expansion.",
+    )
     evaluate_parser.add_argument("--threshold", type=float, default=0.7, help="Promotion recommendation threshold.")
     evaluate_parser.add_argument("--json", action="store_true", help="Emit JSON instead of markdown.")
     evaluate_parser.set_defaults(func=command_evaluate)

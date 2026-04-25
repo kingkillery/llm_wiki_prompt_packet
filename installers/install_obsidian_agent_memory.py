@@ -83,6 +83,7 @@ Use this workspace as a KADE-HQ-backed memory workspace. Treat `AGENTS.md`, `LLM
 - Use GitVizz for repo topology, API surface, route relationships, and graph-oriented navigation after retrieval has identified the likely area.
 - Prefer current source evidence over memory when sources and memory conflict.
 - Start with `llm-wiki-packet context --task "..."` for a compact task bundle; use `llm-wiki-packet evidence --query "..."`, `llm-wiki-packet evidence --plane source --query "..."`, or `llm-wiki-packet context --mode deep` only when broader hybrid/source search is useful.
+- Treat Hugging Face embedding/reranking settings as optional disabled-by-default planner hints, not required bootstrap tools.
 
 ### KADE-HQ System Use
 
@@ -98,7 +99,7 @@ Use this workspace as a KADE-HQ-backed memory workspace. Treat `AGENTS.md`, `LLM
 - Keep raw immutable sources under `raw/`; never edit `raw/` unless explicitly asked.
 - Update `wiki/index.md` when adding or moving durable pages.
 - Update `wiki/log.md` for meaningful wiki changes, tool fallbacks, setup changes, and unresolved questions.
-- For long-running harness work, use `llm-wiki-packet manifest`, `reduce`, `evaluate`, `promote`, and `improve` so artifacts, memory promotion, and self-improvement gates share the same run id.
+- For long-running harness work, use `llm-wiki-packet manifest`, `reduce`, `evaluate`, `promote`, and `improve` so artifacts, retrieval metadata, memory promotion, and self-improvement gates share the same run id.
 {AGENTS_GUIDANCE_END}"""
 
 ROOT_FILES = {
@@ -1055,6 +1056,11 @@ def build_stack_config(args: argparse.Namespace) -> dict[str, object]:
                 "broad_retrieval": "explicit-only",
                 "source_precedence": "current source evidence overrides memory",
                 "fallback_policy": "degrade to local lexical/config hints without blocking task completion",
+                "hf_enabled": False,
+                "hf_embedding_model": "BAAI/bge-m3",
+                "hf_reranker_model": "cross-encoder-testing/reranker-bert-tiny-gooaq-bce",
+                "hf_local_embedding_model": "ggml-org/embeddinggemma-300M-GGUF",
+                "hf_local_reranker_model": "ggml-org/Qwen3-Reranker-0.6B-Q8_0-GGUF",
             },
             "policy": {
                 "hide_tool_names_from_end_users": True,
