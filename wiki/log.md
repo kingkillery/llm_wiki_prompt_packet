@@ -1,5 +1,29 @@
 # Wiki Log
 
+## 2026-04-24T21:25:00Z - validate: Obsidian wiki update readiness
+
+- Validated the packet setup for leaving Obsidian/wiki updates and improvements.
+- Used direct file I/O fallback for wiki scribing in this session; Obsidian MCP was validated by configuration and wrapper tests, but not used as an active write tool.
+- Fixed `support/scripts/llm_wiki_obsidian_mcp.py` so `.mcp.json`'s `OBSIDIAN_VAULT_PATH` is honored instead of silently falling back to the repo root.
+- Restored missing deployed helper surfaces under `scripts/`: check helpers and agent launcher wrappers.
+- Hardened Windows command resolution so unusable npm-generated `pk-qmd.cmd` shims do not block health checks when the managed checkout entrypoint is available.
+- Added `wiki/syntheses/obsidian-wiki-update-setup-validation-2026-04-24.md` and updated `wiki/index.md`.
+- Verification: targeted pytest suite passed; `scripts/check_llm_wiki_memory.ps1 -VerifyOnly -SkipGitvizzStart` passed. GitVizz remains configured but not running, which health check allows as endpoint-only mode.
+
+## 2026-04-24T21:55:00Z - operate: GitVizz Docker launch and clean packet ingestion
+
+- Started GitVizz from `C:\dev\Desktop-Projects\gitvizz` with Docker Compose.
+- Verified running containers: frontend (`3000`), backend (`8003`), Mongo (`27017`), and Phoenix (`6006`/`4317`).
+- Updated `.llm-wiki/config.json` so `gitvizz.repo_path` points at the local Docker checkout.
+- Refreshed `.llm-wiki/skill-index.json` after the config change.
+- Built an organized ingestion ZIP at `.tmp/gitvizz-ingest/llm_wiki_prompt_packet-current-final.zip`, excluding `.git`, `deps`, `node_modules`, `.tmp`, `.chainlit`, `__pycache__`, `.llm-wiki/node_modules`, `.llm-wiki/tools`, and `.brv/context-tree`.
+- Submitted the clean ZIP to GitVizz:
+  - `/api/repo/generate-text`: 200, `2,544,167` text characters.
+  - `/api/repo/generate-structure`: 200, `330` files.
+  - `/api/repo/generate-graph`: 200, `2,230` nodes and `10,294` edges.
+- Fixed a Python 3.11 parser incompatibility in `support/scripts/llm_wiki_memory_runtime.py` so GitVizz can parse the runtime file cleanly.
+- Verification: `python -m pytest -q` passed (`120 passed, 1 skipped`), and `scripts/check_llm_wiki_memory.ps1 -VerifyOnly` passed with GitVizz endpoints reachable.
+
 ## 2026-04-24T02:56:00Z - fix: llm-wiki-skills MCP lookup and CLI alias
 
 - Fixed `SkillStore.lookup` so legacy registry rows without a `status` field are normalized instead of crashing with `KeyError`.
@@ -174,3 +198,14 @@
 - Upgraded the packet-native skill pipeline to carry typed memory-object fields and hierarchical-memory defaults.
 - Recorded the design rationale in `wiki/syntheses/agentic-memory-skill-stack-upgrade-2026.md`.
 
+# 2026-04-24T23:55:00Z - fix: GitVizz local indexed repository ingestion
+
+- Added a local trusted GitVizz ingest route in the sibling GitVizz checkout: `POST /api/local/index-repo`.
+- Enabled the route in Docker with `LOCAL_TRUSTED_INGEST=1` and rebuilt/restarted the GitVizz backend.
+- Verified backend health and OpenAPI registration for `/api/local/index-repo`.
+- Indexed this packet through the durable path, producing `repo_id=69ec012a9f5293551a7d3dd3` for `local/llm_wiki_prompt_packet/working-tree-final`.
+- Verified Mongo `repositories` and `users` records and verified stored `repository.zip`, `content.txt`, `data.json`, and `documentation/` files on the GitVizz storage mount.
+- Added repeatable packet helpers at `scripts/gitvizz_local_ingest.ps1` and `support/scripts/gitvizz_local_ingest.ps1`.
+- Validated the helper with `working-tree-helper`, producing `repo_id=69ec01c29f5293551a7d3dd4`.
+- Used direct file I/O for this wiki update because Obsidian MCP availability was not confirmed during the Docker validation run.
+- Added `wiki/syntheses/gitvizz-local-indexing-2026-04-24.md` and updated `wiki/index.md`.

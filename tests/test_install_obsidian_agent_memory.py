@@ -274,6 +274,27 @@ class InstallerHomeSkillTests(unittest.TestCase):
 
         self.assertEqual(targets, ["claude", "codex", "pi"])
 
+    def test_ensure_agents_guidance_merges_existing_project_agents_file(self) -> None:
+        vault = self.home_root / "vault"
+        vault.mkdir(parents=True, exist_ok=True)
+        agents_path = vault / "AGENTS.md"
+        agents_path.write_text("# Project Agents\n\n## Done when\n\nKeep project rule.\n", encoding="utf-8")
+
+        action = self.module.ensure_agents_guidance(vault, dry_run=False)
+
+        text = agents_path.read_text(encoding="utf-8")
+        self.assertIn("merged KADE/memory/retrieval guidance", action)
+        self.assertIn("# Project Agents", text)
+        self.assertIn("## KADE-HQ, Memory, and Retrieval Routing", text)
+        self.assertIn("Use `pk-qmd` first", text)
+        self.assertIn("Treat `g-kade` as the bridge/router", text)
+        self.assertIn("## Done when", text)
+        self.assertIn("Keep project rule.", text)
+
+        second_action = self.module.ensure_agents_guidance(vault, dry_run=False)
+        self.assertIn("AGENTS guidance current", second_action)
+        self.assertEqual(1, agents_path.read_text(encoding="utf-8").count("## KADE-HQ, Memory, and Retrieval Routing"))
+
     def test_install_packet_workspace_inits_then_preserves_existing_vault_state(self) -> None:
         vault = self.home_root / "vault"
         vault.mkdir(parents=True, exist_ok=True)
@@ -329,6 +350,9 @@ class InstallerHomeSkillTests(unittest.TestCase):
         self.assertEqual(config["memory_base"]["vault_path"], str(expected_memory_path))
         self.assertEqual(config["memory_base"]["name"], expected_memory_name)
         self.assertEqual(config["obsidian"]["vault_path"], str(expected_memory_path))
+        agents_text = (vault / "AGENTS.md").read_text(encoding="utf-8")
+        self.assertIn("## KADE-HQ, Memory, and Retrieval Routing", agents_text)
+        self.assertIn("Use Obsidian MCP tools", agents_text)
         self.assertTrue(any("Packet-owned home skill install skipped" in action for action in actions))
         self.assertTrue(any("pi target uses root AGENTS.md" in action for action in actions))
 

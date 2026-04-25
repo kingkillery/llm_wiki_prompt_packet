@@ -60,6 +60,44 @@ REPO_RUNTIME_FALLBACK_ROOTS = (
     "dependencies",
     "submodules",
 )
+AGENTS_GUIDANCE_START = "<!-- llm-wiki-prompt-packet:agents-guidance:start -->"
+AGENTS_GUIDANCE_END = "<!-- llm-wiki-prompt-packet:agents-guidance:end -->"
+AGENTS_GUIDANCE_SECTION = f"""{AGENTS_GUIDANCE_START}
+## KADE-HQ, Memory, and Retrieval Routing
+
+Use this workspace as a KADE-HQ-backed memory workspace. Treat `AGENTS.md`, `LLM_WIKI_MEMORY.md`, `.llm-wiki/config.json`, `wiki/`, and `kade/` as the operating contract for future agent work.
+
+### Startup Routing
+
+- Read `AGENTS.md` first, then `LLM_WIKI_MEMORY.md`, then `.llm-wiki/config.json` before substantive work.
+- If this is a KADE-enabled workspace, also read `kade/AGENTS.md` and `kade/KADE.md` when present.
+- Load `~/.kade/HUMAN.md` when present for user/workflow preferences, but prefer project-local instructions when they conflict.
+- Run `scripts/setup_llm_wiki_memory.ps1` or `scripts/setup_llm_wiki_memory.sh` if required memory/retrieval tools are missing.
+
+### Retrieval Order
+
+- Use `pk-qmd` first for source-backed repo, prompt, note, and wiki evidence when the right file or concept is not already known.
+- Use Obsidian MCP tools for wiki note reads, writes, moves, and tag updates when available; fall back to direct file I/O only when Obsidian is unavailable, and record that fallback in `wiki/log.md`.
+- Use `llm-wiki-skills` for reusable skill lookup, reflection, validation, evolution, and retirement.
+- Use BRV only for durable preferences, repeated workflow quirks, and decisions; do not rely on it when no provider is connected.
+- Use GitVizz for repo topology, API surface, route relationships, and graph-oriented navigation after retrieval has identified the likely area.
+- Prefer current source evidence over memory when sources and memory conflict.
+
+### KADE-HQ System Use
+
+- Treat KADE-HQ as the human/profile and workspace-orchestration layer, not as a replacement for project instructions.
+- Treat `g-kade` as the bridge/router across KADE-HQ, G-Stack workflows, and this packet.
+- Use G-Stack workflows for review, QA, debugging, browser dogfooding, deployment verification, and ship-readiness checks when the corresponding skill/runtime is installed.
+- Keep the root packet files as the source of truth for memory/retrieval wiring; keep KADE-specific handoff state under `kade/`.
+
+### Memory Writes
+
+- Write durable repo knowledge to `wiki/` pages, not chat-only memory.
+- Write reusable procedures as skill artifacts under the configured skill lifecycle, not ad hoc notes.
+- Keep raw immutable sources under `raw/`; never edit `raw/` unless explicitly asked.
+- Update `wiki/index.md` when adding or moving durable pages.
+- Update `wiki/log.md` for meaningful wiki changes, tool fallbacks, setup changes, and unresolved questions.
+{AGENTS_GUIDANCE_END}"""
 
 ROOT_FILES = {
     "AGENTS.md": PROMPTS / "01-AGENTS.md",
@@ -769,6 +807,37 @@ def install_map(vault: Path, mapping: dict[str, Path], force: bool, dry_run: boo
     return results
 
 
+def merge_agents_guidance(existing: str) -> str:
+    normalized = existing.replace("\r\n", "\n")
+    section = AGENTS_GUIDANCE_SECTION.strip()
+    if AGENTS_GUIDANCE_START in normalized and AGENTS_GUIDANCE_END in normalized:
+        before, remainder = normalized.split(AGENTS_GUIDANCE_START, 1)
+        _, after = remainder.split(AGENTS_GUIDANCE_END, 1)
+        return before.rstrip() + "\n\n" + section + "\n\n" + after.lstrip("\n")
+
+    insert_heading = "\n## Done when"
+    if insert_heading in normalized:
+        before, after = normalized.split(insert_heading, 1)
+        return before.rstrip() + "\n\n" + section + "\n" + insert_heading + after
+
+    return normalized.rstrip() + "\n\n" + section + "\n"
+
+
+def ensure_agents_guidance(vault: Path, *, dry_run: bool) -> str:
+    agents_path = vault / "AGENTS.md"
+    existing = ""
+    if agents_path.exists():
+        existing = agents_path.read_text(encoding="utf-8")
+    updated = merge_agents_guidance(existing)
+    if existing.replace("\r\n", "\n") == updated.replace("\r\n", "\n"):
+        return f"skip   {agents_path} (AGENTS guidance current)"
+    if dry_run:
+        return f"update {agents_path} (merge KADE/memory/retrieval guidance)"
+    agents_path.parent.mkdir(parents=True, exist_ok=True)
+    agents_path.write_text(updated, encoding="utf-8")
+    return f"update {agents_path} (merged KADE/memory/retrieval guidance)"
+
+
 def has_richer_existing_skill(dst_root: Path, src_root: Path) -> bool:
     if not dst_root.exists():
         return False
@@ -1119,6 +1188,7 @@ def install_packet_workspace(
     actions.extend(bootstrap_vault(vault, force=force, dry_run=dry_run))
 
     actions.extend(install_map(vault, ROOT_FILES, force=force, dry_run=dry_run))
+    actions.append(ensure_agents_guidance(vault, dry_run=dry_run))
 
     if "claude" in targets:
         actions.extend(install_map(vault, CLAUDE_FILES, force=force, dry_run=dry_run))

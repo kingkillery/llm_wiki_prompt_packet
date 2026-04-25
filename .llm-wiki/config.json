@@ -57,7 +57,7 @@
     "homepage_url": "http://localhost:3000/",
     "setup_url": "http://localhost:3000/",
     "github_callback_url": "http://localhost:3000/api/auth/callback/github",
-    "repo_path": null
+    "repo_path": "C:\\dev\\Desktop-Projects\\gitvizz"
   },
   "skills": {
     "mcp_server_key": "llm-wiki-skills",

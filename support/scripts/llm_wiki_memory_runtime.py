@@ -115,7 +115,11 @@ def relative_or_absolute(path: Path, workspace_root: Path) -> str:
 
 
 def first_existing(paths: list[Path]) -> Path | None:
-    for path in paths:
+    ordered_paths = paths
+    if os.name == "nt":
+        suffix_rank = {".cmd": 0, ".bat": 0, ".exe": 0, ".ps1": 1}
+        ordered_paths = sorted(paths, key=lambda path: suffix_rank.get(path.suffix.lower(), 2))
+    for path in ordered_paths:
         if path.exists():
             return path
     return None
@@ -157,7 +161,7 @@ def resolve_shell_command(script_path: Path) -> list[str]:
         powershell = command_in_path("pwsh") or command_in_path("powershell") or "powershell"
         return [powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script_path)]
     if suffix in {".cmd", ".bat"}:
-        return [str(script_path)]
+        return ["cmd", "/c", str(script_path)]
     if suffix == ".sh":
         bash = command_in_path("bash")
         if not bash:
@@ -656,8 +660,23 @@ def ensure_managed_qmd(runtime: dict[str, Any], summary: list[str], failures: li
 
     existing_candidate = first_existing(local_candidates)
     if existing_candidate:
-        summary.append(f"pk-qmd install state: resolved managed candidate {existing_candidate}")
-        return str(existing_candidate)
+        usable, detail = probe_command(str(existing_candidate), ["status"], cwd=runtime["workspace_root"], timeout=120)
+        if usable:
+            summary.append(f"pk-qmd install state: resolved managed candidate {existing_candidate}")
+            return str(existing_candidate)
+        summary.append(f"pk-qmd install state: managed candidate unusable ({existing_candidate})")
+        if detail:
+            summary.append(f"pk-qmd install fallback reason: {detail.splitlines()[-1]}")
+
+    checkout_command = ensure_qmd_source_command(checkout_path)
+    if checkout_command:
+        usable, detail = probe_command(str(checkout_command), ["status"], cwd=runtime["workspace_root"], timeout=120)
+        if usable:
+            summary.append(f"pk-qmd install state: resolved managed checkout entrypoint {checkout_command}")
+            return str(checkout_command)
+        summary.append(f"pk-qmd install state: managed checkout entrypoint unusable ({checkout_command})")
+        if detail:
+            summary.append(f"pk-qmd install fallback reason: {detail.splitlines()[-1]}")
 
     configured_command = str(runtime["qmd_command"])
     configured_path = Path(configured_command).expanduser()
@@ -1000,7 +1019,8 @@ def build_claude_failure_hook_handler(
     if use_powershell:
         script_expr = powershell_quote(str(script_path))
         if relative_script:
-            script_expr = f"(Join-Path $env:CLAUDE_PROJECT_DIR {powershell_quote(relative_script.replace('/', '\\'))})"
+            relative_script_windows = relative_script.replace("/", "\\")
+            script_expr = f"(Join-Path $env:CLAUDE_PROJECT_DIR {powershell_quote(relative_script_windows)})"
         python_invocation = " ".join(powershell_quote(part) for part in python_command)
         return {
             "type": "command",

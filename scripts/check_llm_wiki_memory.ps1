@@ -46,9 +46,9 @@ Push-Location $repoRoot
 try {
     $python = Get-Command python -ErrorAction SilentlyContinue
     if (-not $python) { $python = Get-Command py -ErrorAction SilentlyContinue }
-    if (-not $python) { throw "Python is required to run setup_llm_wiki_memory.ps1" }
+    if (-not $python) { throw "Python is required to run check_llm_wiki_memory.ps1" }
 
-    $runtimeArgs = @("setup", "--workspace=$WorkspaceRoot")
+    $runtimeArgs = @("check", "--workspace=$WorkspaceRoot")
     $optionMap = @{
         ConfigPath = "config-path"; QmdSource = "qmd-source"; QmdRepoUrl = "qmd-repo-url";
         QmdCommand = "qmd-command"; QmdCollection = "qmd-collection"; QmdContext = "qmd-context";

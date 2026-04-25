@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -81,7 +82,14 @@ def main() -> int:
 
     workspace_root = Path(args.workspace).expanduser().resolve(strict=False)
     _, configured_vault_path, candidates, package_name = resolve_wrapper_runtime(workspace_root)
-    vault_path = Path(args.vault).expanduser().resolve(strict=False) if args.vault else configured_vault_path
+    env_vault = os.environ.get("OBSIDIAN_VAULT_PATH", "")
+    vault_path = (
+        Path(args.vault).expanduser().resolve(strict=False)
+        if args.vault
+        else Path(env_vault).expanduser().resolve(strict=False)
+        if env_vault
+        else configured_vault_path
+    )
 
     command_path = first_existing(candidates)
     if command_path is None and args.ensure_install:

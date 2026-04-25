@@ -61,7 +61,17 @@ class RuntimeTests(unittest.TestCase):
 
         invocation = self.module.resolve_shell_command(cmd_path)
 
-        self.assertEqual(invocation, [str(cmd_path)])
+        self.assertEqual(invocation, ["cmd", "/c", str(cmd_path)])
+
+    def test_first_existing_prefers_windows_cmd_wrapper_over_extensionless_script(self) -> None:
+        extensionless = self.workspace / ".llm-wiki" / "tools" / "bin" / "pk-qmd"
+        cmd = self.workspace / ".llm-wiki" / "tools" / "bin" / "pk-qmd.cmd"
+        extensionless.parent.mkdir(parents=True, exist_ok=True)
+        extensionless.write_text("#!/usr/bin/env sh\n", encoding="utf-8")
+        cmd.write_text("@echo off\r\n", encoding="ascii")
+
+        with mock.patch.object(self.module.os, "name", "nt"):
+            self.assertEqual(self.module.first_existing([extensionless, cmd]), cmd)
 
     def test_update_json_mcp_config_merges_server_without_dropping_existing_entries(self) -> None:
         settings_path = self.workspace / "settings.json"
@@ -537,6 +547,8 @@ class RuntimeTests(unittest.TestCase):
         failures: list[str] = []
 
         def fake_run(command_name, args, **kwargs):
+            if command_name == str(dist_path) and args == ["status"]:
+                return mock.Mock(returncode=1, stdout="", stderr="not bootstrapped")
             if args[:2] == ["-C", str(checkout)] and "checkout" in args:
                 return mock.Mock(returncode=0, stdout="", stderr="")
             if args == ["install"]:
