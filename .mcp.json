@@ -19,10 +19,7 @@
       "--workspace",
       ".",
       "--ensure-install"
-    ],
-    "env": {
-      "OBSIDIAN_VAULT_PATH": "${OBSIDIAN_VAULT_PATH}"
-    }
+    ]
   },
   "brv": {
     "command": "brv",

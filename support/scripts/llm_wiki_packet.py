@@ -117,6 +117,19 @@ def safe_slug(value: str, fallback: str = "run") -> str:
     return slug[:80] or fallback
 
 
+def validate_run_id(run_id: str) -> str:
+    value = str(run_id or "").strip()
+    if not value:
+        raise SystemExit("run id is required")
+    if "/" in value or "\\" in value:
+        raise SystemExit("run id must not include path separators")
+    if value in {".", ".."} or ".." in value:
+        raise SystemExit("run id must not contain path traversal segments")
+    if re.fullmatch(r"[A-Za-z0-9._-]{1,120}", value) is None:
+        raise SystemExit("run id may only contain letters, numbers, dot, underscore, and hyphen")
+    return value
+
+
 def load_json(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
@@ -258,7 +271,7 @@ def pipeline_root(workspace_root: Path) -> Path:
 
 
 def run_root(workspace_root: Path, run_id: str) -> Path:
-    return pipeline_root(workspace_root) / "runs" / run_id
+    return pipeline_root(workspace_root) / "runs" / validate_run_id(run_id)
 
 
 def is_search_excluded(path: Path, workspace_root: Path) -> bool:

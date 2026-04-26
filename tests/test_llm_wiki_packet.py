@@ -615,6 +615,32 @@ class PacketCliTests(unittest.TestCase):
             self.assertEqual(manifest["retrieval"]["last_event"]["command"], "evidence")
             self.assertEqual(manifest["retrieval"]["plane_statuses"]["local"], "ok")
 
+    def test_run_id_rejects_path_traversal(self) -> None:
+        with tempfile.TemporaryDirectory() as workspace_dir:
+            workspace_root = Path(workspace_dir)
+            (workspace_root / ".llm-wiki").mkdir(parents=True, exist_ok=True)
+            (workspace_root / ".llm-wiki" / "config.json").write_text("{}", encoding="utf-8")
+            (workspace_root / "wiki").mkdir(parents=True, exist_ok=True)
+            (workspace_root / "wiki" / "note.md").write_text("test marker\n", encoding="utf-8")
+
+            args = self.module.build_parser().parse_args(
+                [
+                    "evidence",
+                    "--workspace-root",
+                    workspace_dir,
+                    "--run-id",
+                    "..\\escape",
+                    "--plane",
+                    "local",
+                    "--query",
+                    "test marker",
+                    "--json",
+                ]
+            )
+
+            with self.assertRaises(SystemExit):
+                self.module.main_from_args(args)
+
     def test_context_section_budgets_limit_each_section(self) -> None:
         records = [
             self.module.result_record(plane="source", retrieval="test", source=f"source-{idx}", snippet="x " * 100, score=1.0)

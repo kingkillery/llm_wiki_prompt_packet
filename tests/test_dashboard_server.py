@@ -13,6 +13,7 @@ from urllib.request import Request, urlopen
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DASHBOARD_MODULE_PATH = REPO_ROOT / "support" / "scripts" / "dashboard_server.py"
+SCRIPT_DASHBOARD_MODULE_PATH = REPO_ROOT / "scripts" / "dashboard_server.py"
 
 
 def load_module(path: Path, name: str):
@@ -52,6 +53,11 @@ class TestDashboardServer(unittest.TestCase):
         handler.workspace = self.workspace
         cfg = handler._read_config(handler)
         self.assertIsInstance(cfg, dict)
+
+    def test_scripts_dashboard_entrypoint_wraps_support_module(self) -> None:
+        module = load_module(SCRIPT_DASHBOARD_MODULE_PATH, "dashboard_server_wrapper")
+        self.assertTrue(hasattr(module, "DashboardHandler"))
+        self.assertTrue(hasattr(module, "run_server"))
 
     def test_handler_wiki_pages(self) -> None:
         handler = self.dashboard.DashboardHandler
