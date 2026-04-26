@@ -267,3 +267,8 @@
 - Added `off_script_warnings` to `llm-wiki-packet context` and `evidence` outputs so degraded planes, local-only evidence, and missing run ids are visible to agents and automation.
 - Added promotion decision warnings for dry-run promotion, degraded retrieval, missing evaluation artifacts, and explicit-only preference promotion.
 - Added regression coverage for context/evidence warnings and decision-only promotion warnings.
+
+## 2026-04-26T05:35:00Z - sync: known issues to GitHub
+
+- Created GitHub issues #4 through #9 for every actionable item in `KNOWN_ISSUES.md`.
+- Linked each known issue entry back to its remote issue so local and GitHub tracking stay aligned.
