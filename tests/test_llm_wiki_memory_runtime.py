@@ -178,7 +178,8 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(payload["obsidian"]["command"], "python")
         self.assertIn("support/scripts/llm_wiki_obsidian_mcp.py", payload["obsidian"]["args"])
         self.assertIn("--ensure-install", payload["obsidian"]["args"])
-        self.assertIn("OBSIDIAN_VAULT_PATH", payload["obsidian"]["env"])
+        self.assertNotIn("env", payload["obsidian"])
+        self.assertNotIn("${OBSIDIAN_VAULT_PATH}", json.dumps(payload["obsidian"]))
 
     def test_update_codex_toml_uses_windows_safe_literal_strings(self) -> None:
         config_path = self.workspace / "config.toml"

@@ -1158,6 +1158,29 @@ def result_statuses(results: list[dict[str, Any]]) -> dict[str, str]:
     return statuses
 
 
+def retrieval_guardrails(payload: dict[str, Any]) -> list[str]:
+    statuses = payload.get("retrieval_status") if isinstance(payload.get("retrieval_status"), dict) else {}
+    warnings: list[str] = []
+    for plane, status in statuses.items():
+        normalized = str(status).lower()
+        if normalized in {"degraded", "unavailable", "error", "timeout"}:
+            warnings.append(f"{plane} retrieval is {status}; treat matching results as weaker evidence until refreshed.")
+    if payload.get("command") in {"llm-wiki-packet context", "llm-wiki-packet evidence"} and not payload.get("run_id"):
+        warnings.append("No run id was provided, so retrieval health will not be attached to a run manifest.")
+    if statuses.get("local") == "ok" and statuses.get("source") != "ok":
+        warnings.append("Local lexical evidence is present without ok source retrieval; verify important claims with source or graph expansion.")
+    return list(dict.fromkeys(warnings))
+
+
+def attach_retrieval_guardrails(payload: dict[str, Any]) -> dict[str, Any]:
+    warnings = retrieval_guardrails(payload)
+    if warnings:
+        payload["off_script_warnings"] = warnings
+    else:
+        payload.pop("off_script_warnings", None)
+    return payload
+
+
 def build_context_bundle(
     workspace_root: Path,
     task: str,
@@ -1248,6 +1271,7 @@ def markdown_payload(payload: dict[str, Any]) -> str:
             lines.append(f"- {key}: {value}")
     for section in (
         "retrieval_status",
+        "off_script_warnings",
         "instructions",
         "skills",
         "evidence",
@@ -1278,6 +1302,21 @@ def markdown_payload(payload: dict[str, Any]) -> str:
         else:
             lines.append(str(value))
     return "\n".join(lines) + "\n"
+
+
+def promotion_guardrails(root: Path, manifest: dict[str, Any], *, target: str, apply: bool) -> list[str]:
+    warnings: list[str] = []
+    retrieval = manifest.get("retrieval") if isinstance(manifest.get("retrieval"), dict) else {}
+    degraded = retrieval.get("degraded_or_error") if isinstance(retrieval.get("degraded_or_error"), list) else []
+    if degraded:
+        warnings.append(f"Run has degraded retrieval planes: {', '.join(str(item) for item in degraded)}.")
+    if not apply:
+        warnings.append("Promotion is decision-only; no wiki, skill, or preference memory write was applied.")
+    if apply and not (root / "evaluation.json").exists():
+        warnings.append("Promotion is being applied without an evaluation artifact; review evidence quality manually.")
+    if target in {"auto", "preference"}:
+        warnings.append("Preference promotion is not automatic; use brv curate explicitly after review.")
+    return list(dict.fromkeys(warnings))
 
 
 def add_gitvizz_flag(command: list[str], enable_gitvizz: bool) -> None:
@@ -1513,8 +1552,9 @@ def command_context(args: argparse.Namespace) -> int:
     )
     payload["command"] = "llm-wiki-packet context"
     if args.run_id:
-        record_retrieval_event(workspace_root, args.run_id, "context", payload)
         payload["run_id"] = args.run_id
+        record_retrieval_event(workspace_root, args.run_id, "context", payload)
+    attach_retrieval_guardrails(payload)
     print_payload(payload, args.json)
     return 0
 
@@ -1535,8 +1575,9 @@ def command_evidence(args: argparse.Namespace) -> int:
         max_results_per_plane=args.max_results_per_plane,
     )
     if args.run_id:
-        record_retrieval_event(workspace_root, args.run_id, "evidence", payload)
         payload["run_id"] = args.run_id
+        record_retrieval_event(workspace_root, args.run_id, "evidence", payload)
+    attach_retrieval_guardrails(payload)
     print_payload(payload, args.json)
     return 0
 
@@ -1762,6 +1803,7 @@ def command_promote(args: argparse.Namespace) -> int:
         "applied": args.apply,
         "actions": actions,
         "policy": "verified durable facts to wiki; reusable procedures to skill proposals; preferences require explicit BRV curate",
+        "off_script_warnings": promotion_guardrails(root, manifest, target=target, apply=args.apply),
     }
     write_json(root / "promotion_decision.json", decision)
     print_payload({"command": "llm-wiki-packet promote", "run_id": args.run_id, "decision": decision, "artifacts": {"promotion": workspace_rel(workspace_root, root / "promotion_decision.json")}}, args.json)

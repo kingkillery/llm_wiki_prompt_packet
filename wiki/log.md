@@ -261,3 +261,9 @@
 - Hardened `llm-wiki-packet` run ids with validation that rejects path separators/traversal before any run-artifact filesystem writes.
 - Replaced `scripts/dashboard_server.py` with a wrapper that delegates to `support/scripts/dashboard_server.py` to keep a single dashboard source of truth.
 - Added regression tests for run-id traversal rejection and the dashboard wrapper entrypoint.
+
+## 2026-04-26T05:15:00Z - fix: off-script guardrails
+
+- Added `off_script_warnings` to `llm-wiki-packet context` and `evidence` outputs so degraded planes, local-only evidence, and missing run ids are visible to agents and automation.
+- Added promotion decision warnings for dry-run promotion, degraded retrieval, missing evaluation artifacts, and explicit-only preference promotion.
+- Added regression coverage for context/evidence warnings and decision-only promotion warnings.

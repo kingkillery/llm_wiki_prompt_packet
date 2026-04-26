@@ -167,6 +167,8 @@ class PacketCliTests(unittest.TestCase):
             self.assertTrue(payload["evidence"])
             self.assertEqual(payload["evidence"][0]["plane"], "local")
             self.assertEqual(payload["evidence"][0]["status"], "ok")
+            self.assertTrue(any("No run id" in item for item in payload["off_script_warnings"]))
+            self.assertTrue(any("Local lexical evidence" in item for item in payload["off_script_warnings"]))
             self.assertTrue(any("evidence" in item for item in payload["expansion_suggestions"]))
 
     def test_default_context_does_not_invoke_external_retrieval_planes(self) -> None:
@@ -607,6 +609,8 @@ class PacketCliTests(unittest.TestCase):
 
             payload = json.loads(stdout.getvalue())
             self.assertEqual(payload["run_id"], "retrieval-run")
+            self.assertFalse(any("No run id" in item for item in payload.get("off_script_warnings", [])))
+            self.assertTrue(any("Local lexical evidence" in item for item in payload["off_script_warnings"]))
             manifest = json.loads(
                 (workspace_root / ".llm-wiki" / "skill-pipeline" / "runs" / "retrieval-run" / "manifest.json").read_text(
                     encoding="utf-8"
@@ -711,6 +715,7 @@ class PacketCliTests(unittest.TestCase):
                 self.assertEqual(self.module.main_from_args(args), 0)
             payload = json.loads(stdout.getvalue())
             self.assertFalse(payload["decision"]["applied"])
+            self.assertTrue(any("decision-only" in item for item in payload["decision"]["off_script_warnings"]))
             self.assertFalse((workspace_root / "wiki" / "syntheses" / "run-2.md").exists())
 
 
