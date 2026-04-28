@@ -35,6 +35,7 @@ Environment overrides (CLI flags win):
   LLM_WIKI_FORCE          1 = --force
   LLM_WIKI_GLOBAL_WIRE    1 = enable global Claude wiring
   LLM_WIKI_SKIP_SETUP     1 = skip running setup helper after install
+  LLM_WIKI_SKIP_GITVIZZ   0 = include GitVizz setup/checks (default skips optional graph)
   LLM_WIKI_SKIP_HOME_SKILLS  1 = pass --skip-home-skills to installer
 USAGE
 }
@@ -306,7 +307,11 @@ if [[ "$INSTALL_MODE" != "g-kade" && "${LLM_WIKI_SKIP_SETUP:-0}" != "1" ]]; then
     echo "Setup helper not found: $SETUP_HELPER" >&2
     exit 1
   fi
-  bash "$SETUP_HELPER" --workspace "$VAULT"
+  SETUP_ARGS=(--workspace "$VAULT")
+  if [[ "${LLM_WIKI_SKIP_GITVIZZ:-1}" != "0" ]]; then
+    SETUP_ARGS+=(--skip-gitvizz)
+  fi
+  bash "$SETUP_HELPER" "${SETUP_ARGS[@]}"
 fi
 
 # Global Claude wiring — automates the README "Agent Easy Install" steps.
@@ -328,7 +333,7 @@ if [[ "$WIRE_REPO" == "1" || "${LLM_WIKI_RUN_HEALTH_CHECK:-0}" == "1" ]]; then
   if [[ -f "$CHECK_HELPER" ]]; then
     echo ">> running health check"
     CHECK_ARGS=()
-    if [[ "$INSTALL_MODE" == "g-kade" && "${LLM_WIKI_SKIP_GITVIZZ:-1}" != "0" ]]; then
+    if [[ "${LLM_WIKI_SKIP_GITVIZZ:-1}" != "0" ]]; then
       CHECK_ARGS+=(--skip-gitvizz)
     fi
     # Capture exit code BEFORE any compound conditional ($? would otherwise

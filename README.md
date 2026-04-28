@@ -94,7 +94,7 @@ curl -fsSL https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/
 - builds the skill suggestion index automatically
 - creates the local review-gated memory ledger
 - installs the memory controller used by reducer runs, retrieval, and the dashboard
-- runs the health check as the closing step
+- runs the health check as the closing step, skipping optional GitVizz checks unless `LLM_WIKI_SKIP_GITVIZZ=0`
 
 The closing health check propagates its exit code so chained commands honor failure (set `LLM_WIKI_HEALTH_CHECK_NONFATAL=1` to keep warn-only behavior). Global Claude wiring writes a timestamped `.bak` of `~/.claude/CLAUDE.md` before any mutation.
 
@@ -325,6 +325,7 @@ Required environment variables for unattended mode:
 | `LLM_WIKI_GLOBAL_WIRE` | `0` | Wire into `~/.claude/CLAUDE.md` |
 | `LLM_WIKI_FORCE` | `0` | Force overwrite |
 | `LLM_WIKI_SKIP_SETUP` | `0` | Skip setup helper |
+| `LLM_WIKI_SKIP_GITVIZZ` | `1` | Skip optional GitVizz setup/checks; set `0` to require graph health |
 | `LLM_WIKI_SKIP_HOME_SKILLS` | `0` | Skip home skill install |
 | `BYTEROVER_API_KEY` | — | BRV auth (optional) |
 | `HF_TOKEN` | — | Hugging Face Hub (optional) |
@@ -1083,7 +1084,7 @@ These checks verify:
 - `.brv/config.json` exists in the vault
 - the skill pipeline folders exist
 - the skill suggestion index exists or can be refreshed automatically
-- the configured GitVizz frontend and backend ports are reachable
+- the configured GitVizz frontend and backend ports are reachable when GitVizz checks are enabled
 
 ### Optional post-install sanity checks
 

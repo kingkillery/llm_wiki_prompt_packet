@@ -232,7 +232,11 @@ try {
         if (-not (Test-Path $setupHelper)) {
             throw "Setup helper not found: $setupHelper"
         }
-        & $setupHelper
+        if ($env:LLM_WIKI_SKIP_GITVIZZ -ne "0") {
+            & $setupHelper -SkipGitvizz
+        } else {
+            & $setupHelper
+        }
     }
 
     if ($effectiveGlobalWire) {
@@ -257,7 +261,7 @@ try {
         $checkHelper = Join-Path $Vault "scripts/check_llm_wiki_memory.ps1"
         if (Test-Path $checkHelper) {
             Write-Host ">> running health check"
-            if ($Mode -eq "g-kade" -and $env:LLM_WIKI_SKIP_GITVIZZ -ne "0") {
+            if ($env:LLM_WIKI_SKIP_GITVIZZ -ne "0") {
                 & $checkHelper -SkipGitvizz
             } else {
                 & $checkHelper
