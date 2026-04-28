@@ -128,6 +128,63 @@ class DashboardHandler(BaseHTTPRequestHandler):
         # Return most recent first
         return [{"heading": e["heading"], "body": "\n".join(e["lines"]).strip()} for e in reversed(entries[-limit:])]
 
+    def _memory_objects(self, status: str = "") -> list[dict]:
+        config = DashboardHandler._read_config(self)
+        controller = config.get("memory_controller") if isinstance(config.get("memory_controller"), dict) else {}
+        configured = str(controller.get("ledger_path") or ".llm-wiki/memory-ledger")
+        ledger = Path(configured)
+        if not ledger.is_absolute():
+            ledger = self.workspace / ledger
+        objects: list[dict] = []
+        for bucket in ("candidates", "approved"):
+            directory = ledger / bucket
+            if not directory.exists():
+                continue
+            for path in sorted(directory.glob("*.json")):
+                try:
+                    item = json.loads(path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    continue
+                if status and item.get("status") != status:
+                    continue
+                objects.append(
+                    {
+                        "id": item.get("id", ""),
+                        "kind": item.get("kind", ""),
+                        "status": item.get("status", ""),
+                        "claim": item.get("claim", ""),
+                        "confidence": item.get("confidence", ""),
+                        "sensitivity": item.get("sensitivity", ""),
+                        "rank_score": item.get("rank_score", 0),
+                        "source_refs": item.get("source_refs", []),
+                        "supersedes": item.get("supersedes", []),
+                        "superseded_by": item.get("superseded_by", ""),
+                        "contradicts": item.get("contradicts", []),
+                        "valid_from": item.get("valid_from", ""),
+                        "valid_to": item.get("valid_to", ""),
+                    }
+                )
+        objects.sort(key=lambda item: item.get("valid_from", ""), reverse=True)
+        return objects[:100]
+
+    def _memory_events(self, limit: int = 25) -> list[dict]:
+        config = DashboardHandler._read_config(self)
+        controller = config.get("memory_controller") if isinstance(config.get("memory_controller"), dict) else {}
+        configured = str(controller.get("ledger_path") or ".llm-wiki/memory-ledger")
+        ledger = Path(configured)
+        if not ledger.is_absolute():
+            ledger = self.workspace / ledger
+        events_path = ledger / "events.jsonl"
+        if not events_path.exists():
+            return []
+        events: list[dict] = []
+        for line in events_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            try:
+                events.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+        return list(reversed(events[-limit:]))
+
     def do_GET(self) -> None:
         parsed = urlsplit(self.path)
         path = parsed.path
@@ -146,6 +203,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._serve_api_log()
         elif path == "/dashboard/api/config":
             self._serve_api_config()
+        elif path == "/dashboard/api/memory":
+            self._serve_api_memory()
+        elif path == "/dashboard/api/memory/events":
+            self._serve_api_memory_events()
         else:
             self._send_html("<h1>Not Found</h1>", 404)
 
@@ -195,6 +256,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
     <div id="brv-status">Loading...</div>
   </div>
   <div class="card">
+    <h2>Memory Ledger</h2>
+    <ul id="memory-list"><li>Loading...</li></ul>
+  </div>
+  <div class="card">
     <h2>Recent Log</h2>
     <ul id="log-list"><li>Loading...</li></ul>
   </div>
@@ -237,6 +302,14 @@ async function loadLog() {
     : '<li>No log entries.</li>';
 }
 
+async function loadMemory() {
+  const data = await api('/memory');
+  const list = document.getElementById('memory-list');
+  list.innerHTML = data.memories.length
+    ? data.memories.map(m => `<li><strong>${escapeHtml(m.status)} ${escapeHtml(m.kind)}</strong> <span class="meta">${escapeHtml(m.id)} confidence ${escapeHtml(m.confidence)} sensitivity ${escapeHtml(m.sensitivity || 'normal')} rank ${escapeHtml(String(m.rank_score || 0))}</span><div>${escapeHtml(m.claim)}</div><div class="meta">supersedes ${escapeHtml((m.supersedes || []).join(', ') || 'none')} | superseded by ${escapeHtml(m.superseded_by || 'none')} | contradicts ${escapeHtml((m.contradicts || []).join(', ') || 'none')}</div></li>`).join('')
+    : '<li>No pending or approved memories.</li>';
+}
+
 function escapeHtml(t) {
   const div = document.createElement('div');
   div.textContent = t;
@@ -246,6 +319,7 @@ function escapeHtml(t) {
 searchPages('');
 loadSkills();
 loadBrv();
+loadMemory();
 loadLog();
 </script>
 </body>
@@ -285,6 +359,20 @@ loadLog();
 
     def _serve_api_config(self) -> None:
         self._send_json(self._read_config())
+
+    def _serve_api_memory(self) -> None:
+        query = parse_qs(urlsplit(self.path).query)
+        status = query.get("status", [""])[0]
+        self._send_json({"memories": self._memory_objects(status)})
+
+    def _serve_api_memory_events(self) -> None:
+        query = parse_qs(urlsplit(self.path).query)
+        raw_limit = query.get("limit", ["25"])[0]
+        try:
+            limit = max(1, min(100, int(raw_limit)))
+        except ValueError:
+            limit = 25
+        self._send_json({"events": self._memory_events(limit)})
 
 
 def run_server(workspace: Path, host: str, port: int) -> None:

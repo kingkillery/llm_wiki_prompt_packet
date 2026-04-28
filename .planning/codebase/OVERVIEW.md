@@ -61,3 +61,23 @@ Think of the repo as a "packet plus glue" system:
   setup helpers, MCP wiring, deploy wrappers
 - runtime:
   external tools plus the installed vault state
+
+## Visual Map For Memory And Retrieval
+
+Start here when you want to understand the full personalization loop:
+
+- `.planning/codebase/VISUAL_MEMORY_RETRIEVAL_MAP.md`
+
+```mermaid
+flowchart LR
+  A["Usage text / run artifacts"] --> B["Memory controller extracts candidates"]
+  B --> C["Pending ledger"]
+  C --> D["CLI review gate"]
+  D --> E["Approved ledger"]
+  E --> F["Packet retrieval context/evidence"]
+  E --> G["Generated semantic wiki page"]
+  E --> H["Read-only dashboard"]
+  F --> I["Agent answer with source precedence"]
+```
+
+The key rule: approved memory can personalize retrieval, but current source evidence still wins when source and memory conflict.

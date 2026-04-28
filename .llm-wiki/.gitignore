@@ -4,3 +4,9 @@ tools/
 setup-state.json
 skill-pipeline/runs/*
 !skill-pipeline/runs/.gitkeep
+memory-ledger/candidates/*
+!memory-ledger/candidates/.gitkeep
+memory-ledger/approved/*
+!memory-ledger/approved/.gitkeep
+memory-ledger/events.jsonl
+memory-ledger/index.json

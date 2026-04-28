@@ -254,3 +254,28 @@
 - Replaced the tracked `.mcp.json` Obsidian vault path with an `OBSIDIAN_VAULT_PATH` environment placeholder.
 - Confirmed `.brv/config.json` and `.brv/context-tree/.snapshot.json` are ignored and untracked, so no BRV repo cleanup was needed.
 - Updated dashboard TODO status for log and Obsidian-link work that had already shipped.
+
+## 2026-04-26T00:00:00Z - implement: review-gated memory controller
+
+- Added a local JSON semantic/preference memory controller with extraction, reconciliation, approval, rejection, editing, invalidation, ranking, audit events, and semantic wiki projection.
+- Wired approved ledger memories into packet preference retrieval while preserving current-source precedence over memory.
+- Added read-only dashboard visibility for pending and approved memory objects.
+- Updated installer bootstrap/config to ship the controller and create ignored ledger directories.
+- Used direct file I/O for this wiki log update because Obsidian MCP availability was not confirmed during the implementation run.
+
+## 2026-04-28T00:00:00Z - map: visual memory and retrieval loop
+
+- Added `.planning/codebase/VISUAL_MEMORY_RETRIEVAL_MAP.md` with Mermaid diagrams for the memory controller loop, retrieval priority, tool-call points, state layout, lifecycle, and remaining personalization gaps.
+- Updated `.planning/codebase/OVERVIEW.md`, `ARCHITECTURE.md`, `STRUCTURE.md`, and `INTEGRATIONS.md` to point at the new memory-controller map and reflect the local ledger layer.
+- Updated `wiki/index.md` with a durable pointer to the visual map.
+- Used direct file I/O for this wiki update because Obsidian MCP availability was not confirmed during the mapping run.
+
+## 2026-04-28T00:00:00Z - close: installed memory loop gaps
+
+- Wired `llm_wiki_packet.py reduce` to automatically extract review-gated memory candidates into `.llm-wiki/memory-ledger/`.
+- Made memory-controller config meaningful: `review_gate=false` can auto-approve non-sensitive/non-contradictory candidates, and `min_confidence` filters low-confidence candidates.
+- Added approval guardrails for active contradictions and credential-like memories.
+- Kept semantic projection fresh after semantic approve/edit/invalidate operations.
+- Updated packet retrieval to skip superseded and actively contradictory memories while refreshing rank metadata and `index.json`.
+- Updated dashboard memory payloads with sensitivity, rank, supersession metadata, and a read-only events endpoint.
+- Updated `README.md` and the visual map so the documented install path describes the closed memory loop.

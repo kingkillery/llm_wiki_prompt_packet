@@ -52,6 +52,7 @@ That means the installed system can:
 - search repo-local evidence
 - route between evidence, graph, memory, and skills
 - maintain a local skill index for proactive suggestions
+- automatically stage semantic/preference memory candidates from reducer runs for review
 - record failures and draft reducer packets
 - expose repeatable setup and verification helpers
 
@@ -91,6 +92,8 @@ curl -fsSL https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/
 - wires global Claude commands when enabled
 - runs setup
 - builds the skill suggestion index automatically
+- creates the local review-gated memory ledger
+- installs the memory controller used by reducer runs, retrieval, and the dashboard
 - runs the health check as the closing step
 
 The closing health check propagates its exit code so chained commands honor failure (set `LLM_WIKI_HEALTH_CHECK_NONFATAL=1` to keep warn-only behavior). Global Claude wiring writes a timestamped `.bak` of `~/.claude/CLAUDE.md` before any mutation.
@@ -119,7 +122,7 @@ If you are trying to understand the stack quickly, use this mental model:
 | Concept | Meaning |
 |---|---|
 | **Evidence** | Facts from your repo, notes, prompts, and docs. Retrieved with `pk-qmd`. |
-| **Memory** | Durable preferences and repeated decisions. Stored in `brv` or staged locally when needed. |
+| **Memory** | Durable preferences and repeated decisions. Staged first in the local review-gated ledger, then optionally bridged to external memory later. |
 | **Skills** | Reusable task shortcuts like "how we do X here." Stored as markdown-backed memory objects. |
 | **Graph** | Structural repo understanding like routes, relationships, and topology. Exposed by GitVizz. |
 | **Packet** | The glue layer that wires all of the above into one predictable surface. |
@@ -189,10 +192,12 @@ Three opt-in HF surfaces are wired into the packet:
 - `.llm-wiki/qmd-embed-state.json`
 - `.llm-wiki/skills-registry.json`
 - `.brv/context-tree/.gitkeep`
+- `.llm-wiki/memory-ledger/`
 - `scripts/llm_wiki_packet.py`
 - `scripts/llm_wiki_packet.ps1`
 - `scripts/llm_wiki_packet.sh`
 - `scripts/llm_wiki_packet.cmd`
+- `scripts/llm_wiki_memory_controller.py`
 - `scripts/check_llm_wiki_memory.ps1`
 - `scripts/check_llm_wiki_memory.sh`
 - `scripts/llm_wiki_skill_mcp.py`
@@ -263,9 +268,36 @@ The hosted installer is the default path. If you do nothing special, it:
 4. wires MCP/config surfaces
 5. bootstraps retrieval and memory helpers
 6. builds or refreshes `.llm-wiki/skill-index.json`
-7. runs the health check
+7. creates `.llm-wiki/memory-ledger/` and installs `scripts/llm_wiki_memory_controller.py`
+8. runs the health check
 
 During setup and health-check runs, the packet now also **builds or refreshes the skill suggestion index automatically**. Interactive agent launches and the dashboard will lazily rebuild the index if the active skills, retired skills, feedback log, or config changed. Users should not need to understand or manually maintain `.llm-wiki/skill-index.json`.
+
+The installed memory loop is also local-first and review-gated by default:
+
+```text
+llm_wiki_packet reduce
+  -> auto-extracts semantic/preference memory candidates
+  -> writes .llm-wiki/memory-ledger/candidates/*.json
+  -> CLI review approves/rejects/edits/invalidates
+  -> approved ledger memories feed context/evidence retrieval
+  -> dashboard shows pending/approved memory state read-only
+```
+
+Useful commands from the installed workspace root:
+
+```powershell
+python .\scripts\llm_wiki_memory_controller.py list --status pending
+python .\scripts\llm_wiki_memory_controller.py show <memory-id>
+python .\scripts\llm_wiki_memory_controller.py approve <memory-id>
+python .\scripts\llm_wiki_memory_controller.py rank --query "current task"
+```
+
+The same controller is available through the packet CLI passthrough:
+
+```powershell
+python .\scripts\llm_wiki_packet.py memory list --status pending
+```
 
 Local-first use remains supported. When you want a single hosted surface, the intended Docker mode should be able to host the qmd + gitvizz + brv stack together while keeping the same contract boundaries.
 

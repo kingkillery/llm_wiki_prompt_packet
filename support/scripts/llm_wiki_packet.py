@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -923,6 +924,85 @@ def retrieve_preference_file_records(workspace_root: Path, task: str, *, limit: 
     return results[:limit]
 
 
+def retrieve_memory_ledger_records(
+    workspace_root: Path,
+    query: str,
+    *,
+    limit: int = 5,
+    kinds: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    config = load_json(workspace_root / ".llm-wiki" / "config.json")
+    controller = config.get("memory_controller") if isinstance(config.get("memory_controller"), dict) else {}
+    configured_path = str(controller.get("ledger_path") or ".llm-wiki/memory-ledger")
+    ledger = Path(configured_path)
+    if not ledger.is_absolute():
+        ledger = workspace_root / ledger
+    approved_dir = ledger / "approved"
+    if not approved_dir.exists():
+        return []
+    ranking = controller.get("ranking") if isinstance(controller.get("ranking"), dict) else {}
+    lexical_weight = float(ranking.get("lexical_weight", 0.7))
+    confidence_weight = float(ranking.get("confidence_weight", 0.2))
+    confidence_values = {"low": 0.35, "medium": 0.65, "high": 0.9}
+    active_ids: set[str] = set()
+    approved_payloads: list[tuple[Path, dict[str, Any]]] = []
+    for path in sorted(approved_dir.glob("*.json")):
+        item = load_json(path)
+        if not item or item.get("status") != "approved" or item.get("valid_to") or item.get("superseded_by"):
+            continue
+        memory_id = str(item.get("id") or "")
+        if memory_id:
+            active_ids.add(memory_id)
+            approved_payloads.append((path, item))
+    results: list[dict[str, Any]] = []
+    ranked_index: list[dict[str, Any]] = []
+    ranked_at = utc_now()
+    for path, item in approved_payloads:
+        contradictions = [str(value) for value in item.get("contradicts", []) if str(value) in active_ids]
+        if contradictions:
+            continue
+        kind = str(item.get("kind") or "")
+        if kinds and kind not in kinds:
+            continue
+        claim = str(item.get("claim") or "")
+        score = lexical_score(query, " ".join([claim, " ".join(item.get("canonical_keys", []))]))
+        if score <= 0:
+            score = 0.05 if kind == "preference" else 0.0
+        if score <= 0:
+            continue
+        confidence = str(item.get("confidence") or "low")
+        boosted = min(1.0, lexical_weight * score + confidence_weight * confidence_values.get(confidence, 0.35))
+        item["last_ranked_at"] = ranked_at
+        item["rank_score"] = round(boosted, 4)
+        write_json(path, item)
+        refs = item.get("source_refs") if isinstance(item.get("source_refs"), list) else []
+        ref_text = ", ".join(str(ref.get("ref") or "") for ref in refs if isinstance(ref, dict))
+        record = result_record(
+            plane="preference",
+            retrieval="memory-ledger",
+            status="ok",
+            source=workspace_rel(workspace_root, path),
+            locator=str(path),
+            title=f"{kind} memory: {item.get('id')}",
+            score=boosted,
+            confidence=confidence,
+            snippet=claim,
+            provenance="memory-ledger",
+            memory_id=str(item.get("id") or ""),
+            memory_kind=kind,
+            source_refs=refs,
+            supersedes=item.get("supersedes", []),
+            contradicts=item.get("contradicts", []),
+            ref_text=ref_text,
+        )
+        results.append(record)
+        ranked_index.append(record)
+    if ranked_index:
+        write_json(ledger / "index.json", {"version": 1, "generated_at": ranked_at, "query": query, "results": ranked_index})
+    results.sort(key=lambda record: float(record.get("score") or 0), reverse=True)
+    return results[:limit]
+
+
 def retrieve_brv_records(workspace_root: Path, query: str, *, limit: int, timeout_sec: int) -> list[dict[str, Any]]:
     config = load_json(workspace_root / ".llm-wiki" / "config.json")
     candidates = configured_command_candidates(workspace_root, config, "byterover")
@@ -1174,6 +1254,8 @@ def build_context_bundle(
         preferences = retrieve_brv_records(workspace_root, task, limit=max_results_per_plane, timeout_sec=timeout_sec)
     elif mode == "default":
         preferences = retrieve_preference_file_records(workspace_root, task, limit=3)
+    ledger_preferences = retrieve_memory_ledger_records(workspace_root, task, limit=max_results_per_plane)
+    preferences = dedupe_results([*ledger_preferences, *preferences], limit=max_results_per_plane)
 
     graph = retrieve_gitvizz_records(workspace_root, task, limit=max_results_per_plane, timeout_sec=timeout_sec) if mode in {"deep", "graph"} else []
     if mode == "default":
@@ -1210,7 +1292,13 @@ def build_context_bundle(
 
 
 def preference_hints(workspace_root: Path, task: str) -> list[dict[str, Any]]:
-    return retrieve_preference_file_records(workspace_root, task)
+    return dedupe_results(
+        [
+            *retrieve_memory_ledger_records(workspace_root, task, limit=5),
+            *retrieve_preference_file_records(workspace_root, task),
+        ],
+        limit=5,
+    )
 
 
 def graph_hints(workspace_root: Path, task: str) -> list[dict[str, Any]]:
@@ -1317,6 +1405,7 @@ def build_evidence_bundle(
         elif selected == "skills":
             results.extend(retrieve_skill_records(workspace_root, query, limit=per_plane_limit))
         elif selected == "preference":
+            results.extend(retrieve_memory_ledger_records(workspace_root, query, limit=per_plane_limit))
             results.extend(retrieve_brv_records(workspace_root, query, limit=per_plane_limit, timeout_sec=timeout_sec))
         elif selected == "graph":
             results.extend(retrieve_gitvizz_records(workspace_root, query, limit=per_plane_limit, timeout_sec=timeout_sec))
@@ -1455,6 +1544,13 @@ def command_setup(args: argparse.Namespace) -> int:
 
 def command_check(args: argparse.Namespace) -> int:
     return command_runtime_helper(args, "check")
+
+
+def command_memory(args: argparse.Namespace) -> int:
+    workspace_root = resolve_workspace_root(args.workspace_root)
+    controller = packet_script(workspace_root, None, os.path.join("scripts", "llm_wiki_memory_controller.py"))
+    command = python_command() + [str(controller), "--workspace-root", str(workspace_root), *args.memory_args]
+    return run_command(command, cwd=workspace_root)
 
 
 def command_pokemon_benchmark(args: argparse.Namespace) -> int:
@@ -1605,6 +1701,39 @@ def ensure_manifest(workspace_root: Path, run_id: str, task: str = "") -> dict[s
     return manifest
 
 
+def load_memory_controller_module() -> Any | None:
+    controller_path = Path(__file__).resolve().parent / "llm_wiki_memory_controller.py"
+    if not controller_path.exists():
+        return None
+    spec = importlib.util.spec_from_file_location("llm_wiki_memory_controller_runtime", controller_path)
+    if spec is None or spec.loader is None:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def auto_extract_memory_for_run(workspace_root: Path, run_id: str, task: str) -> dict[str, Any]:
+    module = load_memory_controller_module()
+    if module is None:
+        return {"status": "unavailable", "message": "memory controller script is unavailable"}
+    try:
+        raw_path = run_root(workspace_root, run_id) / "raw.txt"
+        source_file = str(raw_path) if raw_path.exists() else ""
+        extract_args = argparse.Namespace(text="", source_file=source_file, run_id="" if source_file else run_id, task=task)
+        payload = module.cmd_extract(workspace_root, extract_args)
+    except Exception as exc:
+        return {"status": "error", "message": str(exc)}
+    return {
+        "status": "ok",
+        "staged": len(payload.get("staged", [])),
+        "approved": len(payload.get("approved", [])),
+        "merged": len(payload.get("merged", [])),
+        "filtered": len(payload.get("filtered", [])),
+        "projection": payload.get("projection", ""),
+    }
+
+
 def command_reduce(args: argparse.Namespace) -> int:
     workspace_root = resolve_workspace_root(args.workspace_root)
     source_text = args.text or read_text(Path(args.source_file), limit=50000) if args.source_file else args.text
@@ -1619,9 +1748,14 @@ def command_reduce(args: argparse.Namespace) -> int:
     (root / "raw.txt").write_text(source_text, encoding="utf-8")
     (root / "reducer_packet.md").write_text(packet, encoding="utf-8")
     write_json(root / "claims.json", {"version": 1, "run_id": run_id, "claims": claims})
+    memory_extraction = auto_extract_memory_for_run(workspace_root, run_id, args.task or str(manifest.get("task") or ""))
+    manifest = load_json(root / "manifest.json") or manifest
+    manifest["memory_extraction"] = memory_extraction
+    write_json(root / "manifest.json", manifest)
     payload = {
         "command": "llm-wiki-packet reduce",
         "run_id": run_id,
+        "memory_extraction": memory_extraction,
         "artifacts": {
             "raw": workspace_rel(workspace_root, root / "raw.txt"),
             "reducer_packet": workspace_rel(workspace_root, root / "reducer_packet.md"),
@@ -1878,6 +2012,11 @@ def build_parser() -> argparse.ArgumentParser:
             help="Do not skip GitVizz during the helper run.",
         )
         helper_parser.set_defaults(func=helper_func)
+
+    memory_parser = subparsers.add_parser("memory", help="Run the review-gated semantic/preference memory controller.")
+    memory_parser.add_argument("--workspace-root", help="Activated workspace root. Defaults to the current repo.")
+    memory_parser.add_argument("memory_args", nargs=argparse.REMAINDER)
+    memory_parser.set_defaults(func=command_memory)
 
     context_parser = subparsers.add_parser(
         "context",

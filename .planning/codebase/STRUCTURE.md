@@ -36,7 +36,7 @@ llm_wiki_prompt_packet/
 
 - Purpose: Hold the reusable runtime helpers and supporting docs
 - Contains: `support/scripts/*.ps1`, `support/scripts/*.sh`, `support/scripts/*.py`, plus `LLM_WIKI_MEMORY.md` and `SKILL_CREATION_AT_EXPERT_LEVEL.md`
-- Key files: `support/scripts/setup_llm_wiki_memory.sh`, `support/scripts/setup_llm_wiki_memory.ps1`, `support/scripts/llm_wiki_skill_mcp.py`
+- Key files: `support/scripts/setup_llm_wiki_memory.sh`, `support/scripts/setup_llm_wiki_memory.ps1`, `support/scripts/llm_wiki_skill_mcp.py`, `support/scripts/llm_wiki_memory_controller.py`, `support/scripts/llm_wiki_packet.py`, `support/scripts/dashboard_server.py`
 - Subdirectories: `support/scripts/` is the main executable surface
 
 **prompts/:**
@@ -165,11 +165,23 @@ llm_wiki_prompt_packet/
 - Source: Partly tracked (`.llm-wiki/package.json`), mostly generated in installed workspaces
 - Committed: Partially
 
+**.llm-wiki/memory-ledger/:**
+
+- Purpose: Local-first semantic/preference memory controller state
+- Source: Created by the memory controller and installer bootstrap
+- Committed: Directory `.gitkeep` files only; memory objects, `events.jsonl`, and `index.json` are ignored
+- Read by: `support/scripts/llm_wiki_packet.py` and `support/scripts/dashboard_server.py`
+- Written by: `support/scripts/llm_wiki_memory_controller.py`
+
 **.planning/codebase/:**
 
 - Purpose: Generated codebase documentation for planning and onboarding
 - Source: Refreshed by mapping workflows such as this one
 - Committed: Yes
+
+**Visual map:**
+
+- `.planning/codebase/VISUAL_MEMORY_RETRIEVAL_MAP.md` shows the full review-gated memory loop, tool-call points, ledger state, retrieval precedence, and remaining personalization gaps.
 
 ---
 

@@ -169,6 +169,96 @@ class PacketCliTests(unittest.TestCase):
             self.assertEqual(payload["evidence"][0]["status"], "ok")
             self.assertTrue(any("evidence" in item for item in payload["expansion_suggestions"]))
 
+    def test_context_includes_approved_memory_ledger_hints(self) -> None:
+        with tempfile.TemporaryDirectory() as workspace_dir:
+            workspace_root = Path(workspace_dir)
+            approved_dir = workspace_root / ".llm-wiki" / "memory-ledger" / "approved"
+            approved_dir.mkdir(parents=True, exist_ok=True)
+            (workspace_root / ".llm-wiki" / "config.json").write_text(
+                json.dumps({"memory_controller": {"ledger_path": ".llm-wiki/memory-ledger"}}),
+                encoding="utf-8",
+            )
+            (approved_dir / "mem.json").write_text(
+                json.dumps(
+                    {
+                        "id": "mem-preference-local-ranking",
+                        "kind": "preference",
+                        "claim": "The user prefers local memory ranking hints during retrieval.",
+                        "status": "approved",
+                        "confidence": "high",
+                        "source_refs": [{"type": "inline", "ref": "test"}],
+                        "canonical_keys": ["preference:local", "preference:memory", "preference:ranking"],
+                        "valid_from": "2026-01-01T00:00:00Z",
+                        "valid_to": "",
+                        "supersedes": [],
+                        "contradicts": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (approved_dir / "invalid.json").write_text(
+                json.dumps(
+                    {
+                        "id": "mem-invalidated",
+                        "kind": "preference",
+                        "claim": "This invalidated preference should not appear.",
+                        "status": "invalidated",
+                        "confidence": "high",
+                        "valid_to": "2026-01-02T00:00:00Z",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (workspace_root / "AGENTS.md").write_text("# Agents\n", encoding="utf-8")
+
+            args = self.module.build_parser().parse_args(
+                ["context", "--workspace-root", workspace_dir, "--task", "local memory ranking", "--json"]
+            )
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                self.assertEqual(self.module.main_from_args(args), 0)
+
+            payload = json.loads(stdout.getvalue())
+            memory_hints = [item for item in payload["preference_hints"] if item["retrieval"] == "memory-ledger"]
+            self.assertEqual(memory_hints[0]["memory_id"], "mem-preference-local-ranking")
+            self.assertFalse(any(item.get("memory_id") == "mem-invalidated" for item in payload["results"]))
+            index = json.loads((workspace_root / ".llm-wiki" / "memory-ledger" / "index.json").read_text(encoding="utf-8"))
+            self.assertEqual(index["results"][0]["memory_id"], "mem-preference-local-ranking")
+            ranked_memory = json.loads((approved_dir / "mem.json").read_text(encoding="utf-8"))
+            self.assertGreater(ranked_memory["rank_score"], 0)
+
+    def test_reduce_auto_extracts_memory_candidates_from_run_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as workspace_dir:
+            workspace_root = Path(workspace_dir)
+            (workspace_root / ".llm-wiki").mkdir(parents=True, exist_ok=True)
+            (workspace_root / ".llm-wiki" / "config.json").write_text("{}", encoding="utf-8")
+
+            args = self.module.build_parser().parse_args(
+                [
+                    "reduce",
+                    "--workspace-root",
+                    workspace_dir,
+                    "--run-id",
+                    "run-memory",
+                    "--task",
+                    "capture memory",
+                    "--text",
+                    "Remember that I prefer automatic memory extraction from reducer packets.",
+                    "--json",
+                ]
+            )
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                self.assertEqual(self.module.main_from_args(args), 0)
+
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["memory_extraction"]["status"], "ok")
+            self.assertEqual(payload["memory_extraction"]["staged"], 1)
+            candidates = list((workspace_root / ".llm-wiki" / "memory-ledger" / "candidates").glob("*.json"))
+            self.assertEqual(len(candidates), 1)
+            manifest = json.loads((workspace_root / ".llm-wiki" / "skill-pipeline" / "runs" / "run-memory" / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["memory_extraction"]["staged"], 1)
+
     def test_default_context_does_not_invoke_external_retrieval_planes(self) -> None:
         with tempfile.TemporaryDirectory() as workspace_dir:
             workspace_root = Path(workspace_dir)

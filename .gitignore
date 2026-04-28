@@ -10,5 +10,11 @@ node_modules/
 npm-debug.log*
 .llm-wiki/tools/
 .llm-wiki/skill-index.json
+.llm-wiki/memory-ledger/candidates/*
+!.llm-wiki/memory-ledger/candidates/.gitkeep
+.llm-wiki/memory-ledger/approved/*
+!.llm-wiki/memory-ledger/approved/.gitkeep
+.llm-wiki/memory-ledger/events.jsonl
+.llm-wiki/memory-ledger/index.json
 support/scripts/.llm-wiki/
 .artifacts/pokemon-benchmark/

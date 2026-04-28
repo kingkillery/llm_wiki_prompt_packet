@@ -87,6 +87,53 @@ class TestDashboardServer(unittest.TestCase):
         self.assertIn("test event", entries[0]["heading"])
         self.assertIn("line one", entries[0]["body"])
 
+    def test_handler_memory_objects_reads_pending_and_approved(self) -> None:
+        handler = self.dashboard.DashboardHandler
+        handler.workspace = self.workspace
+        candidate_dir = self.workspace / ".llm-wiki" / "memory-ledger" / "candidates"
+        approved_dir = self.workspace / ".llm-wiki" / "memory-ledger" / "approved"
+        candidate_dir.mkdir(parents=True)
+        approved_dir.mkdir(parents=True)
+        (candidate_dir / "pending.json").write_text(
+            json.dumps(
+                {
+                    "id": "mem-pending",
+                    "kind": "preference",
+                    "status": "pending",
+                    "claim": "I prefer review-gated memory.",
+                    "confidence": "medium",
+                    "valid_from": "2026-01-01T00:00:00Z",
+                }
+            ),
+            encoding="utf-8",
+        )
+        (approved_dir / "approved.json").write_text(
+            json.dumps(
+                {
+                    "id": "mem-approved",
+                    "kind": "semantic",
+                    "status": "approved",
+                    "claim": "Approved semantic memory is visible.",
+                    "confidence": "high",
+                    "sensitivity": "normal",
+                    "rank_score": 0.4,
+                    "superseded_by": "",
+                    "valid_from": "2026-01-02T00:00:00Z",
+                }
+            ),
+            encoding="utf-8",
+        )
+        events_path = self.workspace / ".llm-wiki" / "memory-ledger" / "events.jsonl"
+        events_path.write_text(json.dumps({"action": "extract", "memory_id": "mem-pending"}) + "\n", encoding="utf-8")
+
+        objects = handler._memory_objects(handler)
+        self.assertEqual({item["id"] for item in objects}, {"mem-pending", "mem-approved"})
+        self.assertEqual([item for item in objects if item["id"] == "mem-approved"][0]["rank_score"], 0.4)
+        pending = handler._memory_objects(handler, "pending")
+        self.assertEqual([item["id"] for item in pending], ["mem-pending"])
+        events = handler._memory_events(handler)
+        self.assertEqual(events[0]["memory_id"], "mem-pending")
+
     def test_wiki_pages_have_obsidian_url(self) -> None:
         handler = self.dashboard.DashboardHandler
         handler.workspace = self.workspace

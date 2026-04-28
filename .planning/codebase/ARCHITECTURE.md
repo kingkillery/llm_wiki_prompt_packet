@@ -35,6 +35,13 @@
 - Depends on: Generated `.llm-wiki/config.json`, external CLIs, and the current workspace
 - Used by: Installed vaults, `g-kade` workspace bootstrap, and container entrypoints
 
+**Memory Controller Layer:**
+
+- Purpose: Extract, reconcile, review, approve, invalidate, and rank local semantic/preference memories from real usage
+- Contains: `support/scripts/llm_wiki_memory_controller.py`, installed mirror `scripts/llm_wiki_memory_controller.py`, and `.llm-wiki/memory-ledger/`
+- Depends on: reducer/run artifacts, raw CLI text, generated config, and the filesystem ledger
+- Used by: `llm_wiki_packet.py` retrieval, the read-only dashboard, and CLI review workflows
+
 **Gateway / Hosted Layer:**
 
 - Purpose: Expose the local contract through HTTP and deployment surfaces
@@ -79,6 +86,22 @@
 - Generated workspace state lives under `.llm-wiki/`, `.brv/`, `wiki/`, and `raw/`
 - User-global MCP state is patched into `~/.claude/settings.json`, `~/.codex/config.toml`, and `~/.factory/mcp.json`
 
+**Memory Controller Loop:**
+
+```mermaid
+flowchart TD
+  R["Run/reducer/text input"] --> X["extract"]
+  X --> P["pending candidates"]
+  P --> V["review/edit/approve/reject"]
+  V --> A["approved memories"]
+  A --> K["ranked retrieval hints"]
+  A --> W["generated semantic wiki projection"]
+  A --> UI["dashboard visibility"]
+  K --> C["context/evidence bundle"]
+  SRC["current source evidence"] --> C
+  SRC -. "outranks memory" .-> C
+```
+
 ## Key Abstractions
 
 **Packet Installer:**
@@ -98,6 +121,12 @@
 - Purpose: Manage the local-first skill lifecycle and reducer/router workflow
 - Examples: `SkillStore` in `support/scripts/llm_wiki_skill_mcp.py`
 - Pattern: Registry-backed filesystem state machine with MCP and CLI entrypoints
+
+**Memory Ledger Controller:**
+
+- Purpose: Keep semantic and preference memory review-gated while still feeding approved memory into retrieval
+- Examples: `extract`, `approve`, `invalidate`, and `rank` commands in `support/scripts/llm_wiki_memory_controller.py`
+- Pattern: JSON-object ledger plus audit log, with generated wiki projection for approved semantic memories
 
 **Gateway Route Split:**
 

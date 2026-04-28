@@ -18,6 +18,14 @@
   - Auth: `BYTEROVER_API_KEY` or `brv login`
   - Integration method: CLI plus the gateway routes `/memory/status`, `/memory/query`, and `/memory/curate`
 
+**Local Review-Gated Memory Plane:**
+
+- `llm_wiki_memory_controller.py` - Local JSON semantic/preference memory extraction, review, invalidation, and ranking
+  - SDK/Client: CLI entrypoint in `support/scripts/llm_wiki_memory_controller.py`, installed mirror at `scripts/llm_wiki_memory_controller.py`, and packet passthrough via `llm_wiki_packet.py memory ...`
+  - Auth: none; filesystem-local review gate
+  - Integration method: JSON ledger under `.llm-wiki/memory-ledger/`, consumed by `llm_wiki_packet.py` and `dashboard_server.py`
+  - BRV relationship: approved local preferences are not automatically exported to BRV in v1
+
 **Graph / Web Surface:**
 
 - GitVizz - Optional frontend/backend graph service
@@ -38,6 +46,11 @@
 - Local filesystem / Obsidian vault - Packet output and skill artifacts live under installed `wiki/`, `raw/`, `.llm-wiki/`, and `.brv/`
   - Source files: `installers/install_obsidian_agent_memory.py`, `support/scripts/llm_wiki_skill_mcp.py`
   - Mounted paths: `/workspace` in `docker-compose.yml`
+- Memory ledger - Review-gated memory state lives under `.llm-wiki/memory-ledger/`
+  - Candidates: `.llm-wiki/memory-ledger/candidates/*.json`
+  - Approved/invalidated: `.llm-wiki/memory-ledger/approved/*.json`
+  - Audit: `.llm-wiki/memory-ledger/events.jsonl`
+  - Ranking index: `.llm-wiki/memory-ledger/index.json`
 
 **Telemetry / Observability Storage:**
 

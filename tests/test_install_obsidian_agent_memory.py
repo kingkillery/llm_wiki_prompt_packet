@@ -198,6 +198,7 @@ class InstallerHomeSkillTests(unittest.TestCase):
         self.assertEqual(config["toolset"]["preferred_project_bootstrap_command"], "init")
         self.assertIn("context", config["toolset"]["preferred_project_runtime_commands"])
         self.assertIn("evidence", config["toolset"]["preferred_project_runtime_commands"])
+        self.assertIn("memory", config["toolset"]["preferred_project_runtime_commands"])
         self.assertIn("improve", config["toolset"]["preferred_project_runtime_commands"])
         self.assertEqual(config["stack"]["retrieval_planner"]["default_evidence_plane"], "all")
         self.assertEqual(config["stack"]["retrieval_planner"]["planes"], ["source", "skills", "preference", "graph", "local"])
@@ -210,6 +211,10 @@ class InstallerHomeSkillTests(unittest.TestCase):
         self.assertEqual(config["docs"]["contract_path"], "SYSTEM_CONTRACT.md")
         self.assertEqual(config["memory_base"]["name"], "kade-hq")
         self.assertEqual(config["memory_base"]["vault_id"], "fd8411f00d3a9d21")
+        self.assertEqual(config["memory_controller"]["script_path"], "scripts/llm_wiki_memory_controller.py")
+        self.assertEqual(config["memory_controller"]["ledger_path"], ".llm-wiki/memory-ledger")
+        self.assertTrue(config["memory_controller"]["review_gate"])
+        self.assertEqual(config["memory_controller"]["ranking"]["lexical_weight"], 0.7)
         self.assertEqual(config["obsidian"]["mcp_server_key"], "obsidian")
         self.assertEqual(config["obsidian"]["package_name"], "@bitbonsai/mcpvault")
         self.assertEqual(config["obsidian"]["wrapper_script_path"], "scripts/llm_wiki_obsidian_mcp.py")
@@ -251,6 +256,8 @@ class InstallerHomeSkillTests(unittest.TestCase):
 
         self.assertIn("skill-pipeline/runs/*", gitignore)
         self.assertIn("!skill-pipeline/runs/.gitkeep", gitignore)
+        self.assertIn("memory-ledger/candidates/*", gitignore)
+        self.assertIn("!memory-ledger/approved/.gitkeep", gitignore)
 
     def test_build_preflight_report_mentions_repo_runtime_contract(self) -> None:
         lines = self.module.build_preflight_report(
@@ -357,6 +364,9 @@ class InstallerHomeSkillTests(unittest.TestCase):
 
         for path in self.module.packet_required_paths(vault):
             self.assertTrue(path.exists(), path)
+        self.assertTrue((vault / "scripts" / "llm_wiki_memory_controller.py").exists())
+        self.assertTrue((vault / ".llm-wiki" / "memory-ledger" / "candidates" / ".gitkeep").exists())
+        self.assertTrue((vault / ".llm-wiki" / "memory-ledger" / "approved" / ".gitkeep").exists())
 
         index_path = vault / "wiki" / "index.md"
         log_path = vault / "wiki" / "log.md"

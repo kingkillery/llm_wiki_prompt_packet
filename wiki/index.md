@@ -26,4 +26,5 @@
 ## Key operational surfaces
 
 - [Skill Index](skills/index.md)
+- [Visual Memory And Retrieval Map](../.planning/codebase/VISUAL_MEMORY_RETRIEVAL_MAP.md) - codebase map for the review-gated memory controller, retrieval precedence, dashboard visibility, and remaining personalization gaps
 
