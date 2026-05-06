@@ -19,18 +19,18 @@ Before substantive work:
 
 ## MCP Servers
 
-Four MCP servers are wired via `.mcp.json` for stdio access:
+Codex startup uses a lean repo-local `.mcp.json`: only `llm-wiki-skills` is loaded by default. Use packet CLI/provider/BRV commands for retrieval, wiki scribing, and durable preferences unless a non-Codex MCP client has explicitly wired those transports.
 
 | Server | Purpose | Required? |
 |--------|---------|----------|
-| `pk-qmd` | Source evidence, docs, prompts, notes retrieval | **Always** |
 | `llm-wiki-skills` | Skill lifecycle (lookup, reflect, validate, evolve, retire) | **Always** |
-| `obsidian` | Vault read/write — the scribing surface for wiki notes | **Pivotal but optional** |
-| `brv` | Durable memory, preferences, workflow quirks | Optional |
+| `pk-qmd` | Source evidence via `llm-wiki-packet context/evidence` or non-Codex MCP wiring | **Always, outside Codex startup** |
+| `obsidian` | Vault read/write via provider/save CLI or non-Codex MCP wiring | **Pivotal but optional, outside Codex startup** |
+| `brv` | Durable memory via BRV CLI wrappers | Optional, outside Codex startup |
 
 ### Obsidian: pivotal but optional
 
-The `obsidian` MCP server connects to the configured Obsidian vault and provides `read_note`, `write_note`, `search_notes`, `manage_tags`, and `move_note` tools. It is the **preferred path** for all wiki scribing — creating, updating, and organizing notes.
+The `obsidian` MCP server connects to the configured Obsidian vault and provides `read_note`, `write_note`, `search_notes`, `manage_tags`, and `move_note` tools. It is the **preferred path** for all wiki scribing - creating, updating, and organizing notes.
 
 Vault path rule: if `.llm-wiki/config.json`, MCP settings, environment variables, or the current user instruction establishes the Obsidian vault path, use that. If no vault path is established, ask the user where to create or access the Obsidian vault before reading, writing, creating, or assuming any vault. Do not silently use the current repo as an Obsidian vault.
 
@@ -42,7 +42,7 @@ When `obsidian` is unavailable (desktop app not running, vault not mounted, MCP 
 
 1. Fall back to direct file I/O only against the configured vault path.
 2. Log that the fallback was used (append to `wiki/log.md`).
-3. Note any link-integrity risk — Obsidian-aware moves preserve backlinks; raw file moves do not.
+3. Note any link-integrity risk - Obsidian-aware moves preserve backlinks; raw file moves do not.
 4. If the task is a rename or move, prefer pausing and asking the user to open Obsidian rather than risking broken links.
 
 ### BRV: skip gracefully
@@ -51,8 +51,8 @@ If `brv` has no connected provider, do not rely on `brv query` or `brv curate` f
 
 ## Script locations
 
-- `support/scripts/` — source tree for all Python and shell scripts; read this for code review, debugging, or test authoring.
-- `scripts/` — installer-deployed surface in an activated project vault; invoke scripts from here during normal vault operations.
+- `support/scripts/` - source tree for all Python and shell scripts; read this for code review, debugging, or test authoring.
+- `scripts/` - installer-deployed surface in an activated project vault; invoke scripts from here during normal vault operations.
 - When KADE.md or handoff logs mention `support/scripts/`, they are referencing the source. When AGENTS.md, CLAUDE.md, or config reference `scripts/`, they mean the deployed copy.
 
 ## Tool routing

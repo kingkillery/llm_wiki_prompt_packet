@@ -166,19 +166,13 @@ class RuntimeTests(unittest.TestCase):
         self.assertNotIn("hf_test_secret", json.dumps(claude_payload))
         self.assertNotIn("hf_test_secret", json.dumps(factory_payload))
 
-    def test_workspace_mcp_json_declares_obsidian_plus_required_servers(self) -> None:
+    def test_workspace_mcp_json_declares_only_fast_required_server(self) -> None:
         mcp_path = REPO_ROOT / ".mcp.json"
 
         payload = json.loads(mcp_path.read_text(encoding="utf-8"))
 
-        self.assertEqual(set(payload.keys()), {"pk-qmd", "llm-wiki-skills", "obsidian", "brv"})
-        self.assertEqual(payload["pk-qmd"]["args"], ["mcp"])
+        self.assertEqual(set(payload.keys()), {"llm-wiki-skills"})
         self.assertEqual(payload["llm-wiki-skills"]["command"], "python")
-        self.assertEqual(payload["brv"]["args"], ["mcp"])
-        self.assertEqual(payload["obsidian"]["command"], "python")
-        self.assertIn("support/scripts/llm_wiki_obsidian_mcp.py", payload["obsidian"]["args"])
-        self.assertIn("--ensure-install", payload["obsidian"]["args"])
-        self.assertIn("OBSIDIAN_VAULT_PATH", payload["obsidian"]["env"])
 
     def test_update_codex_toml_uses_windows_safe_literal_strings(self) -> None:
         config_path = self.workspace / "config.toml"
@@ -210,11 +204,11 @@ class RuntimeTests(unittest.TestCase):
             "llm-wiki-skills",
             "python",
             ["scripts/llm_wiki_skill_mcp.py", "--workspace", ".", "mcp"],
-            startup_timeout_sec=120,
+            startup_timeout_sec=14,
         )
 
         content = config_path.read_text(encoding="utf-8")
-        self.assertIn("startup_timeout_sec = 120", content)
+        self.assertIn("startup_timeout_sec = 14", content)
 
     def test_patch_skill_mcp_configs_sets_codex_startup_timeout(self) -> None:
         skill_script = self.workspace / "scripts" / "llm_wiki_skill_mcp.py"
@@ -232,7 +226,51 @@ class RuntimeTests(unittest.TestCase):
 
         content = (self.workspace / "home" / ".codex" / "config.toml").read_text(encoding="utf-8")
         self.assertIn("[mcp_servers.llm-wiki-skills]", content)
-        self.assertIn("startup_timeout_sec = 120", content)
+        self.assertIn("startup_timeout_sec = 14", content)
+
+    def test_patch_qmd_mcp_configs_removes_codex_qmd_server(self) -> None:
+        codex_config = self.workspace / "home" / ".codex" / "config.toml"
+        codex_config.parent.mkdir(parents=True, exist_ok=True)
+        codex_config.write_text(
+            "[mcp_servers.pk-qmd]\ncommand = 'pk-qmd'\nargs = ['mcp']\n\n"
+            "[mcp_servers.qmd]\ncommand = 'qmd'\nargs = ['mcp']\n\n"
+            "[mcp_servers.llm-wiki-skills]\ncommand = 'python'\nargs = ['x']\n",
+            encoding="utf-8",
+        )
+        summary: list[str] = []
+
+        with mock.patch.object(self.module.Path, "home", return_value=self.workspace / "home"):
+            self.module.patch_qmd_mcp_configs("pk-qmd", summary)
+
+        content = codex_config.read_text(encoding="utf-8")
+        self.assertNotIn("[mcp_servers.pk-qmd]", content)
+        self.assertNotIn("[mcp_servers.qmd]", content)
+        self.assertIn("[mcp_servers.llm-wiki-skills]", content)
+        self.assertTrue(any("Skipped ~/.codex/config.toml for pk-qmd" in item for item in summary))
+
+    def test_patch_obsidian_mcp_configs_removes_codex_obsidian_server(self) -> None:
+        codex_config = self.workspace / "home" / ".codex" / "config.toml"
+        codex_config.parent.mkdir(parents=True, exist_ok=True)
+        codex_config.write_text(
+            r"[mcp_servers.obsidian]" "\n"
+            r"command = 'mcpvault'" "\n"
+            r"args = ['C:\Vaults\Kade-HQ']" "\n\n"
+            "[mcp_servers.llm-wiki-skills]\ncommand = 'python'\nargs = ['x']\n",
+            encoding="utf-8",
+        )
+        runtime = {
+            "obsidian_server_key": "obsidian",
+            "obsidian_vault_path": self.workspace / "memory",
+        }
+        summary: list[str] = []
+
+        with mock.patch.object(self.module.Path, "home", return_value=self.workspace / "home"):
+            self.module.patch_obsidian_mcp_configs(runtime, "mcpvault", summary)
+
+        content = codex_config.read_text(encoding="utf-8")
+        self.assertNotIn("[mcp_servers.obsidian]", content)
+        self.assertIn("[mcp_servers.llm-wiki-skills]", content)
+        self.assertTrue(any("Skipped ~/.codex/config.toml for obsidian" in item for item in summary))
 
     def test_ensure_skill_index_builds_missing_index(self) -> None:
         self.write_config({"skills": {"active_dir": "wiki/skills/active"}})

@@ -678,7 +678,8 @@ What the setup helper now does:
 - installs or verifies `pk-qmd`
 - prefers the packet-local dependency manifest at `.llm-wiki/package.json`
 - falls back to `kingkillery/pk-qmd` only when packet-local install is unavailable and `LLM_WIKI_ALLOW_GLOBAL_TOOL_INSTALL=1` is set
-- wires Claude/Codex/Factory MCP configs
+- wires Claude/Factory MCP configs and keeps Codex on a lean skill-MCP startup path; use packet/provider/BRV CLI commands for heavier retrieval and wiki transports from Codex
+- on re-run, removes stale Codex `pk-qmd`, legacy `qmd`, and `obsidian` stdio MCP entries so old slow startup wiring does not linger
 - adds a QMD collection for the current vault
 - adds default collection context
 - runs `pk-qmd update`

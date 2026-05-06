@@ -1,8 +1,4 @@
 {
-  "pk-qmd": {
-    "command": "pk-qmd",
-    "args": ["mcp"]
-  },
   "llm-wiki-skills": {
     "command": "python",
     "args": [
@@ -11,21 +7,5 @@
       "--workspace",
       "."
     ]
-  },
-  "obsidian": {
-    "command": "python",
-    "args": [
-      "support/scripts/llm_wiki_obsidian_mcp.py",
-      "--workspace",
-      ".",
-      "--ensure-install"
-    ],
-    "env": {
-      "OBSIDIAN_VAULT_PATH": "${OBSIDIAN_VAULT_PATH}"
-    }
-  },
-  "brv": {
-    "command": "brv",
-    "args": ["mcp"]
   }
 }

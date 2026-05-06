@@ -45,7 +45,7 @@ DEFAULT_WIKI_FOLDERS = {
 DEFAULT_WIKI_NOTE_TYPES = ["synthesis", "concept", "source", "decision", "session"]
 DEFAULT_WIKI_RESEARCH_NOTE_TYPES = ["source", "entity", "concept", "question", "synthesis"]
 DEFAULT_SKILL_SERVER_KEY = "llm-wiki-skills"
-DEFAULT_SKILL_MCP_STARTUP_TIMEOUT_SEC = 120
+DEFAULT_SKILL_MCP_STARTUP_TIMEOUT_SEC = 14
 DEFAULT_SKILL_SCRIPT = "scripts/llm_wiki_skill_mcp.py"
 DEFAULT_FAILURE_HOOK_SCRIPT = "scripts/llm_wiki_failure_hook.py"
 DEFAULT_AGENT_FAILURE_CAPTURE_SCRIPT = "scripts/llm_wiki_agent_failure_capture.py"
@@ -405,6 +405,16 @@ def update_codex_toml(
         content += "\n" + block + "\n"
     content = legacy.sub("", content)
     path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+
+
+def remove_codex_toml_servers(path: Path, server_keys: list[str]) -> None:
+    if not path.exists():
+        return
+    content = path.read_text(encoding="utf-8")
+    for server_key in server_keys:
+        section = re.compile(rf"(?ms)^\[mcp_servers\.{re.escape(server_key)}\]\n(?:.*?)(?=^\[|\Z)")
+        content = section.sub("", content)
     path.write_text(content, encoding="utf-8")
 
 
@@ -953,8 +963,8 @@ def patch_qmd_mcp_configs(qmd_command: str, summary: list[str]) -> None:
     qmd_args = qmd_invocation[1:]
     update_json_mcp_config(user_home / ".claude" / "settings.json", "pk-qmd", qmd_command_name, qmd_args, factory_style=False)
     summary.append("Updated ~/.claude/settings.json")
-    update_codex_toml(user_home / ".codex" / "config.toml", "pk-qmd", qmd_command_name, qmd_args)
-    summary.append("Updated ~/.codex/config.toml")
+    remove_codex_toml_servers(user_home / ".codex" / "config.toml", ["pk-qmd", "qmd"])
+    summary.append("Skipped ~/.codex/config.toml for pk-qmd (use scripts/llm_wiki_packet.py context/evidence outside MCP)")
     update_json_mcp_config(user_home / ".factory" / "mcp.json", "pk-qmd", qmd_command_name, qmd_args, factory_style=True)
     summary.append("Updated ~/.factory/mcp.json")
 
@@ -974,14 +984,11 @@ def patch_obsidian_mcp_configs(runtime: dict[str, Any], obsidian_command: str, s
         env=obsidian_env,
     )
     summary.append(f"Updated ~/.claude/settings.json for {runtime['obsidian_server_key']}")
-    update_codex_toml(
-        user_home / ".codex" / "config.toml",
-        runtime["obsidian_server_key"],
-        obsidian_command_name,
-        obsidian_args,
-        env=obsidian_env,
+    remove_codex_toml_servers(user_home / ".codex" / "config.toml", [runtime["obsidian_server_key"]])
+    summary.append(
+        f"Skipped ~/.codex/config.toml for {runtime['obsidian_server_key']} "
+        "(use scripts/llm_wiki_provider.py or scripts/llm_wiki_save.py outside MCP)"
     )
-    summary.append(f"Updated ~/.codex/config.toml for {runtime['obsidian_server_key']}")
     update_json_mcp_config(
         user_home / ".factory" / "mcp.json",
         runtime["obsidian_server_key"],

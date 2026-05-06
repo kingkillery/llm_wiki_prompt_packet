@@ -15,16 +15,16 @@ This repo packages the combined `Kade-HQ` + `G-Stack` + `pk-qmd` + `Byterover` +
 - Vault scribing plane: `obsidian` MCP (pivotal but optional)
 - Obsidian behavior layer: `agent-cli-obsidian` conventions for save, query, autoresearch, and wiki note taxonomy
 
-## MCP Servers (stdio via `.mcp.json`)
+## MCP Servers And Codex Startup
 
-Four MCP servers are configured for direct agent access without Docker:
+The repo-local `.mcp.json` intentionally keeps Codex startup lean: it loads only the lightweight `llm-wiki-skills` stdio server by default. Slower or optional providers stay available through explicit packet commands, setup helpers, or non-Codex MCP wiring so they do not block Codex launch.
 
 | Server | Command | Purpose | Required? |
 |--------|---------|---------|----------|
-| `pk-qmd` | `pk-qmd mcp` | Source evidence retrieval, docs, prompts, notes | **Always** |
 | `llm-wiki-skills` | `python llm_wiki_skill_mcp.py mcp` | Skill lifecycle (lookup, reflect, validate, evolve, retire) | **Always** |
-| `obsidian` | `npx -y @bitbonsai/mcpvault <vault-path>` | Vault read/write — wiki scribing surface | **Pivotal but optional** |
-| `brv` | `brv mcp` | Durable memory, preferences, workflow quirks | Optional |
+| `pk-qmd` | `scripts/llm_wiki_packet.py context/evidence` or Claude/Factory MCP wiring | Source evidence retrieval, docs, prompts, notes | **Always, outside Codex startup** |
+| `obsidian` | `scripts/llm_wiki_provider.py`, `scripts/llm_wiki_save.py`, or Claude/Factory MCP wiring | Vault read/write - wiki scribing surface | **Pivotal but optional, outside Codex startup** |
+| `brv` | `scripts/brv_query.*`, `scripts/brv_curate.*`, or `brv` CLI | Durable memory, preferences, workflow quirks | Optional, outside Codex startup |
 
 ### Obsidian: pivotal but optional
 
@@ -40,7 +40,7 @@ When `obsidian` is unavailable:
 1. Fall back to direct file I/O only against the configured vault path.
 2. Log the fallback in `wiki/log.md`.
 3. For renames and moves, prefer pausing and asking the user to open Obsidian (link-integrity risk).
-4. The system remains fully functional — `pk-qmd` and `llm-wiki-skills` provide evidence and skill management independently.
+4. The system remains fully functional - `pk-qmd` and `llm-wiki-skills` provide evidence and skill management independently.
 
 ### BRV: skip gracefully
 
