@@ -12,6 +12,14 @@ npm-debug.log*
 .llm-wiki/playgrounds/**/.llm-wiki/tools/
 .llm-wiki/playgrounds/**/.git/
 .llm-wiki/playgrounds/obsidian-provider-swarm/main/fixtures/click/docs/changes.rst
+# Private/generated Obsidian playground captures from local user projects.
+.llm-wiki/playgrounds/obsidian-provider-swarm/main/vault/wiki/concepts/
+.llm-wiki/playgrounds/obsidian-provider-swarm/main/vault/wiki/decisions/
+.llm-wiki/playgrounds/obsidian-provider-swarm/main/vault/wiki/skills/
+.llm-wiki/playgrounds/obsidian-provider-swarm/main/vault/wiki/sources/
+.llm-wiki/playgrounds/obsidian-provider-swarm/main/vault/wiki/syntheses/IX Dash Organization Opportunities After Ingestion.md
+.llm-wiki/playgrounds/obsidian-provider-swarm/main/vault/wiki/syntheses/SPWR IX Dash After Ingestion Map.md
+.llm-wiki/playgrounds/obsidian-provider-swarm/main/vault/wiki/syntheses/SPWR Interconnection Dash Codebase Map.md
 .llm-wiki/skill-index.json
 .llm-wiki/reports/*
 !.llm-wiki/reports/.gitkeep
