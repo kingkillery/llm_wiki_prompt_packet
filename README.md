@@ -17,15 +17,14 @@ This packet gives agents a durable operating system around your repo or Obsidian
 Most users only need this path:
 
 1. Install into the repo or vault you are already in.
-2. Run the health check.
-3. Ask your agent normal questions.
-4. Let the packet retrieve evidence and offer to save durable findings.
+2. Ask your agent normal questions.
+3. Let the packet retrieve evidence and offer to save durable findings.
 
-You do not need to understand the internal indexing system to use it. Setup, health checks, wrapped agent sessions, and the dashboard keep the skill index refreshed automatically.
+The install command runs setup and the closing health check for you. You do not need to understand the internal indexing system to use it.
 
 ## 60-Second Install
 
-Install into the current repo or vault.
+Install into the current repo. Run exactly one command for your shell.
 
 PowerShell:
 
@@ -51,6 +50,14 @@ Use the command that matches your shell. If your prompt starts with `PS C:\...>`
 - creates the Obsidian/wiki directory structure
 - refreshes the skill index
 - runs the closing health check
+
+After it finishes, ask naturally:
+
+```text
+Help me use llm-wiki in this repo.
+```
+
+Claude users can also run `/wiki-help`, but the slash command is optional.
 
 ## Verify It
 
@@ -82,8 +89,13 @@ Ask your agent the normal task. The packet gives it these habits:
 | a repeated workflow | suggest or create a skill |
 | a failed attempt | reduce it into an improvement candidate |
 | a deep research answer | save to Obsidian by default unless you opt out |
+| help using the packet | answer directly in plain language |
 
 Example prompts:
+
+```text
+Help me use this tool.
+```
 
 ```text
 Explain how auth works in this repo and save the durable architecture summary.
@@ -290,6 +302,7 @@ Three opt-in HF surfaces are wired into the packet:
 - `.claude/commands/wiki-skill.md`
 - `.claude/commands/wiki-save.md`
 - `.claude/commands/wiki-map.md`
+- `.claude/commands/wiki-help.md`
 
 ### Codex
 
@@ -306,6 +319,7 @@ Three opt-in HF surfaces are wired into the packet:
 - `.agent/workflows/wiki-skill.md`
 - `.agent/workflows/wiki-save.md`
 - `.agent/workflows/wiki-map.md`
+- `.agent/workflows/wiki-help.md`
 
 ### Stack config and health checks
 

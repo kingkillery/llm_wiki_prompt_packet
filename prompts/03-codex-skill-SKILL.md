@@ -37,6 +37,13 @@ This skill helps maintain a persistent markdown wiki backed by an explicit retri
 - Include scope, source evidence, codebase map, Mermaid diagram, key files, main flows, and `[VERIFY]` caveats.
 - Use `scripts/llm_wiki_generate.py` for the durable write/update so `wiki/index.md`, `wiki/log.md`, `wiki/hot.md`, and `wiki/overview.md` stay current.
 
+## Natural-language help
+
+- If the user asks how to use the packet, what it can do, how to install it, how to save a note, how to use Obsidian/wiki, or what to run next, answer directly in plain language.
+- Do not require the user to know script names, MCP server names, or slash commands.
+- Mention `/wiki-help` as an optional shortcut for Claude users, but treat normal questions like "help me use this" as enough.
+- For install help, show exactly one command for the user's current shell unless they ask for alternatives.
+
 ## Skill lifecycle
 
 - Treat reusable skills as first-class wiki assets.

@@ -109,6 +109,13 @@ Use this workspace as a KADE-HQ-backed memory workspace. Treat `AGENTS.md`, `LLM
 - Use G-Stack workflows for review, QA, debugging, browser dogfooding, deployment verification, and ship-readiness checks when the corresponding skill/runtime is installed.
 - Keep the root packet files as the source of truth for memory/retrieval wiring; keep KADE-specific handoff state under `kade/`.
 
+### Natural-Language Help
+
+- If the user asks how to use this tool, what it can do, how to install it, how to save to the wiki, how to use Obsidian, or what command to run next, answer directly in plain language.
+- Do not require the user to remember internal script names, MCP server names, or slash commands.
+- Mention `/wiki-help` as the optional shortcut, but treat ordinary requests like "help me use this", "what can this do?", and "how do I save this?" as valid help requests.
+- For install help, show exactly one command for the user's current shell unless they ask for alternatives.
+
 ### Memory Writes
 
 - Write durable repo knowledge to `wiki/` pages, not chat-only memory.
@@ -139,6 +146,7 @@ CLAUDE_FILES = {
     ".claude/commands/wiki-skill.md": PROMPTS / "12-claude-command-skill.md",
     ".claude/commands/wiki-save.md": PROMPTS / "14-claude-command-wiki-save.md",
     ".claude/commands/wiki-map.md": PROMPTS / "16-claude-command-wiki-map.md",
+    ".claude/commands/wiki-help.md": PROMPTS / "18-claude-command-wiki-help.md",
 }
 
 ANTIGRAVITY_FILES = {
@@ -148,6 +156,7 @@ ANTIGRAVITY_FILES = {
     ".agent/workflows/wiki-skill.md": PROMPTS / "13-antigravity-skill-workflow.md",
     ".agent/workflows/wiki-save.md": PROMPTS / "15-antigravity-wiki-save-workflow.md",
     ".agent/workflows/wiki-map.md": PROMPTS / "17-antigravity-wiki-map-workflow.md",
+    ".agent/workflows/wiki-help.md": PROMPTS / "19-antigravity-wiki-help-workflow.md",
 }
 
 CODEX_FILES = {

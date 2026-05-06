@@ -36,6 +36,8 @@ Before substantive work:
 ## Rules
 
 - Never edit `raw/` unless explicitly asked.
+- If the user asks how to use this tool, what it can do, how to install it, how to save to the wiki, how to use Obsidian, or what command to run next, answer directly in plain language. The optional shortcut is `/wiki-help`, but natural-language help requests are enough.
+- For install help, show exactly one command for the user's current shell unless they ask for alternatives.
 - Prefer updating existing pages over creating duplicates.
 - Good answers and insights should not disappear into chat history. After a substantial answer, especially research or analysis, offer to save it; for deep research, saving should be the default unless the user opts out.
 - If Obsidian/wiki persistence would be useful but the vault path is unconfigured, ask for the vault location before saving.
@@ -78,6 +80,13 @@ Use this workspace as a KADE-HQ-backed memory workspace. Treat `AGENTS.md`, `LLM
 - Treat `g-kade` as the bridge/router across KADE-HQ, G-Stack workflows, and this packet.
 - Use G-Stack workflows for review, QA, debugging, browser dogfooding, deployment verification, and ship-readiness checks when the corresponding skill/runtime is installed.
 - Keep the root packet files as the source of truth for memory/retrieval wiring; keep KADE-specific handoff state under `kade/`.
+
+### Natural-Language Help
+
+- If the user asks how to use this tool, what it can do, how to install it, how to save to the wiki, how to use Obsidian, or what command to run next, answer directly in plain language.
+- Do not require the user to remember internal script names, MCP server names, or slash commands.
+- Mention `/wiki-help` as the optional shortcut, but treat ordinary requests like "help me use this", "what can this do?", and "how do I save this?" as valid help requests.
+- For install help, show exactly one command for the user's current shell unless they ask for alternatives.
 
 ### Memory Writes
 

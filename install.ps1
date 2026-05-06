@@ -29,7 +29,8 @@ Modes:
 Convenience:
   -WireRepo         Shorthand for -Mode g-kade with current directory as project
                     root and -GlobalWire enabled. The one-command path for
-                    "wire this packet into the repo I am in".
+                    "install this packet into the repo I am in". It runs
+                    preflight, setup, global command wiring, and health check.
   -GlobalWire       After install, write the LLM Wiki section into
                     ~/.claude/CLAUDE.md and copy wiki-*.md commands into
                     ~/.claude/commands/. Default-on for -WireRepo.
@@ -40,6 +41,8 @@ Examples:
   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1)))
   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1))) -WireRepo
   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1))) -Mode g-kade -Vault C:\path\to\repo
+
+After install, ask your agent: "Help me use llm-wiki in this repo." Claude users can also run /wiki-help.
 '@
 }
 
@@ -54,6 +57,22 @@ function Test-IsWindows {
         return [bool]$IsWindows
     }
     return $env:OS -eq "Windows_NT"
+}
+
+function Invoke-CheckedNative {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Label,
+        [Parameter(Mandatory = $true)]
+        [scriptblock]$Command
+    )
+
+    $global:LASTEXITCODE = 0
+    & $Command
+    $exitCode = $LASTEXITCODE
+    if ($null -ne $exitCode -and $exitCode -ne 0) {
+        throw "$Label failed with exit code $exitCode"
+    }
 }
 
 if (-not (Test-IsWindows)) {
@@ -146,14 +165,15 @@ if (-not $skipPreflight -and (Test-Path $localPreflight)) {
     if (-not $preflightPython) { $preflightPython = Get-Command py -ErrorAction SilentlyContinue }
     if ($preflightPython) {
         $preArgs = @($localPreflight, "--mode", $Mode)
-        if ($preflightPython.Name -eq "py") {
-            & py @preArgs
-        } else {
-            & python @preArgs
-        }
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error "preflight failed - re-run after installing the listed tools, or set LLM_WIKI_SKIP_PREFLIGHT=1 to bypass."
-            exit $LASTEXITCODE
+        try {
+            if ($preflightPython.Name -eq "py") {
+                Invoke-CheckedNative "preflight" { & py @preArgs }
+            } else {
+                Invoke-CheckedNative "preflight" { & python @preArgs }
+            }
+        } catch {
+            Write-Error "preflight failed - re-run after installing the listed tools, or set LLM_WIKI_SKIP_PREFLIGHT=1 to bypass. $_"
+            exit 1
         }
     }
 }
@@ -177,14 +197,15 @@ try {
         if (-not $preflightPython) { $preflightPython = Get-Command py -ErrorAction SilentlyContinue }
         if ($preflightPython) {
             $preArgs = @($extractedPreflight, "--mode", $Mode)
-            if ($preflightPython.Name -eq "py") {
-                & py @preArgs
-            } else {
-                & python @preArgs
-            }
-            if ($LASTEXITCODE -ne 0) {
-                Write-Error "preflight failed - re-run after installing the listed tools, or set LLM_WIKI_SKIP_PREFLIGHT=1 to bypass."
-                exit $LASTEXITCODE
+            try {
+                if ($preflightPython.Name -eq "py") {
+                    Invoke-CheckedNative "preflight" { & py @preArgs }
+                } else {
+                    Invoke-CheckedNative "preflight" { & python @preArgs }
+                }
+            } catch {
+                Write-Error "preflight failed - re-run after installing the listed tools, or set LLM_WIKI_SKIP_PREFLIGHT=1 to bypass. $_"
+                exit 1
             }
         }
     }
@@ -222,9 +243,9 @@ try {
     }
 
     if ($python.Name -eq "py") {
-        & py @installArgs
+        Invoke-CheckedNative "workspace installer" { & py @installArgs }
     } else {
-        & python @installArgs
+        Invoke-CheckedNative "workspace installer" { & python @installArgs }
     }
 
     if ($Mode -ne "g-kade" -and $env:LLM_WIKI_SKIP_SETUP -ne "1") {
@@ -233,9 +254,9 @@ try {
             throw "Setup helper not found: $setupHelper"
         }
         if ($env:LLM_WIKI_SKIP_GITVIZZ -ne "0") {
-            & $setupHelper -SkipGitvizz
+            Invoke-CheckedNative "setup helper" { & $setupHelper -SkipGitvizz }
         } else {
-            & $setupHelper
+            Invoke-CheckedNative "setup helper" { & $setupHelper }
         }
     }
 
@@ -244,13 +265,14 @@ try {
         if (Test-Path $wireHelper) {
             Write-Host ">> wiring global Claude config (~/.claude/CLAUDE.md, ~/.claude/commands/)"
             $wireArgs = @($wireHelper, "--vault", $Vault)
-            if ($python.Name -eq "py") {
-                & py @wireArgs
-            } else {
-                & python @wireArgs
-            }
-            if ($LASTEXITCODE -ne 0) {
-                Write-Warning "global Claude wiring exited with code $LASTEXITCODE"
+            try {
+                if ($python.Name -eq "py") {
+                    Invoke-CheckedNative "global Claude wiring" { & py @wireArgs }
+                } else {
+                    Invoke-CheckedNative "global Claude wiring" { & python @wireArgs }
+                }
+            } catch {
+                Write-Warning "global Claude wiring failed; continuing because repo install completed: $_"
             }
         } else {
             Write-Warning "wire_global_claude.py not found in packet; skipping global wire"
@@ -261,20 +283,18 @@ try {
         $checkHelper = Join-Path $Vault "scripts/check_llm_wiki_memory.ps1"
         if (Test-Path $checkHelper) {
             Write-Host ">> running health check"
-            if ($Mode -eq "g-kade" -and $env:LLM_WIKI_SKIP_GITVIZZ -ne "0") {
-                & $checkHelper -SkipGitvizz
-            } else {
-                & $checkHelper
-            }
-            $healthRc = $LASTEXITCODE
-            if ($healthRc -ne 0) {
-                # Exit code propagates so chained commands honor failure.
-                # Set LLM_WIKI_HEALTH_CHECK_NONFATAL=1 to keep warn-only behavior.
-                if ($env:LLM_WIKI_HEALTH_CHECK_NONFATAL -eq "1") {
-                    Write-Warning "health check reported issues (LLM_WIKI_HEALTH_CHECK_NONFATAL=1, continuing)"
+            try {
+                if ($Mode -eq "g-kade" -and $env:LLM_WIKI_SKIP_GITVIZZ -ne "0") {
+                    Invoke-CheckedNative "health check" { & $checkHelper -SkipGitvizz }
                 } else {
-                    Write-Error "health check failed (exit $healthRc); set LLM_WIKI_HEALTH_CHECK_NONFATAL=1 to ignore"
-                    exit $healthRc
+                    Invoke-CheckedNative "health check" { & $checkHelper }
+                }
+            } catch {
+                if ($env:LLM_WIKI_HEALTH_CHECK_NONFATAL -eq "1") {
+                    Write-Warning "health check reported issues (LLM_WIKI_HEALTH_CHECK_NONFATAL=1, continuing): $_"
+                } else {
+                    Write-Error "health check failed; set LLM_WIKI_HEALTH_CHECK_NONFATAL=1 to ignore. $_"
+                    exit 1
                 }
             }
         } else {
@@ -282,7 +302,7 @@ try {
         }
     }
 
-    exit $LASTEXITCODE
+    exit 0
 } finally {
     if (Test-Path $zipPath) {
         Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue

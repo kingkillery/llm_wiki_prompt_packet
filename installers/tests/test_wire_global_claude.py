@@ -99,6 +99,8 @@ class WireGlobalClaudeTests(unittest.TestCase):
         # Vault path was updated.
         self.assertIn(str(self.vault), result)
         self.assertNotIn("/tmp/old-vault", result)
+        self.assertIn("/wiki-help", result)
+        self.assertIn("natural-language help questions", result)
 
         # The `# Other Section` heading and its content are preserved.
         self.assertIn("# Other Section", result)

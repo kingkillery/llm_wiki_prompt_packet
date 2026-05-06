@@ -32,6 +32,8 @@ Before editing:
 ## Rules
 
 - Do not edit raw sources unless explicitly asked.
+- If the user asks how to use this tool, what it can do, how to install it, how to save to the wiki, how to use Obsidian, or what command to run next, answer directly in plain language. `/wiki-help` is the optional shortcut, not a prerequisite.
+- For install help, show exactly one command for the user's current shell unless they ask for alternatives.
 - Update existing wiki pages before creating new ones.
 - Good answers and insights should not disappear into chat history. After a substantial answer, especially research or analysis, offer to save it; for deep research, saving should be the default unless the user opts out.
 - If Obsidian/wiki persistence would be useful but the vault path is unconfigured, ask for the vault location before saving.

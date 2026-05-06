@@ -367,6 +367,9 @@ class InstallerHomeSkillTests(unittest.TestCase):
         self.assertTrue((vault / "scripts" / "llm_wiki_memory_controller.py").exists())
         self.assertTrue((vault / "scripts" / "llm_wiki_provider.py").exists())
         self.assertTrue((vault / "scripts" / "llm_wiki_save.py").exists())
+        self.assertTrue((vault / ".claude" / "commands" / "wiki-help.md").exists())
+        self.assertTrue((vault / ".claude" / "commands" / "wiki-save.md").exists())
+        self.assertTrue((vault / ".claude" / "commands" / "wiki-map.md").exists())
         self.assertTrue((vault / ".llm-wiki" / "memory-ledger" / "candidates" / ".gitkeep").exists())
         self.assertTrue((vault / ".llm-wiki" / "memory-ledger" / "approved" / ".gitkeep").exists())
 

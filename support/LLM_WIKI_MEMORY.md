@@ -40,6 +40,14 @@ The canonical stack settings live in `.llm-wiki/config.json`.
 The local dependency manifest for packet-managed installs lives in `.llm-wiki/package.json`.
 The current repo may only ship thin wrappers for some harness pieces; bootstrap is responsible for surfacing the expected dependency or submodule paths when present.
 
+## Natural-language help
+
+Users do not need to remember internal script names, MCP server names, or slash commands.
+
+If the user asks how to use this tool, what it can do, how to install it, how to save something, how to use Obsidian/wiki, or what command to run next, answer directly in plain language. Claude users can call `/wiki-help`, but ordinary questions like "help me use this" are equally valid.
+
+For install help, show exactly one command for the user's current shell unless they ask for alternatives.
+
 ## wiki/ vs brv routing
 
 Use this table to decide where new knowledge belongs:

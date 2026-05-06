@@ -19,12 +19,17 @@ Modes:
 Convenience:
   --wire-repo         Shorthand for --mode g-kade with the current directory as
                       the project root and --global-wire enabled. This is the
-                      one-command path for "wire this packet into the repo I'm in".
+                      one-command path for "install this packet into the repo
+                      I'm in". It runs preflight, setup, global command wiring,
+                      and health check.
   --global-wire       After install, write the LLM Wiki section into
                       ~/.claude/CLAUDE.md and copy wiki-*.md commands into
                       ~/.claude/commands/. Default-on for --wire-repo.
   --no-global-wire    Disable global Claude wiring even with --wire-repo.
   --unattended        Skip all interactive prompts; use defaults or env vars.
+  --targets LIST      Comma-separated agent targets.
+  --ref REF           Git ref to fetch (default: main).
+  --force             Overwrite packet-managed files.
   -g | --global-install   Install scope: global (vs default local).
 
 Environment overrides (CLI flags win):
@@ -37,6 +42,8 @@ Environment overrides (CLI flags win):
   LLM_WIKI_SKIP_SETUP     1 = skip running setup helper after install
   LLM_WIKI_SKIP_GITVIZZ   0 = include GitVizz setup/checks (default skips optional graph)
   LLM_WIKI_SKIP_HOME_SKILLS  1 = pass --skip-home-skills to installer
+
+After install, ask your agent: "Help me use llm-wiki in this repo." Claude users can also run /wiki-help.
 USAGE
 }
 
@@ -72,6 +79,9 @@ INSTALL_MODE="${LLM_WIKI_INSTALL_MODE:-packet}"
 WIRE_REPO=0
 GLOBAL_WIRE_FLAG=""   # "", "1", or "0" — empty means "use default for mode"
 EXPLICIT_VAULT=""
+EXPLICIT_TARGETS=""
+EXPLICIT_REF=""
+FORCE=0
 
 POSITIONAL=()
 while [[ $# -gt 0 ]]; do
@@ -129,6 +139,34 @@ while [[ $# -gt 0 ]]; do
       LLM_WIKI_UNATTENDED=1
       shift
       ;;
+    --targets)
+      if [[ $# -lt 2 ]]; then
+        echo "--targets requires a value" >&2
+        exit 2
+      fi
+      EXPLICIT_TARGETS="$2"
+      shift 2
+      ;;
+    --targets=*)
+      EXPLICIT_TARGETS="${1#--targets=}"
+      shift
+      ;;
+    --ref)
+      if [[ $# -lt 2 ]]; then
+        echo "--ref requires a value" >&2
+        exit 2
+      fi
+      EXPLICIT_REF="$2"
+      shift 2
+      ;;
+    --ref=*)
+      EXPLICIT_REF="${1#--ref=}"
+      shift
+      ;;
+    --force)
+      FORCE=1
+      shift
+      ;;
     *)
       POSITIONAL+=("$1")
       shift
@@ -146,9 +184,13 @@ case "$INSTALL_MODE" in
 esac
 
 VAULT="${EXPLICIT_VAULT:-${1:-${LLM_WIKI_VAULT:-}}}"
-TARGETS="${2:-${LLM_WIKI_TARGETS:-claude,antigravity,codex,droid,pi}}"
-FORCE_FLAG="${3:-}"
-REF="${4:-${LLM_WIKI_REF:-main}}"
+TARGETS="${EXPLICIT_TARGETS:-${2:-${LLM_WIKI_TARGETS:-claude,antigravity,codex,droid,pi}}}"
+POSITIONAL_REF="${3:-}"
+if [[ "${3:-}" == "--force" ]]; then
+  FORCE=1
+  POSITIONAL_REF="${4:-}"
+fi
+REF="${EXPLICIT_REF:-${POSITIONAL_REF:-${LLM_WIKI_REF:-main}}}"
 REPO="kingkillery/llm_wiki_prompt_packet"
 export LLM_WIKI_INSTALL_SCOPE="$INSTALL_SCOPE"
 export LLM_WIKI_INSTALL_MODE="$INSTALL_MODE"
@@ -177,7 +219,7 @@ if (is_windows_bash || is_wsl) && command -v powershell.exe >/dev/null 2>&1; the
     export LLM_WIKI_REF="$REF"
     export LLM_WIKI_INSTALL_MODE="$INSTALL_MODE"
     export LLM_WIKI_GLOBAL_WIRE="$GLOBAL_WIRE_FLAG"
-    if [[ "$FORCE_FLAG" == "--force" || "${LLM_WIKI_FORCE:-0}" == "1" ]]; then
+    if [[ "$FORCE" == "1" || "${LLM_WIKI_FORCE:-0}" == "1" ]]; then
       export LLM_WIKI_FORCE=1
     fi
     PS1_WIN_PATH="$(to_win_path "$PS1_PATH")"
@@ -288,7 +330,7 @@ if [[ ! -f "$INSTALLER" ]]; then
   exit 1
 fi
 
-if [[ "$FORCE_FLAG" == "--force" || "${LLM_WIKI_FORCE:-0}" == "1" ]]; then
+if [[ "$FORCE" == "1" || "${LLM_WIKI_FORCE:-0}" == "1" ]]; then
   INSTALL_ARGS+=(--force)
 fi
 

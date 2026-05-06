@@ -26,7 +26,15 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-WIKI_COMMANDS = ("wiki-ingest.md", "wiki-query.md", "wiki-lint.md", "wiki-skill.md", "wiki-map.md")
+WIKI_COMMANDS = (
+    "wiki-help.md",
+    "wiki-query.md",
+    "wiki-save.md",
+    "wiki-map.md",
+    "wiki-skill.md",
+    "wiki-ingest.md",
+    "wiki-lint.md",
+)
 SECTION_HEADER = "## LLM Wiki"
 SECTION_END_MARKER = "<!-- /llm-wiki -->"
 
@@ -34,15 +42,17 @@ SECTION_END_MARKER = "<!-- /llm-wiki -->"
 def render_section(vault: Path) -> str:
     return f"""{SECTION_HEADER}
 
-A persistent knowledge base is available from any project via `/wiki-query`, `/wiki-ingest`, `/wiki-map`, `/wiki-skill`, `/wiki-lint`.
+A persistent knowledge base is available from any project via `/wiki-help`, `/wiki-query`, `/wiki-save`, `/wiki-map`, `/wiki-skill`, `/wiki-ingest`, `/wiki-lint`.
 
 **First-time setup:** clone `llm_wiki_prompt_packet`, run `.\\scripts\\setup_llm_wiki_memory.ps1` (Windows) or `./scripts/setup_llm_wiki_memory.sh` (shell), then update the vault path in `~/.claude/commands/wiki-*.md` to match your install location.
 
 **Configured vault:** `{vault}`
 (If this path doesn't exist, the wiki stack is not yet set up — run setup above.)
 
+Users do not need to remember command names. If they ask "how do I use this?", "what can this do?", "how do I save this?", or similar natural-language help questions, answer directly and mention `/wiki-help` only as an optional shortcut.
+
 Each command auto-detects the current project (`basename $(pwd)`) and scopes storage + retrieval to `wiki/projects/<PROJECT>/`.
-Use these proactively: surface past knowledge before answering research questions, generate codebase maps, ingest durable findings, create reusable skills.
+Use these proactively: answer help questions, surface past knowledge before answering research questions, save durable findings, generate codebase maps, ingest durable sources, create reusable skills.
 {SECTION_END_MARKER}
 """
 
