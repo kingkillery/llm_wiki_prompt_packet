@@ -29,6 +29,14 @@ This skill helps maintain a persistent markdown wiki backed by an explicit retri
 - Use `GitVizz` to inspect repo topology, API routes, dependency context, and to narrow in once `pk-qmd` has located the relevant area.
 - Source evidence beats memory for current factual claims.
 
+## Wiki map generation
+
+- When the user asks to generate or add a codebase wiki page, section, repo tour, architecture map, flow map, or diagram, treat that as a wiki-map task.
+- Search existing wiki pages first and update a relevant page instead of creating a duplicate.
+- Gather source evidence before writing; use packet context/evidence commands when available and targeted local search as fallback.
+- Include scope, source evidence, codebase map, Mermaid diagram, key files, main flows, and `[VERIFY]` caveats.
+- Use `scripts/llm_wiki_generate.py` for the durable write/update so `wiki/index.md`, `wiki/log.md`, `wiki/hot.md`, and `wiki/overview.md` stay current.
+
 ## Skill lifecycle
 
 - Treat reusable skills as first-class wiki assets.

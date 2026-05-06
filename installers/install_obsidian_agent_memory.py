@@ -138,6 +138,7 @@ CLAUDE_FILES = {
     ".claude/commands/wiki-lint.md": PROMPTS / "11-claude-command-lint.md",
     ".claude/commands/wiki-skill.md": PROMPTS / "12-claude-command-skill.md",
     ".claude/commands/wiki-save.md": PROMPTS / "14-claude-command-wiki-save.md",
+    ".claude/commands/wiki-map.md": PROMPTS / "16-claude-command-wiki-map.md",
 }
 
 ANTIGRAVITY_FILES = {
@@ -146,6 +147,7 @@ ANTIGRAVITY_FILES = {
     ".agent/workflows/wiki-lint.md": PROMPTS / "08-antigravity-lint-workflow.md",
     ".agent/workflows/wiki-skill.md": PROMPTS / "13-antigravity-skill-workflow.md",
     ".agent/workflows/wiki-save.md": PROMPTS / "15-antigravity-wiki-save-workflow.md",
+    ".agent/workflows/wiki-map.md": PROMPTS / "17-antigravity-wiki-map-workflow.md",
 }
 
 CODEX_FILES = {
@@ -173,6 +175,7 @@ STACK_FILES = {
     "scripts/llm_wiki_provider.py": SUPPORT / "scripts" / "llm_wiki_provider.py",
     "scripts/llm_wiki_settings.py": SUPPORT / "scripts" / "llm_wiki_settings.py",
     "scripts/llm_wiki_save.py": SUPPORT / "scripts" / "llm_wiki_save.py",
+    "scripts/llm_wiki_generate.py": SUPPORT / "scripts" / "llm_wiki_generate.py",
     "scripts/llm_wiki_lint.py": SUPPORT / "scripts" / "llm_wiki_lint.py",
     "scripts/llm_wiki_compile.py": SUPPORT / "scripts" / "llm_wiki_compile.py",
     "scripts/llm_wiki_search.py": SUPPORT / "scripts" / "llm_wiki_search.py",
@@ -1509,6 +1512,7 @@ def packet_required_paths(vault: Path) -> list[Path]:
         vault / "scripts" / "llm_wiki_provider.py",
         vault / "scripts" / "llm_wiki_settings.py",
         vault / "scripts" / "llm_wiki_save.py",
+        vault / "scripts" / "llm_wiki_generate.py",
         vault / "scripts" / "llm_wiki_lint.py",
         vault / "scripts" / "llm_wiki_compile.py",
         vault / "scripts" / "llm_wiki_search.py",

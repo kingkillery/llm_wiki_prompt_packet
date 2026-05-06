@@ -90,6 +90,10 @@ Explain how auth works in this repo and save the durable architecture summary.
 ```
 
 ```text
+/wiki-map authentication flow
+```
+
+```text
 Research this paper, compare it to our previous notes, and persist the useful synthesis.
 ```
 
@@ -181,6 +185,8 @@ py .\scripts\llm_wiki_packet.py context --task "explain the current auth flow" -
 py .\scripts\llm_wiki_packet.py evidence --query "Click deprecation warnings" --plane local --deep --json
 py .\scripts\llm_wiki_save.py --title "Auth Flow Synthesis" --type synthesis --body-file .\notes\auth-summary.md
 py .\scripts\llm_wiki_save.py --title "What did we learn about auth?" --type query --question "What did we learn about auth?" --body-file .\notes\auth-answer.md --promote-to synthesis
+py .\scripts\llm_wiki_generate.py --title "Auth Architecture Map" --scope "authentication flow" --body-file .\notes\auth-map.md --source "src/auth/middleware.ts"
+py .\scripts\llm_wiki_generate.py --title "Auth Architecture Map" --mode upsert-section --section-title "Runtime Flow" --body-file .\notes\auth-runtime.md
 py .\scripts\llm_wiki_lint.py --json
 py .\scripts\llm_wiki_compile.py status --json
 py .\scripts\llm_wiki_graph.py build --write --json
@@ -282,6 +288,8 @@ Three opt-in HF surfaces are wired into the packet:
 - `.claude/commands/wiki-query.md`
 - `.claude/commands/wiki-lint.md`
 - `.claude/commands/wiki-skill.md`
+- `.claude/commands/wiki-save.md`
+- `.claude/commands/wiki-map.md`
 
 ### Codex
 
@@ -296,6 +304,8 @@ Three opt-in HF surfaces are wired into the packet:
 - `.agent/workflows/wiki-query.md`
 - `.agent/workflows/wiki-lint.md`
 - `.agent/workflows/wiki-skill.md`
+- `.agent/workflows/wiki-save.md`
+- `.agent/workflows/wiki-map.md`
 
 ### Stack config and health checks
 
@@ -310,6 +320,7 @@ Three opt-in HF surfaces are wired into the packet:
 - `scripts/llm_wiki_packet.sh`
 - `scripts/llm_wiki_packet.cmd`
 - `scripts/llm_wiki_memory_controller.py`
+- `scripts/llm_wiki_generate.py`
 - `scripts/check_llm_wiki_memory.ps1`
 - `scripts/check_llm_wiki_memory.sh`
 - `scripts/llm_wiki_skill_mcp.py`

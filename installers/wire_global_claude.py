@@ -26,7 +26,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-WIKI_COMMANDS = ("wiki-ingest.md", "wiki-query.md", "wiki-lint.md", "wiki-skill.md")
+WIKI_COMMANDS = ("wiki-ingest.md", "wiki-query.md", "wiki-lint.md", "wiki-skill.md", "wiki-map.md")
 SECTION_HEADER = "## LLM Wiki"
 SECTION_END_MARKER = "<!-- /llm-wiki -->"
 
@@ -34,7 +34,7 @@ SECTION_END_MARKER = "<!-- /llm-wiki -->"
 def render_section(vault: Path) -> str:
     return f"""{SECTION_HEADER}
 
-A persistent knowledge base is available from any project via `/wiki-query`, `/wiki-ingest`, `/wiki-skill`, `/wiki-lint`.
+A persistent knowledge base is available from any project via `/wiki-query`, `/wiki-ingest`, `/wiki-map`, `/wiki-skill`, `/wiki-lint`.
 
 **First-time setup:** clone `llm_wiki_prompt_packet`, run `.\\scripts\\setup_llm_wiki_memory.ps1` (Windows) or `./scripts/setup_llm_wiki_memory.sh` (shell), then update the vault path in `~/.claude/commands/wiki-*.md` to match your install location.
 
@@ -42,7 +42,7 @@ A persistent knowledge base is available from any project via `/wiki-query`, `/w
 (If this path doesn't exist, the wiki stack is not yet set up — run setup above.)
 
 Each command auto-detects the current project (`basename $(pwd)`) and scopes storage + retrieval to `wiki/projects/<PROJECT>/`.
-Use these proactively: surface past knowledge before answering research questions, ingest durable findings, create reusable skills.
+Use these proactively: surface past knowledge before answering research questions, generate codebase maps, ingest durable findings, create reusable skills.
 {SECTION_END_MARKER}
 """
 
