@@ -1,4 +1,10 @@
-﻿# Wiki Log
+# Wiki Log
+
+## [2026-05-06] save | llm-wiki-skills Capabilities
+- Type: synthesis
+- Location: wiki/syntheses/llm-wiki-skills Capabilities.md
+- Action: created
+- Sources: chat: llm-wiki-skills explanation
 
 ## [2026-05-06] save | LLM Wiki Prompt Packet Testing Environment
 - Type: synthesis
