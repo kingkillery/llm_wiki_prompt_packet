@@ -169,6 +169,49 @@ class PacketCliTests(unittest.TestCase):
             self.assertEqual(payload["evidence"][0]["status"], "ok")
             self.assertTrue(any("evidence" in item for item in payload["expansion_suggestions"]))
 
+    def test_route_command_skips_when_loaded_context_is_sufficient(self) -> None:
+        args = self.module.build_parser().parse_args(
+            [
+                "route",
+                "--task",
+                "explain retrieval routing policy",
+                "--loaded-context",
+                "The retrieval routing policy explains retrieval routing policy in detail.",
+                "--json",
+            ]
+        )
+
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            self.assertEqual(self.module.main_from_args(args), 0)
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["decision"], "skip-retrieval")
+        self.assertEqual(payload["tier"], "NONE")
+
+    def test_route_command_selects_full_for_structural_questions(self) -> None:
+        args = self.module.build_parser().parse_args(
+            [
+                "route",
+                "--task",
+                "trace architecture dependencies across the repo",
+                "--structural",
+                "--max-hops",
+                "9",
+                "--json",
+            ]
+        )
+
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            self.assertEqual(self.module.main_from_args(args), 0)
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["decision"], "retrieve")
+        self.assertEqual(payload["tier"], "FULL")
+        self.assertEqual(payload["max_hops"], 3)
+        self.assertIn("deduplicate chunks before generation", payload["stop_rules"])
+
     def test_deep_evidence_includes_fixture_repositories(self) -> None:
         with tempfile.TemporaryDirectory() as workspace_dir:
             workspace_root = Path(workspace_dir)

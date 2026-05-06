@@ -767,6 +767,74 @@ def read_task_arg(primary: str, file_path: str) -> str:
     return ""
 
 
+def token_terms(text: str) -> set[str]:
+    return {term.lower() for term in re.findall(r"[A-Za-z0-9_+-]{3,}", text)}
+
+
+def context_gate(task: str, loaded_context: str) -> dict[str, Any]:
+    task_terms = token_terms(task)
+    context_terms = token_terms(loaded_context)
+    if not task_terms or not context_terms:
+        return {"sufficient": False, "overlap": 0.0, "matched_terms": []}
+    matched = sorted(task_terms & context_terms)
+    overlap = len(matched) / max(1, len(task_terms))
+    return {"sufficient": overlap >= 0.65, "overlap": round(overlap, 3), "matched_terms": matched[:20]}
+
+
+def classify_retrieval_tier(task: str, *, structural: bool = False) -> str:
+    lowered = task.lower()
+    cheap_markers = {"preference", "prior decision", "remember", "did we decide", "previously", "last time"}
+    full_markers = {"architecture", "multi-hop", "trace", "impact", "graph", "dependencies", "end-to-end", "across"}
+    standard_markers = {"research", "compare", "summarize", "source", "evidence", "docs", "paper"}
+    if structural or any(marker in lowered for marker in full_markers):
+        return "FULL"
+    if any(marker in lowered for marker in cheap_markers):
+        return "CHEAP"
+    if any(marker in lowered for marker in standard_markers):
+        return "STANDARD"
+    if "?" in task and len(task.split()) <= 12:
+        return "CHEAP"
+    return "STANDARD"
+
+
+def retrieval_route_plan(task: str, *, loaded_context: str = "", structural: bool = False, max_hops: int = 3) -> dict[str, Any]:
+    gate = context_gate(task, loaded_context)
+    if gate["sufficient"]:
+        return {
+            "version": 1,
+            "task": task,
+            "decision": "skip-retrieval",
+            "tier": "NONE",
+            "reason": "loaded_context_sufficient",
+            "context_gate": gate,
+            "max_hops": 0,
+            "steps": [],
+            "stop_rules": ["answer directly from loaded context"],
+        }
+    tier = classify_retrieval_tier(task, structural=structural)
+    if tier == "CHEAP":
+        steps = ["durable-memory-search", "escalate-to-standard-on-miss"]
+    elif tier == "FULL":
+        steps = ["source-retrieval-lex-vec-hyde", "durable-memory-search-parallel", "repo-or-wiki-graph-if-structural"]
+    else:
+        steps = ["source-retrieval-lex-vec", "durable-memory-search-parallel-if-independent"]
+    return {
+        "version": 1,
+        "task": task,
+        "decision": "retrieve",
+        "tier": tier,
+        "reason": f"{tier.lower()}_routing",
+        "context_gate": gate,
+        "max_hops": max(1, min(max_hops, 3)),
+        "steps": steps,
+        "stop_rules": [
+            "stop after 3 hops",
+            "stop when new results overlap prior results by more than 50%",
+            "deduplicate chunks before generation",
+        ],
+    }
+
+
 def load_skill_suggestions(workspace_root: Path, task: str, top_n: int = 5) -> list[dict[str, Any]]:
     script_dir = Path(__file__).resolve().parent
     if str(script_dir) not in sys.path:
@@ -1631,6 +1699,22 @@ def command_evidence(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_route(args: argparse.Namespace) -> int:
+    task = read_task_arg(args.task, args.task_file)
+    if not task:
+        raise SystemExit("route requires --task or --task-file")
+    loaded_context = read_task_arg(args.loaded_context, args.loaded_context_file)
+    payload = retrieval_route_plan(
+        task,
+        loaded_context=loaded_context,
+        structural=args.structural,
+        max_hops=args.max_hops,
+    )
+    payload["command"] = "llm-wiki-packet route"
+    print_payload(payload, args.json)
+    return 0
+
+
 def command_manifest(args: argparse.Namespace) -> int:
     workspace_root = resolve_workspace_root(args.workspace_root)
     seed = args.title or args.task or "agentic-run"
@@ -2061,6 +2145,19 @@ def build_parser() -> argparse.ArgumentParser:
     evidence_parser.add_argument("--max-results-per-plane", type=int, default=5, help="Maximum results to request per retrieval plane.")
     evidence_parser.add_argument("--json", action="store_true", help="Emit JSON instead of markdown.")
     evidence_parser.set_defaults(func=command_evidence)
+
+    route_parser = subparsers.add_parser(
+        "route",
+        help="Plan adaptive retrieval routing before running retrieval.",
+    )
+    route_parser.add_argument("--task", default="", help="Task text to route.")
+    route_parser.add_argument("--task-file", default="", help="Read task text from a file.")
+    route_parser.add_argument("--loaded-context", default="", help="Already-loaded context used for the context gate.")
+    route_parser.add_argument("--loaded-context-file", default="", help="Read already-loaded context from a file.")
+    route_parser.add_argument("--structural", action="store_true", help="Force structural/FULL routing.")
+    route_parser.add_argument("--max-hops", type=int, default=3, help="Maximum retrieval hops, capped at 3.")
+    route_parser.add_argument("--json", action="store_true", help="Emit JSON instead of markdown.")
+    route_parser.set_defaults(func=command_route)
 
     manifest_parser = subparsers.add_parser("manifest", help="Create a versioned run manifest.")
     manifest_parser.add_argument("--workspace-root", help="Activated workspace root. Defaults to the current repo.")

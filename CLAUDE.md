@@ -29,7 +29,7 @@ This project wires four MCP servers via `.mcp.json`. Each is available as `mcp__
 
 The `obsidian` MCP server connects to the configured Obsidian vault and provides `read_note`, `write_note`, `search_notes`, `manage_tags`, and `move_note` tools. It is the **preferred path** for all wiki scribing — creating, updating, and organizing notes.
 
-Vault path rule: if `.llm-wiki/config.json`, MCP settings, or the current user instruction establishes the Obsidian vault path, use that. If no vault path is established, ask the user where to create or access the Obsidian vault before reading, writing, creating, or assuming any vault. Do not silently use the current repo as an Obsidian vault. On this machine, the user's Obsidian vaults normally live under `C:\dev\Desktop-Projects\Helpful-Docs-Prompts\VAULTS-OBSIDIAN`.
+Vault path rule: if `.llm-wiki/config.json`, MCP settings, environment variables, or the current user instruction establishes the Obsidian vault path, use that. If no vault path is established, ask the user where to create or access the Obsidian vault before reading, writing, creating, or assuming any vault. Do not silently use the current repo as an Obsidian vault.
 
 Offer Obsidian persistence whenever the answer produces reusable knowledge that would be expensive to rediscover. This includes research-paper summaries, source-backed findings, solved debugging trails, durable decisions, procedures, and anything the user may reasonably reference in a later related task. When the user agrees, save a compact note with citations/source links, key claims, caveats, open questions, and useful tags.
 

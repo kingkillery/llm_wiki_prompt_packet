@@ -13,6 +13,8 @@ npm-debug.log*
 .llm-wiki/playgrounds/**/.git/
 .llm-wiki/playgrounds/obsidian-provider-swarm/main/fixtures/click/docs/changes.rst
 .llm-wiki/skill-index.json
+.llm-wiki/reports/*
+!.llm-wiki/reports/.gitkeep
 .llm-wiki/memory-ledger/candidates/*
 !.llm-wiki/memory-ledger/candidates/.gitkeep
 .llm-wiki/memory-ledger/approved/*
@@ -21,3 +23,5 @@ npm-debug.log*
 .llm-wiki/memory-ledger/index.json
 support/scripts/.llm-wiki/
 .artifacts/pokemon-benchmark/
+graph/.cache/
+graph/tmp/

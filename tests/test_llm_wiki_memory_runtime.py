@@ -202,6 +202,38 @@ class RuntimeTests(unittest.TestCase):
         self.assertIn(r"'C:\dev\Desktop-Projects\llm_wiki_prompt_packet\llm_wiki_prompt_packet'", content)
         self.assertIn(r"env = { OBSIDIAN_VAULT_PATH = 'C:\Vaults\Kade-HQ' }", content)
 
+    def test_update_codex_toml_can_set_startup_timeout(self) -> None:
+        config_path = self.workspace / "config.toml"
+
+        self.module.update_codex_toml(
+            config_path,
+            "llm-wiki-skills",
+            "python",
+            ["scripts/llm_wiki_skill_mcp.py", "--workspace", ".", "mcp"],
+            startup_timeout_sec=120,
+        )
+
+        content = config_path.read_text(encoding="utf-8")
+        self.assertIn("startup_timeout_sec = 120", content)
+
+    def test_patch_skill_mcp_configs_sets_codex_startup_timeout(self) -> None:
+        skill_script = self.workspace / "scripts" / "llm_wiki_skill_mcp.py"
+        skill_script.parent.mkdir(parents=True, exist_ok=True)
+        skill_script.write_text("print('stub')\n", encoding="utf-8")
+        summary: list[str] = []
+        runtime = {
+            "skill_script_path": skill_script,
+            "workspace_root": self.workspace,
+            "skill_server_key": "llm-wiki-skills",
+        }
+
+        with mock.patch.object(self.module.Path, "home", return_value=self.workspace / "home"):
+            self.module.patch_skill_mcp_configs(runtime, summary)
+
+        content = (self.workspace / "home" / ".codex" / "config.toml").read_text(encoding="utf-8")
+        self.assertIn("[mcp_servers.llm-wiki-skills]", content)
+        self.assertIn("startup_timeout_sec = 120", content)
+
     def test_ensure_skill_index_builds_missing_index(self) -> None:
         self.write_config({"skills": {"active_dir": "wiki/skills/active"}})
         active_dir = self.workspace / "wiki" / "skills" / "active"

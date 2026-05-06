@@ -32,7 +32,7 @@ Four MCP servers are wired via `.mcp.json` for stdio access:
 
 The `obsidian` MCP server connects to the configured Obsidian vault and provides `read_note`, `write_note`, `search_notes`, `manage_tags`, and `move_note` tools. It is the **preferred path** for all wiki scribing — creating, updating, and organizing notes.
 
-Vault path rule: if `.llm-wiki/config.json`, MCP settings, or the current user instruction establishes the Obsidian vault path, use that. If no vault path is established, ask the user where to create or access the Obsidian vault before reading, writing, creating, or assuming any vault. Do not silently use the current repo as an Obsidian vault. On this machine, the user's Obsidian vaults normally live under `C:\dev\Desktop-Projects\Helpful-Docs-Prompts\VAULTS-OBSIDIAN`.
+Vault path rule: if `.llm-wiki/config.json`, MCP settings, environment variables, or the current user instruction establishes the Obsidian vault path, use that. If no vault path is established, ask the user where to create or access the Obsidian vault before reading, writing, creating, or assuming any vault. Do not silently use the current repo as an Obsidian vault.
 
 Offer Obsidian persistence whenever the answer produces reusable knowledge that would be expensive to rediscover. This includes research-paper summaries, source-backed findings, solved debugging trails, comparison matrices, durable decisions, procedures, and anything the user may reasonably reference in a later related task. When the user agrees, save a compact note with citations/source links, key claims, caveats, open questions, and useful tags; then update `wiki/index.md` and `wiki/log.md` when needed.
 
@@ -168,5 +168,5 @@ A task is complete only when relevant pages are updated, `index.md` is updated i
 Updated by Codex:
 - Added native Karpathy-inspired coding guidelines for assumption handling, simplicity, surgical edits, and verification.
 - Merged overlapping guidance with the existing small, reversible edit rule; no project-specific rule was overridden.
-- Skill folder install succeeded for `C:\Users\prest\.agents\skills1\pk-skills1`, `C:\Users\prest\.agents\skills`, and `C:\Users\prest\.claude\skills`.
+- Skill folder install succeeded for the configured home skill directories.
 - Added managed KADE-HQ, memory, and retrieval routing guidance for packet-installed agent workspaces.

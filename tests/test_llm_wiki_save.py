@@ -51,6 +51,12 @@ class WikiSaveTests(unittest.TestCase):
             "answer_quality": "solid",
             "confidence": "medium",
             "url": "",
+            "supersedes": [],
+            "contradicts": [],
+            "observed_at": "",
+            "valid_from": "",
+            "valid_until": "",
+            "promote_to": "",
             "mode": "create-or-update",
         }
         values.update(overrides)
@@ -69,6 +75,9 @@ class WikiSaveTests(unittest.TestCase):
         self.assertIn("[[Research Retrieval Patterns]]", (self.workspace / "wiki" / "index.md").read_text(encoding="utf-8"))
         self.assertIn("save | Research Retrieval Patterns", (self.workspace / "wiki" / "log.md").read_text(encoding="utf-8"))
         self.assertIn("Recent Context", (self.workspace / "wiki" / "hot.md").read_text(encoding="utf-8"))
+        overview_text = (self.workspace / "wiki" / "overview.md").read_text(encoding="utf-8")
+        self.assertIn("Wiki Overview", overview_text)
+        self.assertIn("[[Research Retrieval Patterns]]", overview_text)
 
     def test_save_updates_existing_note_instead_of_duplicate(self) -> None:
         self.module.save_note(self.args())
@@ -78,6 +87,88 @@ class WikiSaveTests(unittest.TestCase):
         notes = list((self.workspace / "wiki" / "syntheses").glob("*.md"))
         self.assertEqual(len(notes), 1)
         self.assertIn("New durable detail.", notes[0].read_text(encoding="utf-8"))
+
+    def test_save_query_note_to_queries_folder(self) -> None:
+        result = self.module.save_note(
+            self.args(
+                title="What did we learn about retrieval?",
+                type="query",
+                question="What did we learn about retrieval?",
+                body="Use compact results before full notes.",
+            )
+        )
+
+        self.assertEqual(result["path"], "wiki/queries/What did we learn about retrieval.md")
+        note = self.workspace / "wiki" / "queries" / "What did we learn about retrieval.md"
+        note_text = note.read_text(encoding="utf-8")
+        self.assertIn("type: query", note_text)
+        self.assertIn('question: "What did we learn about retrieval?"', note_text)
+        self.assertIn("[[What did we learn about retrieval]]", (self.workspace / "wiki" / "index.md").read_text(encoding="utf-8"))
+
+    def test_query_note_can_promote_to_synthesis(self) -> None:
+        result = self.module.save_note(
+            self.args(
+                title="What did we learn about retrieval?",
+                type="query",
+                question="What did we learn about retrieval?",
+                body="Use compact results before full notes.",
+                promote_to="synthesis",
+            )
+        )
+
+        self.assertEqual(result["promoted_path"], "wiki/syntheses/What did we learn about retrieval.md")
+        promoted = self.workspace / "wiki" / "syntheses" / "What did we learn about retrieval.md"
+        promoted_text = promoted.read_text(encoding="utf-8")
+        self.assertIn("type: synthesis", promoted_text)
+        self.assertIn("[[What did we learn about retrieval]]", promoted_text)
+        self.assertIn("Promoted from saved query", promoted_text)
+
+    def test_save_records_conflict_and_temporal_metadata(self) -> None:
+        result = self.module.save_note(
+            self.args(
+                title="Changing Entity Fact",
+                type="entity",
+                body="The active blocker changed.",
+                contradicts=["[[Old Entity Fact]]"],
+                supersedes=["[[Prior Entity Fact]]"],
+                observed_at="2026-05-06T09:00:00",
+                valid_from="2026-05-06",
+                valid_until="2026-06-01",
+            )
+        )
+
+        self.assertEqual(result["path"], "wiki/entities/Changing Entity Fact.md")
+        text = (self.workspace / "wiki" / "entities" / "Changing Entity Fact.md").read_text(encoding="utf-8")
+        self.assertIn("contradicts:", text)
+        self.assertIn("[[Old Entity Fact]]", text)
+        self.assertIn("supersedes:", text)
+        self.assertIn("[[Prior Entity Fact]]", text)
+        self.assertIn('observed_at: "2026-05-06T09:00:00"', text)
+        self.assertIn('valid_from: "2026-05-06"', text)
+        self.assertIn('valid_until: "2026-06-01"', text)
+        self.assertIn("## Possible Conflict", text)
+
+    def test_save_flags_likely_conflict_before_write(self) -> None:
+        self.module.save_note(
+            self.args(
+                title="Model Routing Decision",
+                type="decision",
+                body="Model routing uses standard retrieval for architecture decisions.",
+            )
+        )
+
+        result = self.module.save_note(
+            self.args(
+                title="Architecture Retrieval Update",
+                type="synthesis",
+                body="Model routing no longer uses standard retrieval for architecture decisions.",
+            )
+        )
+
+        self.assertEqual(result["likely_conflicts"], ["wiki/decisions/Model Routing Decision.md"])
+        text = (self.workspace / "wiki" / "syntheses" / "Architecture Retrieval Update.md").read_text(encoding="utf-8")
+        self.assertIn("Likely conflicts detected before save", text)
+        self.assertIn("[[Model Routing Decision]]", text)
 
 
 if __name__ == "__main__":

@@ -110,12 +110,6 @@ The intended layering is:
 
 Vault path rule: if `.llm-wiki/config.json`, MCP settings, or user settings already define the Obsidian vault path, use that. If no path is established, ask the user where to create or access the vault before reading or writing. Do not silently assume the current repo is the user's Obsidian vault.
 
-On this machine, the user's Obsidian vaults normally live under:
-
-```text
-C:\dev\Desktop-Projects\Helpful-Docs-Prompts\VAULTS-OBSIDIAN
-```
-
 Agents should offer to save substantial answers, research findings, comparisons, durable decisions, and source-backed insights into Obsidian/wiki notes. The operating rule is simple:
 
 > Good answers and insights should not disappear into chat history.
@@ -129,8 +123,27 @@ Supported note types:
 - `source`
 - `decision`
 - `session`
+- `query`
 
 Research flows can also use source/entity/concept/question pages plus a synthesis page when useful.
+
+Saved query notes live under `wiki/queries/`. Use `--promote-to synthesis`, `--promote-to concept`, or `--promote-to decision` when a repeated answer should graduate into a durable wiki page.
+
+Provider/model settings resolve in this order:
+
+1. shell environment: `LLM_WIKI_PROVIDER`, `LLM_WIKI_MODEL`, `LLM_WIKI_TIMEOUT_MS`, `LLM_WIKI_LANGUAGE`, `LLM_WIKI_ENDPOINT`
+2. local `.env`
+3. `.llm-wiki/agent-settings.json`
+4. `.llm-wiki/config.json` `provider_settings`
+5. built-in defaults
+
+Check the resolved values with:
+
+```powershell
+py .\scripts\llm_wiki_settings.py --json
+```
+
+Obsidian symlink mode is advanced and opt-in. The safe default is direct writes to an explicitly configured vault path or an MCP vault transport; do not create symlinks into a vault unless the user specifically asks for that layout.
 
 ## What Gets Installed
 
@@ -146,7 +159,9 @@ Core surfaces:
 - `wiki/sources/`, `wiki/concepts/`, `wiki/syntheses/`, `wiki/decisions/`, `wiki/sessions/`
 - `scripts/llm_wiki_packet.py`
 - `scripts/llm_wiki_provider.py`
+- `scripts/llm_wiki_settings.py`
 - `scripts/llm_wiki_save.py`
+- `scripts/llm_wiki_lint.py`, `scripts/llm_wiki_compile.py`, `scripts/llm_wiki_graph.py`
 - setup and health-check wrappers for PowerShell and shell
 
 Optional home skill wrappers can be installed with `--install-home-skills` or `LLM_WIKI_INSTALL_HOME_SKILLS=1` for:
@@ -165,6 +180,11 @@ py .\scripts\llm_wiki_packet.py check
 py .\scripts\llm_wiki_packet.py context --task "explain the current auth flow" --json
 py .\scripts\llm_wiki_packet.py evidence --query "Click deprecation warnings" --plane local --deep --json
 py .\scripts\llm_wiki_save.py --title "Auth Flow Synthesis" --type synthesis --body-file .\notes\auth-summary.md
+py .\scripts\llm_wiki_save.py --title "What did we learn about auth?" --type query --question "What did we learn about auth?" --body-file .\notes\auth-answer.md --promote-to synthesis
+py .\scripts\llm_wiki_lint.py --json
+py .\scripts\llm_wiki_compile.py status --json
+py .\scripts\llm_wiki_graph.py build --write --json
+py .\scripts\llm_wiki_impact.py diff --base HEAD~1 --write --json
 py .\scripts\llm_wiki_provider.py search "Auth Flow Synthesis" --limit 10
 ```
 

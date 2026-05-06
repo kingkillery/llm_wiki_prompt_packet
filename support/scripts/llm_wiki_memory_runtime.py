@@ -45,6 +45,7 @@ DEFAULT_WIKI_FOLDERS = {
 DEFAULT_WIKI_NOTE_TYPES = ["synthesis", "concept", "source", "decision", "session"]
 DEFAULT_WIKI_RESEARCH_NOTE_TYPES = ["source", "entity", "concept", "question", "synthesis"]
 DEFAULT_SKILL_SERVER_KEY = "llm-wiki-skills"
+DEFAULT_SKILL_MCP_STARTUP_TIMEOUT_SEC = 120
 DEFAULT_SKILL_SCRIPT = "scripts/llm_wiki_skill_mcp.py"
 DEFAULT_FAILURE_HOOK_SCRIPT = "scripts/llm_wiki_failure_hook.py"
 DEFAULT_AGENT_FAILURE_CAPTURE_SCRIPT = "scripts/llm_wiki_agent_failure_capture.py"
@@ -385,12 +386,15 @@ def update_codex_toml(
     args: list[str],
     *,
     env: dict[str, str] | None = None,
+    startup_timeout_sec: int | None = None,
 ) -> None:
     content = path.read_text(encoding="utf-8") if path.exists() else ""
     args_literal = "[" + ", ".join(toml_string_literal(value) for value in args) + "]"
     block = f"[mcp_servers.{server_key}]\ncommand = {toml_string_literal(command_name)}\nargs = {args_literal}\n"
     if env:
         block += f"env = {toml_inline_table(env)}\n"
+    if startup_timeout_sec is not None:
+        block += f"startup_timeout_sec = {int(startup_timeout_sec)}\n"
     section = re.compile(rf"(?ms)^\[mcp_servers\.{re.escape(server_key)}\]\n(?:.*?)(?=^\[|\Z)")
     legacy = re.compile(r"(?ms)^\[mcp_servers\.qmd\]\n(?:.*?)(?=^\[|\Z)")
     if section.search(content):
@@ -1005,7 +1009,13 @@ def patch_skill_mcp_configs(runtime: dict[str, Any], summary: list[str]) -> None
     skill_args = [*python_command[1:], str(skill_script_path), "--workspace", str(runtime["workspace_root"]), "mcp"]
     update_json_mcp_config(user_home / ".claude" / "settings.json", runtime["skill_server_key"], skill_command_name, skill_args, factory_style=False)
     summary.append(f"Updated ~/.claude/settings.json for {runtime['skill_server_key']}")
-    update_codex_toml(user_home / ".codex" / "config.toml", runtime["skill_server_key"], skill_command_name, skill_args)
+    update_codex_toml(
+        user_home / ".codex" / "config.toml",
+        runtime["skill_server_key"],
+        skill_command_name,
+        skill_args,
+        startup_timeout_sec=DEFAULT_SKILL_MCP_STARTUP_TIMEOUT_SEC,
+    )
     summary.append(f"Updated ~/.codex/config.toml for {runtime['skill_server_key']}")
     update_json_mcp_config(user_home / ".factory" / "mcp.json", runtime["skill_server_key"], skill_command_name, skill_args, factory_style=True)
     summary.append(f"Updated ~/.factory/mcp.json for {runtime['skill_server_key']}")

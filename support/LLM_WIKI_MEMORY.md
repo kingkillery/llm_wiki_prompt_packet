@@ -18,7 +18,7 @@ Use an explicitly configured Obsidian vault path from `.llm-wiki/config.json`, M
 Do not silently treat the current repo as an Obsidian vault. On this machine, the user's Obsidian vaults normally live under:
 
 ```text
-C:\dev\Desktop-Projects\Helpful-Docs-Prompts\VAULTS-OBSIDIAN
+Configure the Obsidian vault path explicitly in `.llm-wiki/config.json` or with `LLM_WIKI_MEMORY_VAULT_PATH`.
 ```
 
 ## Routing rules

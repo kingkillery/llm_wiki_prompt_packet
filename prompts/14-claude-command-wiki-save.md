@@ -5,7 +5,7 @@ Read `CLAUDE.md`, `LLM_WIKI_MEMORY.md` if present, and `.llm-wiki/config.json`.
 
 Use the configured `wiki_layer` as the canonical wiki provider. For Obsidian-backed installs, treat `agent-cli-obsidian` as the behavior convention and `mcpvault` / `mcp-obsidian` / direct file fallback as the transport.
 
-Before saving, confirm the vault path is established by `.llm-wiki/config.json`, MCP settings, or current user instruction. If no vault path is established, ask the user where to create or access the Obsidian vault. Do not silently use the current repo as an Obsidian vault. On this machine, Obsidian vaults normally live under `C:\dev\Desktop-Projects\Helpful-Docs-Prompts\VAULTS-OBSIDIAN`.
+Before saving, confirm the vault path is established by `.llm-wiki/config.json`, MCP settings, environment variables, or current user instruction. If no vault path is established, ask the user where to create or access the Obsidian vault. Do not silently use the current repo as an Obsidian vault.
 
 Save workflow:
 1. Identify the durable content to preserve.

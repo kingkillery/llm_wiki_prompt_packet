@@ -49,8 +49,8 @@ DEFAULT_QMD_REPO_REF = "ef26cb62bb8132bc3a851b23f450af8e382e4c4e"
 DEFAULT_GITVIZZ_REPO_URL = "https://github.com/kingkillery/GitVizz.git"
 OFFICIAL_MEMORY_VAULT_NAME = "kade-hq"
 OFFICIAL_MEMORY_VAULT_ID = "fd8411f00d3a9d21"
-OFFICIAL_MEMORY_VAULT_PATH = r"C:\dev\Desktop-Projects\Helpful-Docs-Prompts\VAULTS-OBSIDIAN\Kade-HQ"
-LOCAL_OBSIDIAN_VAULTS_ROOT_HINT = r"C:\dev\Desktop-Projects\Helpful-Docs-Prompts\VAULTS-OBSIDIAN"
+OFFICIAL_MEMORY_VAULT_PATH = ""
+LOCAL_OBSIDIAN_VAULTS_ROOT_HINT = ""
 PK_SKILLS_SUBMODULE_PATH = "deps/pk-skills1"
 PK_SKILLS_REPO_URL = "https://github.com/kingkillery/pk-skills1.git"
 REPO_RUNTIME_DEFAULT_PATHS = {
@@ -91,7 +91,7 @@ Use this workspace as a KADE-HQ-backed memory workspace. Treat `AGENTS.md`, `LLM
 
 - Use `pk-qmd` first for source-backed repo, prompt, note, and wiki evidence when the right file or concept is not already known.
 - Use Obsidian MCP tools for wiki note reads, writes, moves, and tag updates when available; fall back to direct file I/O only against the configured vault path when Obsidian is unavailable, and record that fallback in `wiki/log.md`.
-- Before creating or accessing an Obsidian vault, confirm the vault path is established by `.llm-wiki/config.json`, MCP settings, or current user instruction. If no vault path is established, ask the user where to create or access it. Do not silently use the current repo as an Obsidian vault. On this machine, Obsidian vaults normally live under `{LOCAL_OBSIDIAN_VAULTS_ROOT_HINT}`.
+- Before creating or accessing an Obsidian vault, confirm the vault path is established by `.llm-wiki/config.json`, MCP settings, environment variables, or current user instruction. If no vault path is established, ask the user where to create or access it. Do not silently use the current repo as an Obsidian vault.
 - Proactively offer to save source-backed findings to Obsidian when they are likely to be useful later, especially research-paper notes, prior-art reviews, resolved investigations, durable decisions, and reusable procedures.
 - Treat `agent-cli-obsidian` as the recommended Obsidian behavior layer for wiki save/query/autoresearch conventions; treat `mcpvault` or `mcp-obsidian` as the lower-level vault transport.
 - Use `llm-wiki-skills` for reusable skill lookup, reflection, validation, evolution, and retirement.
@@ -171,7 +171,14 @@ STACK_FILES = {
     "scripts/llm_wiki_memory_runtime.py": SUPPORT / "scripts" / "llm_wiki_memory_runtime.py",
     "scripts/llm_wiki_memory_controller.py": SUPPORT / "scripts" / "llm_wiki_memory_controller.py",
     "scripts/llm_wiki_provider.py": SUPPORT / "scripts" / "llm_wiki_provider.py",
+    "scripts/llm_wiki_settings.py": SUPPORT / "scripts" / "llm_wiki_settings.py",
     "scripts/llm_wiki_save.py": SUPPORT / "scripts" / "llm_wiki_save.py",
+    "scripts/llm_wiki_lint.py": SUPPORT / "scripts" / "llm_wiki_lint.py",
+    "scripts/llm_wiki_compile.py": SUPPORT / "scripts" / "llm_wiki_compile.py",
+    "scripts/llm_wiki_search.py": SUPPORT / "scripts" / "llm_wiki_search.py",
+    "scripts/llm_wiki_graph.py": SUPPORT / "scripts" / "llm_wiki_graph.py",
+    "scripts/llm_wiki_impact.py": SUPPORT / "scripts" / "llm_wiki_impact.py",
+    "scripts/llm_wiki_memory_capture.py": SUPPORT / "scripts" / "llm_wiki_memory_capture.py",
     "scripts/llm_wiki_obsidian_mcp.py": SUPPORT / "scripts" / "llm_wiki_obsidian_mcp.py",
     "scripts/llm_wiki_skill_mcp.py": SUPPORT / "scripts" / "llm_wiki_skill_mcp.py",
     "scripts/llm_wiki_skills.py": SUPPORT / "scripts" / "llm_wiki_skills.py",
@@ -207,10 +214,13 @@ BOOTSTRAP_FILES = {
     "wiki/index.md": "# Wiki Index\n\n",
     "wiki/log.md": "# Wiki Log\n\n",
     "wiki/hot.md": "---\ntype: meta\ntitle: \"Hot Cache\"\nupdated: \n---\n\n# Recent Context\n\n## Key Recent Facts\n\n## Recent Changes\n\n## Active Threads\n\n",
+    "wiki/overview.md": "---\ntype: meta\ntitle: \"Wiki Overview\"\nupdated: \nstatus: developing\n---\n\n# Wiki Overview\n\n## What This Workspace Is\n\n## What We Currently Know\n\n## Active Knowledge Gaps\n\n",
     "wiki/skills/index.md": "# Skill Index\n\n",
     ".raw/.gitkeep": "",
     "raw/.gitkeep": "",
     "raw/assets/.gitkeep": "",
+    "raw/imports/.gitkeep": "",
+    "raw/converted/.gitkeep": "",
     "wiki/sources/.gitkeep": "",
     "wiki/entities/.gitkeep": "",
     "wiki/concepts/.gitkeep": "",
@@ -220,6 +230,13 @@ BOOTSTRAP_FILES = {
     "wiki/comparisons/.gitkeep": "",
     "wiki/timelines/.gitkeep": "",
     "wiki/questions/.gitkeep": "",
+    "wiki/queries/.gitkeep": "",
+    "wiki/tours/.gitkeep": "",
+    "wiki/meta/.gitkeep": "",
+    "wiki/meta/dashboard.base": "---\ntype: meta\ntitle: \"Wiki Dashboard Base\"\nstatus: optional\n---\n\n# Wiki Dashboard Base\n\nUse this optional Obsidian Bases file as a starting point for local wiki dashboards.\n",
+    "wiki/meta/diff-impact.md": "# Wiki Diff Impact\n\nNo diff impact report has been generated yet.\n",
+    ".llm-wiki/state/.gitkeep": "",
+    ".llm-wiki/reports/.gitkeep": "",
     "wiki/skills/active/.gitkeep": "",
     "wiki/skills/feedback/.gitkeep": "",
     "wiki/skills/retired/.gitkeep": "",
@@ -374,8 +391,9 @@ def default_memory_vault_path(vault: Path) -> str:
     override = os.getenv("LLM_WIKI_MEMORY_VAULT_PATH")
     if override and override.strip():
         return normalize_path_string(override)
-    official = Path(OFFICIAL_MEMORY_VAULT_PATH)
-    if official.exists():
+    configured = normalize_path_string(os.getenv("LLM_WIKI_OFFICIAL_MEMORY_VAULT_PATH", OFFICIAL_MEMORY_VAULT_PATH))
+    official = Path(configured) if configured else None
+    if official and official.exists():
         return str(official)
     return str(vault.resolve())
 
@@ -385,7 +403,8 @@ def default_memory_vault_name(vault_path: Path) -> str:
     if override and override.strip():
         return override.strip()
     try:
-        if vault_path.resolve() == Path(OFFICIAL_MEMORY_VAULT_PATH).resolve():
+        configured = normalize_path_string(os.getenv("LLM_WIKI_OFFICIAL_MEMORY_VAULT_PATH", OFFICIAL_MEMORY_VAULT_PATH))
+        if configured and vault_path.resolve() == Path(configured).resolve():
             return OFFICIAL_MEMORY_VAULT_NAME
     except OSError:
         pass
@@ -397,7 +416,8 @@ def default_memory_vault_id(vault_path: Path) -> str:
     if override and override.strip():
         return override.strip()
     try:
-        if vault_path.resolve() == Path(OFFICIAL_MEMORY_VAULT_PATH).resolve():
+        configured = normalize_path_string(os.getenv("LLM_WIKI_OFFICIAL_MEMORY_VAULT_PATH", OFFICIAL_MEMORY_VAULT_PATH))
+        if configured and vault_path.resolve() == Path(configured).resolve():
             return OFFICIAL_MEMORY_VAULT_ID
     except OSError:
         pass
@@ -1069,6 +1089,8 @@ def build_stack_config(args: argparse.Namespace) -> dict[str, object]:
     ]
     gitvizz_checkout = args.gitvizz_checkout_path or relative_or_absolute_path(managed_root / "gitvizz", workspace_root)
     qmd_source_checkout = qmd_source_checkout_path(getattr(args, "qmd_source_checkout", ""))
+    vault_root_hint = normalize_path_string(os.getenv("LLM_WIKI_OBSIDIAN_VAULT_ROOT", LOCAL_OBSIDIAN_VAULTS_ROOT_HINT))
+    known_vault_roots = [vault_root_hint] if vault_root_hint else []
 
     return {
         "version": 1,
@@ -1121,7 +1143,7 @@ def build_stack_config(args: argparse.Namespace) -> dict[str, object]:
             "behavior_layer": DEFAULT_OBSIDIAN_BEHAVIOR_LAYER,
             "behavior_layer_repo": DEFAULT_OBSIDIAN_BEHAVIOR_REPO,
             "vault_resolution_policy": "use_configured_path_or_ask_user",
-            "known_local_vault_roots": [LOCAL_OBSIDIAN_VAULTS_ROOT_HINT],
+            "known_local_vault_roots": known_vault_roots,
             "transport_layer": "mcpvault",
             "alternate_transport": "mcp-obsidian",
             "recommended_note_types": ["synthesis", "concept", "source", "decision", "session"],
@@ -1136,7 +1158,7 @@ def build_stack_config(args: argparse.Namespace) -> dict[str, object]:
             "behavior_layer": DEFAULT_OBSIDIAN_BEHAVIOR_LAYER,
             "behavior_layer_repo": DEFAULT_OBSIDIAN_BEHAVIOR_REPO,
             "vault_resolution_policy": "use_configured_path_or_ask_user",
-            "known_local_vault_roots": [LOCAL_OBSIDIAN_VAULTS_ROOT_HINT],
+            "known_local_vault_roots": known_vault_roots,
             "transport": "mcpvault",
             "alternate_transport": "mcp-obsidian",
             "vault_path": str(memory_vault_path),
@@ -1145,23 +1167,64 @@ def build_stack_config(args: argparse.Namespace) -> dict[str, object]:
             "index_path": "wiki/index.md",
             "log_path": "wiki/log.md",
             "hot_cache_path": "wiki/hot.md",
+            "overview_path": "wiki/overview.md",
+            "queries_path": "wiki/queries",
+            "tours_path": "wiki/tours",
+            "compile_state_path": ".llm-wiki/state/wiki-compile.json",
+            "reports_path": ".llm-wiki/reports",
+            "graph_path": "graph/graph.json",
+            "graph_html_path": "graph/graph.html",
+            "conflict_policy": "flag",
+            "saved_queries_enabled": True,
+            "overview_update_policy": "on-substantial-save",
             "folders": {
                 "sources": "wiki/sources",
                 "concepts": "wiki/concepts",
                 "entities": "wiki/entities",
                 "questions": "wiki/questions",
+                "queries": "wiki/queries",
                 "syntheses": "wiki/syntheses",
                 "decisions": "wiki/decisions",
                 "sessions": "wiki/sessions",
                 "meta": "wiki/meta",
+                "tours": "wiki/tours",
             },
-            "note_types": ["synthesis", "concept", "source", "decision", "session"],
+            "note_types": ["synthesis", "concept", "source", "decision", "session", "query"],
             "research_note_types": ["source", "entity", "concept", "question", "synthesis"],
             "offer_save_for_substantial_answers": True,
             "deep_research_save_default": True,
             "update_existing_before_create": True,
             "direct_file_fallback": True,
             "log_transport_fallback": True,
+        },
+        "wiki_compile": {
+            "enabled": False,
+            "changed_only_default": True,
+            "prompt_budget_chars": 200000,
+            "output_language": "",
+            "request_timeout_ms": 600000,
+        },
+        "provider_settings": {
+            "provider": "direct-file",
+            "model": "",
+            "timeout_ms": 600000,
+            "language": "",
+            "endpoint": "",
+            "precedence": ["environment", ".env", "agent_settings", "packet_config", "defaults"],
+        },
+        "retrieval_router": {
+            "enabled": True,
+            "max_hops": 3,
+            "overlap_stop_threshold": 0.5,
+            "progressive_disclosure": True,
+        },
+        "memory_capture": {
+            "enabled": False,
+            "candidate_only": True,
+            "private_block_pattern": "<private>...</private>",
+            "pii_sensitive": False,
+            "deny_paths": [],
+            "deny_generated_artifacts": True,
         },
         "stack": {
             "retrieval": {
@@ -1444,7 +1507,14 @@ def packet_required_paths(vault: Path) -> list[Path]:
         vault / "scripts" / "llm_wiki_memory_runtime.py",
         vault / "scripts" / "llm_wiki_memory_controller.py",
         vault / "scripts" / "llm_wiki_provider.py",
+        vault / "scripts" / "llm_wiki_settings.py",
         vault / "scripts" / "llm_wiki_save.py",
+        vault / "scripts" / "llm_wiki_lint.py",
+        vault / "scripts" / "llm_wiki_compile.py",
+        vault / "scripts" / "llm_wiki_search.py",
+        vault / "scripts" / "llm_wiki_graph.py",
+        vault / "scripts" / "llm_wiki_impact.py",
+        vault / "scripts" / "llm_wiki_memory_capture.py",
         vault / "scripts" / "llm_wiki_obsidian_mcp.py",
         vault / "scripts" / "llm_wiki_skill_mcp.py",
         vault / "scripts" / "llm_wiki_skills.py",

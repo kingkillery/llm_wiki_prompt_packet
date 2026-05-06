@@ -78,8 +78,8 @@ When `brv` has no connected provider, skip `brv query`/`brv curate` and continue
 
 - Official Obsidian vault name: `kade-hq`
 - Official vault id: `fd8411f00d3a9d21`
-- Official vault path: `C:\dev\Desktop-Projects\Helpful-Docs-Prompts\VAULTS-OBSIDIAN\Kade-HQ`
-- Local vault root hint for this machine: `C:\dev\Desktop-Projects\Helpful-Docs-Prompts\VAULTS-OBSIDIAN`
+- Official vault path: configure explicitly with `LLM_WIKI_MEMORY_VAULT_PATH` or `.llm-wiki/config.json`.
+- Local vault root hint: configure explicitly with `LLM_WIKI_OBSIDIAN_VAULT_ROOT` when useful.
 - Repo mirrors:
   - `AGENTS.md`
   - `.factory/memories.md`
