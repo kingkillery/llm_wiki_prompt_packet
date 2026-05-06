@@ -166,13 +166,12 @@ class RuntimeTests(unittest.TestCase):
         self.assertNotIn("hf_test_secret", json.dumps(claude_payload))
         self.assertNotIn("hf_test_secret", json.dumps(factory_payload))
 
-    def test_workspace_mcp_json_declares_only_fast_required_server(self) -> None:
+    def test_workspace_mcp_json_has_no_default_autostart_servers(self) -> None:
         mcp_path = REPO_ROOT / ".mcp.json"
 
         payload = json.loads(mcp_path.read_text(encoding="utf-8"))
 
-        self.assertEqual(set(payload.keys()), {"llm-wiki-skills"})
-        self.assertEqual(payload["llm-wiki-skills"]["command"], "python")
+        self.assertEqual(payload, {})
 
     def test_update_codex_toml_uses_windows_safe_literal_strings(self) -> None:
         config_path = self.workspace / "config.toml"
@@ -204,11 +203,11 @@ class RuntimeTests(unittest.TestCase):
             "llm-wiki-skills",
             "python",
             ["scripts/llm_wiki_skill_mcp.py", "--workspace", ".", "mcp"],
-            startup_timeout_sec=14,
+            startup_timeout_sec=2,
         )
 
         content = config_path.read_text(encoding="utf-8")
-        self.assertIn("startup_timeout_sec = 14", content)
+        self.assertIn("startup_timeout_sec = 2", content)
 
     def test_patch_skill_mcp_configs_sets_codex_startup_timeout(self) -> None:
         skill_script = self.workspace / "scripts" / "llm_wiki_skill_mcp.py"
@@ -226,7 +225,7 @@ class RuntimeTests(unittest.TestCase):
 
         content = (self.workspace / "home" / ".codex" / "config.toml").read_text(encoding="utf-8")
         self.assertIn("[mcp_servers.llm-wiki-skills]", content)
-        self.assertIn("startup_timeout_sec = 14", content)
+        self.assertIn("startup_timeout_sec = 2", content)
 
     def test_patch_qmd_mcp_configs_removes_codex_qmd_server(self) -> None:
         codex_config = self.workspace / "home" / ".codex" / "config.toml"

@@ -45,7 +45,7 @@ DEFAULT_WIKI_FOLDERS = {
 DEFAULT_WIKI_NOTE_TYPES = ["synthesis", "concept", "source", "decision", "session"]
 DEFAULT_WIKI_RESEARCH_NOTE_TYPES = ["source", "entity", "concept", "question", "synthesis"]
 DEFAULT_SKILL_SERVER_KEY = "llm-wiki-skills"
-DEFAULT_SKILL_MCP_STARTUP_TIMEOUT_SEC = 14
+DEFAULT_SKILL_MCP_STARTUP_TIMEOUT_SEC = 2
 DEFAULT_SKILL_SCRIPT = "scripts/llm_wiki_skill_mcp.py"
 DEFAULT_FAILURE_HOOK_SCRIPT = "scripts/llm_wiki_failure_hook.py"
 DEFAULT_AGENT_FAILURE_CAPTURE_SCRIPT = "scripts/llm_wiki_agent_failure_capture.py"
@@ -650,7 +650,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gitvizz-checkout-path", default=os.getenv("LLM_WIKI_GITVIZZ_CHECKOUT_PATH", ""))
     parser.add_argument("--gitvizz-repo-path", default=os.getenv("LLM_WIKI_GITVIZZ_REPO_PATH", ""))
     parser.add_argument("--skip-qmd", action="store_true")
-    parser.add_argument("--skip-mcp", action="store_true")
+    parser.add_argument("--enable-mcp", action="store_true", help="Opt in to MCP client wiring. Default setup uses skills, hooks, and CLI wrappers.")
+    parser.add_argument("--skip-mcp", action="store_true", help="Deprecated; MCP wiring is skipped by default unless --enable-mcp is set.")
     parser.add_argument("--skip-qmd-bootstrap", action="store_true")
     parser.add_argument("--skip-qmd-embed", action="store_true")
     parser.add_argument("--skip-brv", action="store_true")
@@ -680,7 +681,7 @@ def build_runtime(args: argparse.Namespace) -> dict[str, Any]:
     runtime["verify_only"] = args.verify_only or args.mode == "check"
     runtime["allow_global_tool_install"] = args.allow_global_tool_install or env_flag("LLM_WIKI_ALLOW_GLOBAL_TOOL_INSTALL")
     runtime["skip_qmd"] = args.skip_qmd
-    runtime["skip_mcp"] = args.skip_mcp or args.mode == "check"
+    runtime["skip_mcp"] = args.skip_mcp or not getattr(args, "enable_mcp", False) or args.mode == "check"
     runtime["skip_qmd_bootstrap"] = args.skip_qmd_bootstrap
     runtime["skip_qmd_embed"] = args.skip_qmd_embed
     runtime["skip_brv"] = args.skip_brv

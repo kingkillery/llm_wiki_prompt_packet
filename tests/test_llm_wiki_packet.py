@@ -87,6 +87,66 @@ class PacketCliTests(unittest.TestCase):
                 ],
             )
 
+    def test_harness_enable_disable_status_switches_managed_block_only(self) -> None:
+        with tempfile.TemporaryDirectory() as workspace_dir:
+            workspace_root = Path(workspace_dir)
+            (workspace_root / ".llm-wiki").mkdir(parents=True, exist_ok=True)
+            (workspace_root / ".llm-wiki" / "config.json").write_text("{}", encoding="utf-8")
+            (workspace_root / ".llm-wiki" / "skills-registry.json").write_text("{}", encoding="utf-8")
+            (workspace_root / ".llm-wiki" / "skill-pipeline").mkdir(parents=True, exist_ok=True)
+            (workspace_root / "scripts").mkdir(parents=True, exist_ok=True)
+            (workspace_root / "scripts" / "llm_wiki_skills.py").write_text("print('ok')\n", encoding="utf-8")
+            (workspace_root / "AGENTS.md").write_text("# Agents\n\nKeep this project rule.\n", encoding="utf-8")
+            (workspace_root / "CLAUDE.md").write_text("# Claude\n\nKeep this Claude rule.\n", encoding="utf-8")
+
+            enable_args = self.module.build_parser().parse_args(["enable", "--workspace-root", workspace_dir, "--json"])
+            with contextlib.redirect_stdout(io.StringIO()) as stdout:
+                self.assertEqual(self.module.main_from_args(enable_args), 0)
+            enable_payload = json.loads(stdout.getvalue())
+            self.assertTrue(enable_payload["active"])
+            self.assertEqual(enable_payload["instruction_blocks"]["AGENTS.md"], "updated")
+
+            state = json.loads((workspace_root / ".llm-wiki" / "harness-state.json").read_text(encoding="utf-8"))
+            self.assertTrue(state["active"])
+            agents_text = (workspace_root / "AGENTS.md").read_text(encoding="utf-8")
+            self.assertIn("Keep this project rule.", agents_text)
+            self.assertIn(self.module.HARNESS_SWITCH_START, agents_text)
+
+            status_args = self.module.build_parser().parse_args(["status", "--workspace-root", workspace_dir, "--json"])
+            with contextlib.redirect_stdout(io.StringIO()) as stdout:
+                self.assertEqual(self.module.main_from_args(status_args), 0)
+            status_payload = json.loads(stdout.getvalue())
+            self.assertTrue(status_payload["active"])
+            self.assertTrue(status_payload["instruction_blocks"]["AGENTS.md"]["switch_block_present"])
+
+            disable_args = self.module.build_parser().parse_args(["disable", "--workspace-root", workspace_dir, "--json"])
+            with contextlib.redirect_stdout(io.StringIO()) as stdout:
+                self.assertEqual(self.module.main_from_args(disable_args), 0)
+            disable_payload = json.loads(stdout.getvalue())
+            self.assertFalse(disable_payload["active"])
+            self.assertEqual(disable_payload["instruction_blocks"]["AGENTS.md"], "updated")
+
+            state = json.loads((workspace_root / ".llm-wiki" / "harness-state.json").read_text(encoding="utf-8"))
+            self.assertFalse(state["active"])
+            agents_text = (workspace_root / "AGENTS.md").read_text(encoding="utf-8")
+            self.assertIn("Keep this project rule.", agents_text)
+            self.assertIn(self.module.HARNESS_SWITCH_START, agents_text)
+            self.assertIn("State: `inactive`", agents_text)
+            self.assertIn("Do not require skill lookup, capture, validation, feedback, or retirement steps", agents_text)
+            self.assertIn("Use `llm-wiki-skills` only when the user explicitly asks", agents_text)
+            self.assertTrue((workspace_root / ".llm-wiki" / "skills-registry.json").exists())
+
+    def test_harness_switch_aliases_parse(self) -> None:
+        parser = self.module.build_parser()
+        for command_name, expected_func in (
+            ("start", self.module.command_harness_enable),
+            ("new", self.module.command_harness_enable),
+            ("stop", self.module.command_harness_disable),
+            ("quit", self.module.command_harness_disable),
+        ):
+            args = parser.parse_args([command_name])
+            self.assertEqual(args.func, expected_func)
+
     def test_command_pokemon_benchmark_prefers_workspace_script(self) -> None:
         with tempfile.TemporaryDirectory() as workspace_dir:
             workspace_root = Path(workspace_dir)

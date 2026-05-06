@@ -16,18 +16,18 @@ This repo packages the combined `Kade-HQ` + `G-Stack` + `pk-qmd` + `Byterover` +
 
 ## MCP Servers And Codex Startup
 
-The repo-local `.mcp.json` intentionally keeps Codex startup lean: it loads only the lightweight `llm-wiki-skills` stdio server by default. Slower or optional providers stay available through explicit packet commands, setup helpers, or non-Codex MCP wiring so they do not block Codex launch.
+The repo-local `.mcp.json` intentionally keeps Codex startup empty. `llm-wiki-skills` is a default skill/CLI plane with hook-based capture, and MCP is opt-in for clients that explicitly request remote/tool transport. Prefer code-mode, direct file/CLI commands, and packet provider scripts over MCP whenever they can do the job. Slower or optional providers stay available through explicit packet commands, setup helpers, or non-Codex MCP wiring so they do not block Codex launch.
 
 | Server | Command | Purpose | Required? |
 |--------|---------|---------|----------|
-| `llm-wiki-skills` | `python llm_wiki_skill_mcp.py mcp` | Skill lifecycle (lookup, reflect, validate, evolve, retire) | **Always** |
+| `llm-wiki-skills` | `python scripts/llm_wiki_skills.py <command>` or `python scripts/llm_wiki_skill_mcp.py mcp` | Skill lifecycle (lookup, reflect, validate, evolve, retire) | Default via skill/CLI; MCP opt-in only |
 | `pk-qmd` | `scripts/llm_wiki_packet.py context/evidence` or Claude/Factory MCP wiring | Source evidence retrieval, docs, prompts, notes | **Always, outside Codex startup** |
 | `obsidian` | `scripts/llm_wiki_provider.py`, `scripts/llm_wiki_save.py`, or Claude/Factory MCP wiring | Vault read/write - wiki scribing surface | **Pivotal but optional, outside Codex startup** |
 | `brv` | `scripts/brv_query.*`, `scripts/brv_curate.*`, or `brv` CLI | Durable memory, preferences, workflow quirks | Optional, outside Codex startup |
 
 ### Obsidian: pivotal but optional
 
-The `obsidian` MCP server provides `read_note`, `write_note`, `search_notes`, `manage_tags`, and `move_note` tools against the Kade-HQ vault. It is the preferred path for all wiki mutations.
+The `obsidian` MCP server provides `read_note`, `write_note`, `search_notes`, `manage_tags`, and `move_note` tools against the Kade-HQ vault. In Codex, code-mode/direct file I/O and packet CLI/provider paths are preferred when the vault path is known; MCP is a convenience transport when already connected.
 
 When `obsidian` is unavailable:
 1. Fall back to direct file I/O against the vault path.

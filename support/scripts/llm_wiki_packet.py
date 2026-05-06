@@ -51,6 +51,45 @@ PLANE_PRIORITY = {
     "local": 5,
     "instructions": 6,
 }
+HARNESS_STATE_PATH = Path(".llm-wiki") / "harness-state.json"
+HARNESS_SWITCH_START = "<!-- llm-wiki:harness-switch:start -->"
+HARNESS_SWITCH_END = "<!-- llm-wiki:harness-switch:end -->"
+HARNESS_SWITCH_FILES = ("AGENTS.md", "CLAUDE.md")
+
+
+def harness_switch_block(active: bool) -> str:
+    state = "active" if active else "inactive"
+    if active:
+        body = (
+            "Use the llm-wiki skill lifecycle for reusable workflow knowledge instead of treating it as chat-only context.\n\n"
+            "Required checks while active:\n"
+            "- Before substantial or repetitive work, run skill lookup.\n"
+            "- Prefer `python scripts/llm_wiki_skills.py --workspace . <subcommand> ...`; MCP is optional transport only.\n"
+            "- Capture reusable shortcuts, failure patterns, validation rules, and reducers with `reflect` or `pipeline-run`.\n"
+            "- Validate or propose before promoting broad workflow guidance, and amend existing skills instead of duplicating them.\n"
+            "- Record feedback when a skill helped or misled the task.\n"
+            "- Retire stale, unsafe, superseded, or misleading skills.\n"
+            "- Verify `.llm-wiki/skills-registry.json`, `.llm-wiki/skill-pipeline/`, and `scripts/llm_wiki_skills.py` exist before relying on the lifecycle.\n"
+            "- Do not store secrets, raw private data, or unredacted transcripts in skill artifacts."
+        )
+    else:
+        body = (
+            "The llm-wiki behavioral harness is intentionally disabled for this repo.\n\n"
+            "Inactive rules:\n"
+            "- Do not require skill lookup, capture, validation, feedback, or retirement steps for ordinary work.\n"
+            "- Use `llm-wiki-skills` only when the user explicitly asks for it.\n"
+            "- Leave wiki files, registries, logs, and user-authored memory intact unless explicitly asked."
+        )
+    return (
+        f"{HARNESS_SWITCH_START}\n"
+        "## llm-wiki Harness Switch\n\n"
+        f"State: `{state}`\n\n"
+        f"{body}\n\n"
+        "Switch commands:\n"
+        "- enable/start/new: restore this active instruction block and set `.llm-wiki/harness-state.json` active.\n"
+        "- disable/stop/quit: leave this inactive marker and remove active requirements without deleting data.\n"
+        f"{HARNESS_SWITCH_END}\n"
+    )
 
 
 def python_command() -> list[str]:
@@ -130,6 +169,76 @@ def load_json(path: Path) -> dict[str, Any]:
 def write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def replace_marked_block(text: str, block: str) -> str:
+    pattern = re.compile(
+        rf"(?ms)^\s*{re.escape(HARNESS_SWITCH_START)}\n.*?{re.escape(HARNESS_SWITCH_END)}\s*\n?"
+    )
+    stripped_block = block.rstrip() + "\n"
+    if pattern.search(text):
+        return pattern.sub(stripped_block, text).rstrip() + "\n"
+    separator = "\n\n" if text.strip() else ""
+    return text.rstrip() + separator + stripped_block
+
+
+def write_harness_state(workspace_root: Path, *, active: bool, action: str) -> dict[str, Any]:
+    state = {
+        "version": 1,
+        "active": active,
+        "action": action,
+        "updated_at": utc_now(),
+        "activation_model": "repo-local switch; MCP is optional transport only",
+        "trigger_words": {
+            "enable": ["enable", "start", "new"],
+            "disable": ["disable", "stop", "quit"],
+        },
+    }
+    write_json(workspace_root / HARNESS_STATE_PATH, state)
+    return state
+
+
+def read_harness_state(workspace_root: Path) -> dict[str, Any]:
+    return load_json(workspace_root / HARNESS_STATE_PATH)
+
+
+def update_harness_instruction_blocks(workspace_root: Path, *, active: bool) -> dict[str, str]:
+    results: dict[str, str] = {}
+    for relative in HARNESS_SWITCH_FILES:
+        path = workspace_root / relative
+        if not path.exists():
+            results[relative] = "missing"
+            continue
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        new_text = replace_marked_block(text, harness_switch_block(active))
+        if new_text != text:
+            path.write_text(new_text, encoding="utf-8")
+            results[relative] = "updated"
+        else:
+            results[relative] = "unchanged"
+    return results
+
+
+def harness_status_payload(workspace_root: Path) -> dict[str, Any]:
+    state = read_harness_state(workspace_root)
+    block_status = {}
+    for relative in HARNESS_SWITCH_FILES:
+        path = workspace_root / relative
+        text = read_text(path, limit=200000) if path.exists() else ""
+        block_status[relative] = {
+            "exists": path.exists(),
+            "switch_block_present": HARNESS_SWITCH_START in text and HARNESS_SWITCH_END in text,
+        }
+    return {
+        "workspace_root": str(workspace_root),
+        "state_path": workspace_rel(workspace_root, workspace_root / HARNESS_STATE_PATH),
+        "active": bool(state.get("active", False)),
+        "state": state,
+        "instruction_blocks": block_status,
+        "skills_cli_exists": (workspace_root / "scripts" / "llm_wiki_skills.py").exists(),
+        "registry_exists": (workspace_root / ".llm-wiki" / "skills-registry.json").exists(),
+        "pipeline_exists": (workspace_root / ".llm-wiki" / "skill-pipeline").exists(),
+    }
 
 
 def read_text(path: Path, limit: int = 8000) -> str:
@@ -1621,6 +1730,43 @@ def command_check(args: argparse.Namespace) -> int:
     return command_runtime_helper(args, "check")
 
 
+def command_harness_enable(args: argparse.Namespace) -> int:
+    workspace_root = resolve_workspace_root(args.workspace_root)
+    state = write_harness_state(workspace_root, active=True, action=args.command)
+    blocks = update_harness_instruction_blocks(workspace_root, active=True)
+    payload = {
+        "command": f"llm-wiki-packet {args.command}",
+        "active": True,
+        "state": state,
+        "instruction_blocks": blocks,
+        "status": harness_status_payload(workspace_root),
+    }
+    print_payload(payload, args.json)
+    return 0
+
+
+def command_harness_disable(args: argparse.Namespace) -> int:
+    workspace_root = resolve_workspace_root(args.workspace_root)
+    state = write_harness_state(workspace_root, active=False, action=args.command)
+    blocks = update_harness_instruction_blocks(workspace_root, active=False)
+    payload = {
+        "command": f"llm-wiki-packet {args.command}",
+        "active": False,
+        "state": state,
+        "instruction_blocks": blocks,
+        "status": harness_status_payload(workspace_root),
+    }
+    print_payload(payload, args.json)
+    return 0
+
+
+def command_harness_status(args: argparse.Namespace) -> int:
+    workspace_root = resolve_workspace_root(args.workspace_root)
+    payload = {"command": "llm-wiki-packet status", **harness_status_payload(workspace_root)}
+    print_payload(payload, args.json)
+    return 0
+
+
 def command_memory(args: argparse.Namespace) -> int:
     workspace_root = resolve_workspace_root(args.workspace_root)
     controller = packet_script(workspace_root, None, os.path.join("scripts", "llm_wiki_memory_controller.py"))
@@ -2103,6 +2249,23 @@ def build_parser() -> argparse.ArgumentParser:
             help="Do not skip GitVizz during the helper run.",
         )
         helper_parser.set_defaults(func=helper_func)
+
+    for command_name in ("enable", "start", "new"):
+        enable_parser = subparsers.add_parser(command_name, help="Turn on the repo-local llm-wiki behavioral harness.")
+        enable_parser.add_argument("--workspace-root", help="Workspace root. Defaults to the current repo.")
+        enable_parser.add_argument("--json", action="store_true", help="Emit JSON instead of markdown.")
+        enable_parser.set_defaults(func=command_harness_enable)
+
+    for command_name in ("disable", "stop", "quit"):
+        disable_parser = subparsers.add_parser(command_name, help="Turn off the repo-local llm-wiki behavioral harness without deleting data.")
+        disable_parser.add_argument("--workspace-root", help="Workspace root. Defaults to the current repo.")
+        disable_parser.add_argument("--json", action="store_true", help="Emit JSON instead of markdown.")
+        disable_parser.set_defaults(func=command_harness_disable)
+
+    status_parser = subparsers.add_parser("status", help="Report the repo-local llm-wiki harness switch state.")
+    status_parser.add_argument("--workspace-root", help="Workspace root. Defaults to the current repo.")
+    status_parser.add_argument("--json", action="store_true", help="Emit JSON instead of markdown.")
+    status_parser.set_defaults(func=command_harness_status)
 
     memory_parser = subparsers.add_parser("memory", help="Run the review-gated semantic/preference memory controller.")
     memory_parser.add_argument("--workspace-root", help="Activated workspace root. Defaults to the current repo.")

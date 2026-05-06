@@ -19,11 +19,11 @@ Before substantive work:
 
 ## MCP Servers
 
-Codex startup uses a lean repo-local `.mcp.json`: only `llm-wiki-skills` is loaded by default. Use packet CLI/provider/BRV commands for retrieval, wiki scribing, and durable preferences unless a non-Codex MCP client has explicitly wired those transports.
+Codex startup uses no repo-local MCP autostart by default. Treat `llm-wiki-skills` as a skill plus CLI surface first, with hooks for automatic failure capture. MCP is an explicit opt-in transport for clients that need it, not a default startup dependency.
 
 | Server | Purpose | Required? |
 |--------|---------|----------|
-| `llm-wiki-skills` | Skill lifecycle (lookup, reflect, validate, evolve, retire) | **Always** |
+| `llm-wiki-skills` | Skill lifecycle (lookup, reflect, validate, evolve, retire) | Default via skill/CLI; MCP opt-in only |
 | `pk-qmd` | Source evidence via `llm-wiki-packet context/evidence` or non-Codex MCP wiring | **Always, outside Codex startup** |
 | `obsidian` | Vault read/write via provider/save CLI or non-Codex MCP wiring | **Pivotal but optional, outside Codex startup** |
 | `brv` | Durable memory via BRV CLI wrappers | Optional, outside Codex startup |
@@ -60,7 +60,7 @@ If `brv` has no connected provider, do not rely on `brv query` or `brv curate` f
 - Use `pk-qmd` for repo-specific source evidence.
 - Use `pk-qmd` first when the target file, folder, prompt, or note is not yet known.
 - Use `pk-qmd` first when the right existing skill page or feedback note is not yet known.
-- Use `obsidian` MCP tools for all vault reads and writes when available.
+- Prefer code-mode or packet CLI/provider paths for vault reads and writes; use `obsidian` MCP only when it is already available and materially cheaper.
 - Proactively offer to save source-backed findings to Obsidian when they are likely to be useful later, especially research-paper notes, prior-art reviews, resolved investigations, durable decisions, and reusable procedures.
 - Treat `agent-cli-obsidian` as the recommended Obsidian behavior layer for wiki save/query/autoresearch conventions; treat `mcpvault` or `mcp-obsidian` as the lower-level vault transport.
 - Use `brv` only for durable preferences, decisions, and workflow quirks.
@@ -70,11 +70,25 @@ If `brv` has no connected provider, do not rely on `brv query` or `brv curate` f
 - Use `GitVizz` when you need repo topology, API surface, route relationships, or to hone in after `pk-qmd` found the likely area.
 - Do not surface raw tool choices to end users unless asked.
 
+## Active llm-wiki-skills Contract
+
+`llm-wiki-skills` is active in a repo after the user has run the packet "wire up the harness" flow for that repo, such as `-WireRepo`, `--wire-repo`, `scripts/setup_llm_wiki_memory.*`, or `scripts/llm_wiki_packet.py init --project-root <repo>`. Active means the repo-local agent instructions and `.llm-wiki/` scaffolding are intentionally installed; it does not mean an MCP server is running.
+
+Full workflow, tool usage, command examples, and lifecycle requirements live in `skills/home/llm-wiki-skills/SKILL.md`. Read that file before using the skill lifecycle for lookup, capture, validation, evolution, feedback, or retirement.
+
+The active/inactive switch block, when present, is authoritative for whether lifecycle checks are required. If the switch says inactive, do not require skill lookup, capture, validation, feedback, or retirement steps unless the user explicitly asks.
+
+Activation controls:
+
+- `scripts/llm_wiki_packet.py enable` restores the packet-managed switch block and marks the harness active for the repo. Aliases: `start`, `new`.
+- `scripts/llm_wiki_packet.py disable` leaves an inactive packet-managed switch block and marks the harness inactive without deleting the wiki, registry, logs, or user-authored notes. Aliases: `stop`, `quit`.
+- `scripts/llm_wiki_packet.py status` reports the switch state and expected local files.
+
 ## Rules
 
 - Never edit `raw/` unless explicitly asked.
 - Prefer updating existing pages over creating duplicates.
-- Prefer `obsidian` MCP tools over direct file I/O for vault mutations.
+- Prefer code-mode/direct file I/O or packet CLI/provider paths over `obsidian` MCP for vault mutations when the configured vault path is known.
 - When `obsidian` is unavailable, direct file I/O is acceptable but note the fallback in `wiki/log.md`.
 - Maintain links, contradictions, and open questions.
 - Treat reusable skills as first-class wiki artifacts, not ad hoc notes.
@@ -130,8 +144,8 @@ Use this workspace as a KADE-HQ-backed memory workspace. Treat `AGENTS.md`, `LLM
 ### Retrieval Order
 
 - Use `pk-qmd` first for source-backed repo, prompt, note, and wiki evidence when the right file or concept is not already known.
-- Use Obsidian MCP tools for wiki note reads, writes, moves, and tag updates when available; fall back to direct file I/O only when Obsidian is unavailable, and record that fallback in `wiki/log.md`.
-- Use `llm-wiki-skills` for reusable skill lookup, reflection, validation, evolution, and retirement.
+- Prefer code-mode/direct file I/O or packet CLI/provider paths for wiki note reads, writes, moves, and tag updates; use Obsidian MCP only when it is already connected and clearly cheaper.
+- Use `llm-wiki-skills` for reusable skill lookup, reflection, validation, evolution, and retirement only when its MCP server is already available; otherwise use repo-local code-mode/CLI paths.
 - Use BRV only for durable preferences, repeated workflow quirks, and decisions; do not rely on it when no provider is connected.
 - Use GitVizz for repo topology, API surface, route relationships, and graph-oriented navigation after retrieval has identified the likely area.
 - Prefer current source evidence over memory when sources and memory conflict.

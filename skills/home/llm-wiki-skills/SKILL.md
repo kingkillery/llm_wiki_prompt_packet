@@ -1,6 +1,6 @@
 ---
 name: llm-wiki-skills
-description: Use when the task should consult, capture, validate, evolve, or retire reusable workflow shortcuts through the local `llm-wiki-skills` MCP server or its CLI. This packet-owned wrapper explains the full tool lifecycle in depth and is installable into ~/.agents/skills, ~/.codex/skills, ~/.claude/skills, and ~/.pi/agent/skills.
+description: Use when the task should consult, capture, validate, evolve, or retire reusable workflow shortcuts through the local `llm-wiki-skills` skill/CLI surface. MCP is optional transport only. This packet-owned wrapper explains the full tool lifecycle in depth and is installable into ~/.agents/skills, ~/.codex/skills, ~/.claude/skills, and ~/.pi/agent/skills.
 ---
 
 # llm-wiki-skills
@@ -17,11 +17,11 @@ Use it when the job is not just "answer this once", but "make this reusable, rev
 - `scripts/llm_wiki_skill_mcp.py`
 - `.llm-wiki/skills-registry.json`
 - `.llm-wiki/skill-pipeline/`
-4. If present, prefer the local MCP workflow over inventing an ad hoc skills registry.
+4. If present, prefer the local skill/CLI workflow over inventing an ad hoc skills registry. Use MCP only when the current client already has the server available or explicitly opted in.
 
 ## How To Call
 
-Every MCP tool in this skill has an identical CLI subcommand. When MCP is not wired, call the script directly:
+Every MCP tool in this skill has an identical CLI subcommand. The CLI is the default integration path:
 
 ```
 python scripts/llm_wiki_skills.py <subcommand> [options]

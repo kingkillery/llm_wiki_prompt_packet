@@ -51,7 +51,7 @@ If `brv` has no connected provider, skip `brv query`/`brv curate` and continue w
 - Use `pk-qmd` for repo-specific evidence and prompt or docs lookup.
 - Use `pk-qmd` first when you still need to locate the right repo area.
 - Use `pk-qmd` first when you still need to locate the right skill page or feedback history.
-- Use `obsidian` MCP tools for all vault reads and writes when available.
+- Prefer code-mode or packet CLI/provider paths for vault reads and writes; use `obsidian` MCP only when it is already available and materially cheaper.
 - Proactively offer to save source-backed findings to Obsidian when they are likely to be useful later, especially research-paper notes, resolved investigations, durable decisions, and reusable procedures.
 - Treat `agent-cli-obsidian` as the recommended Obsidian behavior layer for wiki save/query/autoresearch conventions; treat `mcpvault` or `mcp-obsidian` as the lower-level vault transport.
 - Use `brv` only for durable memory and repeated workflow knowledge.
@@ -60,11 +60,25 @@ If `brv` has no connected provider, skip `brv query`/`brv curate` and continue w
 - Treat `GitVizz` as the configured local graph surface.
 - Use `GitVizz` when the task is about repo structure, API surface, dependency context, or narrowing around a known folder, route, or component.
 
+## Active llm-wiki-skills Contract
+
+`llm-wiki-skills` is active in a repo after the user has run the packet "wire up the harness" flow for that repo, such as `-WireRepo`, `--wire-repo`, `scripts/setup_llm_wiki_memory.*`, or `scripts/llm_wiki_packet.py init --project-root <repo>`. Active means repo-local agent instructions and `.llm-wiki/` scaffolding are intentionally installed; it does not mean an MCP server is running.
+
+The comprehensive workflow, CLI/MCP usage, required fields, validation checks, feedback loop, and retirement rules are documented in `skills/home/llm-wiki-skills/SKILL.md`; read it before doing skill lifecycle work.
+
+The active/inactive switch block, when present, is authoritative for whether lifecycle checks are required. If the switch says inactive, do not require skill lookup, capture, validation, feedback, or retirement steps unless the user explicitly asks.
+
+Activation controls:
+
+- `scripts/llm_wiki_packet.py enable` restores the packet-managed switch block and marks the harness active for the repo. Aliases: `start`, `new`.
+- `scripts/llm_wiki_packet.py disable` leaves an inactive packet-managed switch block and marks the harness inactive without deleting the wiki, registry, logs, or user-authored notes. Aliases: `stop`, `quit`.
+- `scripts/llm_wiki_packet.py status` reports the switch state and expected local files.
+
 ## Rules
 
 - Do not edit raw sources unless explicitly asked.
 - Update existing wiki pages before creating new ones.
-- Prefer `obsidian` MCP tools over direct file I/O for vault mutations.
+- Prefer code-mode/direct file I/O or packet CLI/provider paths over `obsidian` MCP for vault mutations when the configured vault path is known.
 - Good answers and insights should not disappear into chat history. After a substantial answer, especially research or analysis, offer to save it; for deep research, saving should be the default unless the user opts out.
 - Use the Obsidian wiki note taxonomy: `synthesis`, `concept`, `source`, `decision`, and `session`; for research use source/entity/concept/question pages plus a synthesis page when useful.
 - For research and investigation tasks, offer to write an Obsidian/wiki note that preserves the source citation, what was learned, why it mattered, caveats, and follow-up questions.

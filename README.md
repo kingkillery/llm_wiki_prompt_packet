@@ -40,11 +40,11 @@ curl -fsSL https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/
 
 Use the command that matches your shell. If your prompt starts with `PS C:\...>`, use PowerShell. If you are in bash, Git Bash, or WSL, use the bash command.
 
-`-WireRepo` / `--wire-repo` does the normal install path:
+`-WireRepo` / `--wire-repo` does the normal install path and makes `llm-wiki-skills` active for that repo. Active means the repo has packet-managed agent instructions and `.llm-wiki/` scaffolding installed; it does not mean an MCP server is running.
 
 - runs preflight
 - copies packet files into the current workspace
-- wires agent-facing commands and MCP config
+- wires agent-facing commands and repo-local instruction scaffolding
 - sets up repo-local evidence search
 - creates the local review-gated memory ledger
 - creates the Obsidian/wiki directory structure
@@ -235,6 +235,22 @@ Latest focused verification for this work: `58 passed`.
 | activate a different repo from this checkout | `llm_wiki_packet.py init --project-root <path>` |
 | host it on a VM | Google Cloud VM section |
 | put Cloudflare in front of a hosted VM | Cloudflare edge section |
+
+### Active and inactive state
+
+`llm-wiki-skills` is active after the harness has been wired into a repo with `-WireRepo`, `--wire-repo`, `scripts/setup_llm_wiki_memory.*`, or `scripts/llm_wiki_packet.py init --project-root <repo>`.
+
+When active, agents should follow the repo-local `AGENTS.md` / `CLAUDE.md` contract: look up reusable skills before substantial or repeated work, capture useful shortcuts with the skill CLI, and record feedback or retirement when a skill helps, misleads, or becomes stale.
+
+The switch control surface is:
+
+```powershell
+python .\scripts\llm_wiki_packet.py enable
+python .\scripts\llm_wiki_packet.py status
+python .\scripts\llm_wiki_packet.py disable
+```
+
+`enable` restores the packet-managed switch block and marks the harness active. `disable` leaves an inactive packet-managed switch block and marks the harness inactive without deleting wiki notes, logs, registries, or user-authored memory. `start` and `new` are aliases for `enable`; `stop` and `quit` are aliases for `disable`.
 
 ## Vault-Only Install
 
