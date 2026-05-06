@@ -1,0 +1,20 @@
+{
+  "run_id": "20260506_011038",
+  "created_at": "2026-05-06T07:10:39Z",
+  "selected_phases": [
+    "validation",
+    "holdout"
+  ],
+  "task_count": 2,
+  "partition_counts": {
+    "train": 1,
+    "validation": 0,
+    "holdout": 1
+  },
+  "agent_names": [
+    "verifier"
+  ],
+  "success_rate": 1.0,
+  "success_count": 1,
+  "failure_count": 0
+}

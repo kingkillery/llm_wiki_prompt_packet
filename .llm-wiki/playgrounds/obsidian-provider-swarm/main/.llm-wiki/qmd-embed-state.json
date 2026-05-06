@@ -1,0 +1,9 @@
+{
+  "status": "ok",
+  "finishedAt": "2026-05-06T07:05:57.875Z",
+  "workspace": "C:\\dev\\Desktop-Projects\\llm_wiki_prompt_packet\\llm_wiki_prompt_packet\\.llm-wiki\\playgrounds\\obsidian-provider-swarm\\main",
+  "command": "C:\\dev\\Desktop-Projects\\llm_wiki_prompt_packet\\llm_wiki_prompt_packet\\.llm-wiki\\playgrounds\\obsidian-provider-swarm\\main\\.llm-wiki\\tools\\bin\\pk-qmd.cmd",
+  "collection": "vault",
+  "configDir": "C:\\dev\\Desktop-Projects\\llm_wiki_prompt_packet\\llm_wiki_prompt_packet\\.llm-wiki\\playgrounds\\obsidian-provider-swarm\\main\\.llm-wiki\\qmd-config",
+  "includeImages": false
+}

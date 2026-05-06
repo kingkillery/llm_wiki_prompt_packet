@@ -1,0 +1,19 @@
+{
+  "wiki_layer": {
+    "provider": "obsidian",
+    "behavior_layer": "agent-cli-obsidian",
+    "vault_path": ".",
+    "index_path": "wiki/index.md",
+    "log_path": "wiki/log.md",
+    "hot_cache_path": "wiki/hot.md",
+    "folders": {
+      "sources": "wiki/sources",
+      "concepts": "wiki/concepts",
+      "entities": "wiki/entities",
+      "questions": "wiki/questions",
+      "syntheses": "wiki/syntheses",
+      "decisions": "wiki/decisions",
+      "sessions": "wiki/sessions"
+    }
+  }
+}

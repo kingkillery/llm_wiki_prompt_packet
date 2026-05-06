@@ -169,6 +169,42 @@ class PacketCliTests(unittest.TestCase):
             self.assertEqual(payload["evidence"][0]["status"], "ok")
             self.assertTrue(any("evidence" in item for item in payload["expansion_suggestions"]))
 
+    def test_deep_evidence_includes_fixture_repositories(self) -> None:
+        with tempfile.TemporaryDirectory() as workspace_dir:
+            workspace_root = Path(workspace_dir)
+            (workspace_root / ".llm-wiki").mkdir(parents=True, exist_ok=True)
+            (workspace_root / ".llm-wiki" / "config.json").write_text("{}", encoding="utf-8")
+            fixture_file = workspace_root / "fixtures" / "click" / "src" / "click" / "core.py"
+            fixture_file.parent.mkdir(parents=True, exist_ok=True)
+            fixture_file.write_text(
+                "class ParameterSource:\n"
+                "    pass\n\n"
+                "def deprecation_warning_for_click_options():\n"
+                "    return 'Click deprecated option parser compatibility warning'\n",
+                encoding="utf-8",
+            )
+
+            args = self.module.build_parser().parse_args(
+                [
+                    "evidence",
+                    "--workspace-root",
+                    workspace_dir,
+                    "--query",
+                    "Click deprecated option parser compatibility ParameterSource",
+                    "--plane",
+                    "local",
+                    "--deep",
+                    "--json",
+                ]
+            )
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                self.assertEqual(self.module.main_from_args(args), 0)
+
+            payload = json.loads(stdout.getvalue())
+            sources = [item["source"].replace("\\", "/") for item in payload["results"]]
+            self.assertIn("fixtures/click/src/click/core.py", sources)
+
     def test_context_includes_approved_memory_ledger_hints(self) -> None:
         with tempfile.TemporaryDirectory() as workspace_dir:
             workspace_root = Path(workspace_dir)

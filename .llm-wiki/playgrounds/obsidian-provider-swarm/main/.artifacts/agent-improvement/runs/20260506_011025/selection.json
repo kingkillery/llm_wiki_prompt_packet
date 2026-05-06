@@ -1,0 +1,34 @@
+{
+  "tasks": [
+    {
+      "env": "obsidian_wiki",
+      "env_dir": "benchmarks/cua_world/environments/obsidian_wiki_env",
+      "task": "click_deprecation_saved"
+    },
+    {
+      "env": "obsidian_wiki",
+      "env_dir": "benchmarks/cua_world/environments/obsidian_wiki_env",
+      "task": "packet_local_fixture_retrieval"
+    }
+  ],
+  "partitions": {
+    "train": [
+      {
+        "env": "obsidian_wiki",
+        "env_dir": "benchmarks/cua_world/environments/obsidian_wiki_env",
+        "task": "packet_local_fixture_retrieval"
+      }
+    ],
+    "validation": [],
+    "holdout": [
+      {
+        "env": "obsidian_wiki",
+        "env_dir": "benchmarks/cua_world/environments/obsidian_wiki_env",
+        "task": "click_deprecation_saved"
+      }
+    ]
+  },
+  "selected_phases": [
+    "train"
+  ]
+}

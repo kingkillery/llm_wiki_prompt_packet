@@ -1,0 +1,4 @@
+{
+  "id": "click_deprecation_saved",
+  "description": "Verify that the real Click repo fixture exists, the deprecation synthesis was saved to Obsidian, and provider search retrieves it."
+}

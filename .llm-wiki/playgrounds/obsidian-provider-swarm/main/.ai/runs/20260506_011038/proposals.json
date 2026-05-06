@@ -1,0 +1,12 @@
+[
+  {
+    "agent_name": "verifier",
+    "env": "ow",
+    "task_id": "retrieval",
+    "failure_class": "verifier-mismatch-or-task-ambiguity",
+    "proposal_type": "benchmark-issue-flag",
+    "confidence": 0.55,
+    "rationale": "Packet local evidence did not surface fixtures/click, even though direct rg found source evidence. This is a retrieval coverage issue for playground fixtures.",
+    "suggested_follow_up": "Review the proposed benchmark-issue-flag for verifier on ow/retrieval."
+  }
+]

@@ -333,7 +333,7 @@ if [[ "$WIRE_REPO" == "1" || "${LLM_WIKI_RUN_HEALTH_CHECK:-0}" == "1" ]]; then
   if [[ -f "$CHECK_HELPER" ]]; then
     echo ">> running health check"
     CHECK_ARGS=()
-    if [[ "${LLM_WIKI_SKIP_GITVIZZ:-1}" != "0" ]]; then
+    if [[ "$INSTALL_MODE" == "g-kade" && "${LLM_WIKI_SKIP_GITVIZZ:-1}" != "0" ]]; then
       CHECK_ARGS+=(--skip-gitvizz)
     fi
     # Capture exit code BEFORE any compound conditional ($? would otherwise

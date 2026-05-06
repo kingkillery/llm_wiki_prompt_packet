@@ -1,0 +1,49 @@
+[
+  {
+    "verifier_passed": true,
+    "success": true,
+    "verifier_score": 1.0,
+    "feedback": "Real Click repo fixture is present, source-backed synthesis is saved, and provider search retrieves it.",
+    "observations": {
+      "click_repo": "C:\\dev\\Desktop-Projects\\llm_wiki_prompt_packet\\llm_wiki_prompt_packet\\.llm-wiki\\playgrounds\\obsidian-provider-swarm\\main\\fixtures\\click",
+      "saved_note": "C:\\dev\\Desktop-Projects\\llm_wiki_prompt_packet\\llm_wiki_prompt_packet\\.llm-wiki\\playgrounds\\obsidian-provider-swarm\\main\\vault\\wiki\\syntheses\\Click Deprecation Handling Source-Backed Synthesis.md",
+      "search_results": [
+        {
+          "path": "wiki/syntheses/Click Deprecation Handling Source-Backed Synthesis.md",
+          "score": 36
+        },
+        {
+          "path": "wiki/hot.md",
+          "score": 15
+        },
+        {
+          "path": "wiki/log.md",
+          "score": 14
+        },
+        {
+          "path": "wiki/index.md",
+          "score": 8
+        },
+        {
+          "path": "wiki/syntheses/Canonical Obsidian Wiki Provider User Trial.md",
+          "score": 3
+        },
+        {
+          "path": "wiki/syntheses/Obsidian Provider Flywheel Practice Loop.md",
+          "score": 3
+        }
+      ]
+    },
+    "phase": "holdout",
+    "agent_name": "verifier",
+    "adapter_type": "codex-wrapper",
+    "env": "ow",
+    "env_dir": "benchmarks/cua_world/environments/obsidian_wiki_env",
+    "task_id": "save",
+    "stdout_path": "C:\\dev\\Desktop-Projects\\llm_wiki_prompt_packet\\llm_wiki_prompt_packet\\.llm-wiki\\playgrounds\\obsidian-provider-swarm\\main\\.ai\\runs\\20260506_011038\\task_runs\\holdout\\verifier__ow__save\\stdout.txt",
+    "stderr_path": "C:\\dev\\Desktop-Projects\\llm_wiki_prompt_packet\\llm_wiki_prompt_packet\\.llm-wiki\\playgrounds\\obsidian-provider-swarm\\main\\.ai\\runs\\20260506_011038\\task_runs\\holdout\\verifier__ow__save\\stderr.txt",
+    "exit_code": 0,
+    "duration_sec": 0.237,
+    "stderr_excerpt": ""
+  }
+]

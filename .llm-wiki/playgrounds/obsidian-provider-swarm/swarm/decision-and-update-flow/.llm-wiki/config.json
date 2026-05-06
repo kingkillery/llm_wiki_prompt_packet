@@ -1,0 +1,23 @@
+{
+  "wiki_layer": {
+    "provider": "obsidian",
+    "transport": "mcpvault",
+    "alternate_transport": "mcp-obsidian",
+    "vault_path": ".",
+    "wiki_path": "wiki",
+    "index_path": "wiki/index.md",
+    "log_path": "wiki/log.md",
+    "hot_cache_path": "wiki/hot.md",
+    "direct_file_fallback": true,
+    "update_existing_before_create": true,
+    "folders": {
+      "sources": "wiki/sources",
+      "concepts": "wiki/concepts",
+      "entities": "wiki/entities",
+      "questions": "wiki/questions",
+      "syntheses": "wiki/syntheses",
+      "decisions": "wiki/decisions",
+      "sessions": "wiki/sessions"
+    }
+  }
+}

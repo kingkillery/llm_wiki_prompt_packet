@@ -1,0 +1,85 @@
+{
+  "task_source": {
+    "backend": "gym-anything",
+    "environment_roots": [
+      "benchmarks/cua_world/environments"
+    ],
+    "explicit_tasks": [
+      {
+        "env": "ow",
+        "env_dir": "benchmarks/cua_world/environments/obsidian_wiki_env",
+        "task": "save"
+      },
+      {
+        "env": "ow",
+        "env_dir": "benchmarks/cua_world/environments/obsidian_wiki_env",
+        "task": "retrieval"
+      }
+    ],
+    "selection": {
+      "envs": [
+        "ow"
+      ],
+      "split": "test",
+      "surface": "raw",
+      "max_tasks": 2,
+      "seed": 13
+    }
+  },
+  "agents_under_test": [
+    {
+      "name": "verifier",
+      "adapter_type": "codex-wrapper",
+      "identifier": "obsidian-fixture-eval",
+      "parameters": {
+        "command": [
+          "python",
+          ".agent-improvement/scripts/obsidian_fixture_eval.py",
+          "--repo-root",
+          "{repo_root}",
+          "--task-id",
+          "{task_id}",
+          "--output-json",
+          "{output_json}"
+        ]
+      }
+    }
+  ],
+  "experiment_policy": {
+    "repeat_count": 1,
+    "seed": 42,
+    "max_steps": 30,
+    "timeout_sec": 3600,
+    "partition": {
+      "train": 1.0,
+      "validation": 0.0,
+      "holdout": 0.0,
+      "seed": 19
+    }
+  },
+  "improvement_policy": {
+    "approval_mode": "human-gated",
+    "allowed_proposal_types": [
+      "prompt-skill-instruction-patch",
+      "routing-tool-rule-adjustment",
+      "memory-playbook-addition",
+      "benchmark-issue-flag",
+      "candidate-regression-test-suggestion"
+    ],
+    "regression_requirements": {
+      "block_on_holdout_regression": true,
+      "minimum_validation_success_rate": 0.5
+    }
+  },
+  "artifact_paths": {
+    "output_root": ".ai",
+    "logs": ".ai/logs",
+    "cache": ".ai/cache"
+  },
+  "wrapper_settings": {
+    "codex_skill_path": ".codex/skills/agent-self-improvement/SKILL.md",
+    "claude_skill_path": ".claude/skills/agent-self-improvement/SKILL.md",
+    "agents_skill_path": ".agents/skills/agent-self-improvement/SKILL.md",
+    "pk_agent_path": ".agents/pk-agents/agent-self-improvement-harness.pk-agent"
+  }
+}

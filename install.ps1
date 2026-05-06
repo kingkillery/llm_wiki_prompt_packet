@@ -261,7 +261,7 @@ try {
         $checkHelper = Join-Path $Vault "scripts/check_llm_wiki_memory.ps1"
         if (Test-Path $checkHelper) {
             Write-Host ">> running health check"
-            if ($env:LLM_WIKI_SKIP_GITVIZZ -ne "0") {
+            if ($Mode -eq "g-kade" -and $env:LLM_WIKI_SKIP_GITVIZZ -ne "0") {
                 & $checkHelper -SkipGitvizz
             } else {
                 & $checkHelper

@@ -1,137 +1,229 @@
-# LLM Wiki Memory Packet
+# LLM Wiki Prompt Packet
 
-LLM Wiki Memory Packet is a **local-first memory and retrieval layer for coding agents**.
+**A local-first wiki, memory, retrieval, and evaluation layer for coding agents.**
 
-In plain English, it helps an agent do five things reliably:
+This packet gives agents a durable operating system around your repo or Obsidian vault:
 
-1. **find source truth** in your repo and notes
-2. **remember durable preferences and decisions**
-3. **reuse proven workflows as skills**
-4. **capture failures and learn from them**
-5. **present all of that as one coherent system instead of five separate tools**
+- find source truth before guessing
+- save useful research and decisions into a wiki
+- keep reusable workflows as skills
+- stage durable memory through review
+- catch failures with an evaluation loop before they become habits
 
-Under the hood, the packet wires together these components:
+![LLM Wiki Prompt Packet demo panel](docs/assets/llm-wiki-gravity-chamber.png)
 
-- `pk-qmd` — source evidence retrieval
-- `Byterover` (`brv`) — durable memory
-- `GitVizz` — repo graph / topology
-- `llm-wiki-skills` — reusable workflow lifecycle
-- `Kade-HQ` + `G-Stack` — harness / operating surface
+## Start Here
 
-## Start here if you are new
+Most users only need this path:
 
-Most users only need three things:
+1. Install into the repo or vault you are already in.
+2. Run the health check.
+3. Ask your agent normal questions.
+4. Let the packet retrieve evidence and offer to save durable findings.
 
-1. **Quick Install** — installs and wires the packet into the current repo or vault
-2. **Verification** — confirms the stack is healthy
-3. **Daily use** — run the installed helpers and let the packet keep itself up to date
+You do not need to understand the internal indexing system to use it. Setup, health checks, wrapped agent sessions, and the dashboard keep the skill index refreshed automatically.
 
-You do **not** need to understand the internal scoring/indexing system to use this repo. The packet now maintains the skill index automatically during setup, health checks, wrapped interactive sessions, and dashboard reads.
+## 60-Second Install
 
-## Which path should I use?
+Install into the current repo or vault.
 
-| If you want to... | Use this |
+PowerShell:
+
+```powershell
+$f="$env:TEMP\llm-wiki-install.ps1"; iwr https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1 -OutFile $f; & $f -WireRepo
+```
+
+macOS, Linux, Git Bash, or WSL:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.sh | bash -s -- --wire-repo
+```
+
+Use the command that matches your shell. If your prompt starts with `PS C:\...>`, use PowerShell. If you are in bash, Git Bash, or WSL, use the bash command.
+
+`-WireRepo` / `--wire-repo` does the normal install path:
+
+- runs preflight
+- copies packet files into the current workspace
+- wires agent-facing commands and MCP config
+- sets up repo-local evidence search
+- creates the local review-gated memory ledger
+- creates the Obsidian/wiki directory structure
+- refreshes the skill index
+- runs the closing health check
+
+## Verify It
+
+From the installed workspace root:
+
+PowerShell:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\check_llm_wiki_memory.ps1
+```
+
+Shell:
+
+```bash
+bash ./scripts/check_llm_wiki_memory.sh
+```
+
+Success means the packet can find its config, scripts, skill index, memory folders, and configured retrieval/wiki surfaces. Optional GitVizz checks are skipped by default unless you opt in.
+
+## Daily Use
+
+Ask your agent the normal task. The packet gives it these habits:
+
+| When the task needs... | The packet should... |
 |---|---|
-| install into the repo you are currently in | **Quick Install** with `-WireRepo` / `--wire-repo` |
-| install into an Obsidian vault only | the vault-only install path |
-| re-run setup after config/tool changes | `scripts/setup_llm_wiki_memory.ps1` or `.sh` |
-| check whether the stack is healthy | `scripts/check_llm_wiki_memory.ps1` or `.sh` |
-| run the stack locally in Docker | `docker-compose.quickstart.yml` |
-| host it on a VM | the **Google Cloud VM** section |
-| put Cloudflare in front of a hosted VM | the **Cloudflare edge in front of GCP** section |
-| understand the advanced repo-owned CLI surface | `llm_wiki_packet.ps1` / `.sh` advanced section |
+| current repo facts | retrieve source evidence first |
+| a reusable conclusion | save a wiki note |
+| a durable decision | save or update a decision note |
+| a repeated workflow | suggest or create a skill |
+| a failed attempt | reduce it into an improvement candidate |
+| a deep research answer | save to Obsidian by default unless you opt out |
 
-If you are new, you can safely ignore most of the advanced sections until after the first successful install.
+Example prompts:
 
-## What this repo actually does
+```text
+Explain how auth works in this repo and save the durable architecture summary.
+```
+
+```text
+Research this paper, compare it to our previous notes, and persist the useful synthesis.
+```
+
+```text
+Run the packet evidence search for this bug, then evaluate whether the fix should become a reusable skill.
+```
+
+## Obsidian Wiki Layer
+
+The intended layering is:
+
+| Layer | Responsibility |
+|---|---|
+| `llm_wiki_prompt_packet` | installer, MCP wiring, retrieval, memory ledger, evaluation loop |
+| `agent-cli-obsidian` | recommended wiki behavior and note taxonomy |
+| `mcpvault` or `mcp-obsidian` | vault read/write transport |
+| direct-file fallback | local vault writes when MCP is unavailable |
+
+Vault path rule: if `.llm-wiki/config.json`, MCP settings, or user settings already define the Obsidian vault path, use that. If no path is established, ask the user where to create or access the vault before reading or writing. Do not silently assume the current repo is the user's Obsidian vault.
+
+On this machine, the user's Obsidian vaults normally live under:
+
+```text
+C:\dev\Desktop-Projects\Helpful-Docs-Prompts\VAULTS-OBSIDIAN
+```
+
+Agents should offer to save substantial answers, research findings, comparisons, durable decisions, and source-backed insights into Obsidian/wiki notes. The operating rule is simple:
+
+> Good answers and insights should not disappear into chat history.
+
+For deep research, saving is the default outcome unless the user opts out.
+
+Supported note types:
+
+- `synthesis`
+- `concept`
+- `source`
+- `decision`
+- `session`
+
+Research flows can also use source/entity/concept/question pages plus a synthesis page when useful.
+
+## What Gets Installed
 
 The packet installs guidance files, commands, scripts, config, and health checks into an Obsidian vault or repo workspace so agents can operate against one stable contract.
 
-That means the installed system can:
+Core surfaces:
 
-- search repo-local evidence
-- route between evidence, graph, memory, and skills
-- maintain a local skill index for proactive suggestions
-- automatically stage semantic/preference memory candidates from reducer runs for review
-- record failures and draft reducer packets
-- expose repeatable setup and verification helpers
+- `AGENTS.md`, `CLAUDE.md`, `LLM_WIKI_MEMORY.md`, `SYSTEM_CONTRACT.md`
+- `.llm-wiki/config.json`
+- `.llm-wiki/skill-pipeline/`
+- `.llm-wiki/memory-ledger/`
+- `wiki/index.md`, `wiki/log.md`, `wiki/hot.md`
+- `wiki/sources/`, `wiki/concepts/`, `wiki/syntheses/`, `wiki/decisions/`, `wiki/sessions/`
+- `scripts/llm_wiki_packet.py`
+- `scripts/llm_wiki_provider.py`
+- `scripts/llm_wiki_save.py`
+- setup and health-check wrappers for PowerShell and shell
 
-The installer can also seed packet-owned `kade-hq`, `gstack`, `g-kade`, and `llm-wiki-skills` wrapper skills into the user's home skill roots when you explicitly opt in with `--install-home-skills` or `LLM_WIKI_INSTALL_HOME_SKILLS=1`:
+Optional home skill wrappers can be installed with `--install-home-skills` or `LLM_WIKI_INSTALL_HOME_SKILLS=1` for:
 
 - `~/.agents/skills/`
 - `~/.codex/skills/`
 - `~/.claude/skills/`
 - `~/.pi/agent/skills/`
 
-Those wrappers live in this repo under `skills/home/` and are intentionally light. They are the packet-owned bridge layer, not a vendored copy of the full upstream `gstack` runtime bundle. The richer `gstack` and `g-kade` pieces are expected to arrive from the `deps/pk-skills1` submodule when that bootstrap path is enabled.
+## Command Cheat Sheet
 
-## Quick Install
+Run these from an installed workspace root.
 
-**One command installs the packet into the repo or vault you are sitting in.**
-
-Windows (PowerShell) - download then invoke (BOM-immune; flags are guaranteed to propagate):
 ```powershell
-$f="$env:TEMP\llm-wiki-install.ps1"; iwr https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1 -OutFile $f; & $f -WireRepo
+py .\scripts\llm_wiki_packet.py check
+py .\scripts\llm_wiki_packet.py context --task "explain the current auth flow" --json
+py .\scripts\llm_wiki_packet.py evidence --query "Click deprecation warnings" --plane local --deep --json
+py .\scripts\llm_wiki_save.py --title "Auth Flow Synthesis" --type synthesis --body-file .\notes\auth-summary.md
+py .\scripts\llm_wiki_provider.py search "Auth Flow Synthesis" --limit 10
 ```
 
-macOS / Linux / Git Bash / WSL:
-```bash
-curl -fsSL https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.sh | bash -s -- --wire-repo
+## Evaluation Loop
+
+The packet is built to improve under pressure:
+
+```text
+manifest -> retrieve -> answer -> save -> reduce -> evaluate -> promote or reject
 ```
 
-**Important: use the command that matches your current shell.**
+The playground under `.llm-wiki/playgrounds/obsidian-provider-swarm/` exercises this loop against a real cloned repo fixture. It verifies that:
 
-- If your prompt is **PowerShell** (`PS C:\...>`), use the **PowerShell** command.
-- If your prompt is **bash**, **Git Bash**, or **WSL** and you see paths or errors mentioning `/usr/bin/bash`, use the **bash** command.
-- Do **not** paste the PowerShell command into bash. Bash will fail on PowerShell syntax like `& $f -WireRepo`.
+- source-backed findings can be saved to Obsidian
+- saved notes are retrievable
+- deep local evidence includes fixture repos
+- the self-improvement harness can catch and confirm fixes
 
-`-WireRepo` / `--wire-repo` does the normal user install path:
+Latest focused verification for this work: `58 passed`.
 
-- runs preflight and tells you what is missing
-- installs the packet into the current directory as a workspace
-- wires global Claude commands when enabled
-- runs setup
-- builds the skill suggestion index automatically
-- creates the local review-gated memory ledger
-- installs the memory controller used by reducer runs, retrieval, and the dashboard
-- runs the health check as the closing step, skipping optional GitVizz checks unless `LLM_WIKI_SKIP_GITVIZZ=0`
+## Which Path Should I Use?
 
-The closing health check propagates its exit code so chained commands honor failure (set `LLM_WIKI_HEALTH_CHECK_NONFATAL=1` to keep warn-only behavior). Global Claude wiring writes a timestamped `.bak` of `~/.claude/CLAUDE.md` before any mutation.
+| If you want to... | Use this |
+|---|---|
+| install into the repo you are currently in | Quick Install with `-WireRepo` / `--wire-repo` |
+| install into an Obsidian vault only | vault-only install |
+| re-run setup after config/tool changes | `scripts/setup_llm_wiki_memory.ps1` or `.sh` |
+| check stack health | `scripts/check_llm_wiki_memory.ps1` or `.sh` |
+| run locally in Docker | `docker-compose.quickstart.yml` |
+| activate a different repo from this checkout | `llm_wiki_packet.py init --project-root <path>` |
+| host it on a VM | Google Cloud VM section |
+| put Cloudflare in front of a hosted VM | Cloudflare edge section |
 
-**What success looks like:** after install, you should be able to run `scripts/check_llm_wiki_memory.*` from the repo/vault root and get a clean result.
+## Vault-Only Install
 
-See [`QUICKSTART.md`](QUICKSTART.md) for the 30-second walkthrough, or run `bash install.sh --help` / `install.ps1 -Help` for the full flag set.
+Use this when you want the legacy packet mode for an Obsidian vault without repo wiring.
 
-**Compact PowerShell alternative** (shorter, but args can be silently dropped if upstream ever serves a UTF-8 BOM - prefer the temp-file form above for reliability):
-```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1))) -WireRepo
-```
+PowerShell:
 
-**Vault-only install** (legacy `packet` mode for an Obsidian vault, no global Claude wiring):
 ```powershell
 $f="$env:TEMP\llm-wiki-install.ps1"; iwr https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.ps1 -OutFile $f; & $f
 ```
+
+Shell:
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kingkillery/llm_wiki_prompt_packet/main/install.sh | bash
 ```
 
-## Core concepts in plain English
-
-If you are trying to understand the stack quickly, use this mental model:
+## Core Concepts
 
 | Concept | Meaning |
 |---|---|
-| **Evidence** | Facts from your repo, notes, prompts, and docs. Retrieved with `pk-qmd`. |
-| **Memory** | Durable preferences and repeated decisions. Staged first in the local review-gated ledger, then optionally bridged to external memory later. |
-| **Skills** | Reusable task shortcuts like "how we do X here." Stored as markdown-backed memory objects. |
-| **Graph** | Structural repo understanding like routes, relationships, and topology. Exposed by GitVizz. |
-| **Packet** | The glue layer that wires all of the above into one predictable surface. |
-
-The packet tries to keep the user experience simple:
-
-- ask the agent a normal question
-- let the packet route to the right plane
-- keep maintenance tasks automatic whenever possible
+| Evidence | Facts from your repo, docs, notes, and prompts. |
+| Memory | Durable preferences and repeated decisions, staged through review. |
+| Skills | Reusable task procedures that agents can discover and apply. |
+| Graph | Structural repo understanding from GitVizz when enabled. |
+| Wiki | Human-readable durable knowledge, usually in Obsidian markdown. |
+| Packet | The glue layer that makes the surfaces behave as one system. |
 
 ## Architecture
 

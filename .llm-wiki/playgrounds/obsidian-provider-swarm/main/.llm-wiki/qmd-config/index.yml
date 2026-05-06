@@ -1,0 +1,6 @@
+collections:
+  vault:
+    path: C:\dev\Desktop-Projects\llm_wiki_prompt_packet\llm_wiki_prompt_packet\.llm-wiki\playgrounds\obsidian-provider-swarm\main\vault
+    pattern: "**/*.md"
+    context:
+      "": Official vault memory base at C:\dev\Desktop-Projects\llm_wiki_prompt_packet\llm_wiki_prompt_packet\.llm-wiki\playgrounds\obsidian-provider-swarm\main\vault

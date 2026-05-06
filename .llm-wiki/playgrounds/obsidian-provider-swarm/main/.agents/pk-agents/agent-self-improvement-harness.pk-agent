@@ -1,0 +1,36 @@
+---
+model: openai:gpt-5.1-codex
+description: "Run the repo-local agent self-improvement harness for this repository."
+timeout: 1800
+maxSteps: 40
+tools:
+  filesystem:
+    - paths:
+        - "${root}/.agent-improvement"
+        - "${root}/.artifacts"
+        - "${root}/.agents"
+        - "${root}/.claude"
+        - "${root}/.codex"
+        - "${root}/benchmarks"
+        - "${root}/agents"
+      permissions: [read, write, edit]
+    - paths:
+        - "${root}/agent-improvement.config.json"
+      permissions: [read, write, edit]
+  bash:
+    commands:
+      - "python .agent-improvement/scripts/repo_local_harness.py *"
+      - "python .agent-improvement/scripts/native_eval_adapter.py *"
+      - "python .agent-improvement/scripts/scaffold_gym_task.py *"
+      - "git status"
+      - "git diff*"
+    timeout: 180000
+    allowedPaths:
+      - "${root}"
+---
+
+Run the repo-local harness with:
+
+```bash
+python .agent-improvement/scripts/repo_local_harness.py all --config agent-improvement.config.json
+```

@@ -1,0 +1,4 @@
+{
+  "id": "packet_local_fixture_retrieval",
+  "description": "Verify that packet local evidence retrieval surfaces the cloned Click fixture repo for source-backed analysis."
+}

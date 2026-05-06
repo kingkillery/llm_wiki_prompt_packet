@@ -30,11 +30,17 @@ Four MCP servers are wired via `.mcp.json` for stdio access:
 
 ### Obsidian: pivotal but optional
 
-The `obsidian` MCP server connects to the Kade-HQ vault and provides `read_note`, `write_note`, `search_notes`, `manage_tags`, and `move_note` tools. It is the **preferred path** for all wiki scribing — creating, updating, and organizing notes.
+The `obsidian` MCP server connects to the configured Obsidian vault and provides `read_note`, `write_note`, `search_notes`, `manage_tags`, and `move_note` tools. It is the **preferred path** for all wiki scribing — creating, updating, and organizing notes.
+
+Vault path rule: if `.llm-wiki/config.json`, MCP settings, or the current user instruction establishes the Obsidian vault path, use that. If no vault path is established, ask the user where to create or access the Obsidian vault before reading, writing, creating, or assuming any vault. Do not silently use the current repo as an Obsidian vault. On this machine, the user's Obsidian vaults normally live under `C:\dev\Desktop-Projects\Helpful-Docs-Prompts\VAULTS-OBSIDIAN`.
+
+Offer Obsidian persistence whenever the answer produces reusable knowledge that would be expensive to rediscover. This includes research-paper summaries, source-backed findings, solved debugging trails, comparison matrices, durable decisions, procedures, and anything the user may reasonably reference in a later related task. When the user agrees, save a compact note with citations/source links, key claims, caveats, open questions, and useful tags; then update `wiki/index.md` and `wiki/log.md` when needed.
+
+Use `agent-cli-obsidian` as the recommended Obsidian behavior layer for save/query/autoresearch conventions. Keep `mcpvault` or `mcp-obsidian` as the transport layer for actual vault reads and writes.
 
 When `obsidian` is unavailable (desktop app not running, vault not mounted, MCP connection refused):
 
-1. Fall back to direct file I/O against the vault path.
+1. Fall back to direct file I/O only against the configured vault path.
 2. Log that the fallback was used (append to `wiki/log.md`).
 3. Note any link-integrity risk — Obsidian-aware moves preserve backlinks; raw file moves do not.
 4. If the task is a rename or move, prefer pausing and asking the user to open Obsidian rather than risking broken links.
@@ -55,6 +61,8 @@ If `brv` has no connected provider, do not rely on `brv query` or `brv curate` f
 - Use `pk-qmd` first when the target file, folder, prompt, or note is not yet known.
 - Use `pk-qmd` first when the right existing skill page or feedback note is not yet known.
 - Use `obsidian` MCP tools for all vault reads and writes when available.
+- Proactively offer to save source-backed findings to Obsidian when they are likely to be useful later, especially research-paper notes, prior-art reviews, resolved investigations, durable decisions, and reusable procedures.
+- Treat `agent-cli-obsidian` as the recommended Obsidian behavior layer for wiki save/query/autoresearch conventions; treat `mcpvault` or `mcp-obsidian` as the lower-level vault transport.
 - Use `brv` only for durable preferences, decisions, and workflow quirks.
 - Prefer current source evidence over `brv` memory when they conflict.
 - If BRV has no connected provider, do not rely on `brv query` or `brv curate` for task completion.
@@ -141,6 +149,9 @@ Use this workspace as a KADE-HQ-backed memory workspace. Treat `AGENTS.md`, `LLM
 ### Memory Writes
 
 - Write durable repo knowledge to `wiki/` pages, not chat-only memory.
+- Good answers and insights should not disappear into chat history. After a substantial answer, especially research or analysis, offer to save it; for deep research, saving should be the default unless the user opts out.
+- Use the Obsidian wiki note taxonomy: `synthesis`, `concept`, `source`, `decision`, and `session`; for research use source/entity/concept/question pages plus a synthesis page when useful.
+- For research and investigation tasks, offer to write an Obsidian/wiki note that preserves the source citation, what was learned, why it mattered, caveats, and follow-up questions.
 - Write reusable procedures as skill artifacts under the configured skill lifecycle, not ad hoc notes.
 - Keep raw immutable sources under `raw/`; never edit `raw/` unless explicitly asked.
 - Update `wiki/index.md` when adding or moving durable pages.

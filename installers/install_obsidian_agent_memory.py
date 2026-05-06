@@ -33,11 +33,24 @@ RICH_SIBLING_HINTS = {"debug", "debugging", "deploy", "deployment", "design", "d
 DEFAULT_INSTALL_SCOPE = "local"
 DEFAULT_BRV_PACKAGE = "byterover-cli"
 DEFAULT_OBSIDIAN_PACKAGE = "@bitbonsai/mcpvault"
+DEFAULT_OBSIDIAN_BEHAVIOR_LAYER = "agent-cli-obsidian"
+DEFAULT_OBSIDIAN_BEHAVIOR_REPO = "https://github.com/kingkillery/agent-cli-obsidian"
+OBSIDIAN_BEHAVIOR_SKILLS = (
+    "wiki",
+    "wiki-query",
+    "wiki-ingest",
+    "wiki-lint",
+    "save",
+    "autoresearch",
+    "obsidian-markdown",
+    "obsidian-bases",
+)
 DEFAULT_QMD_REPO_REF = "ef26cb62bb8132bc3a851b23f450af8e382e4c4e"
 DEFAULT_GITVIZZ_REPO_URL = "https://github.com/kingkillery/GitVizz.git"
 OFFICIAL_MEMORY_VAULT_NAME = "kade-hq"
 OFFICIAL_MEMORY_VAULT_ID = "fd8411f00d3a9d21"
 OFFICIAL_MEMORY_VAULT_PATH = r"C:\dev\Desktop-Projects\Helpful-Docs-Prompts\VAULTS-OBSIDIAN\Kade-HQ"
+LOCAL_OBSIDIAN_VAULTS_ROOT_HINT = r"C:\dev\Desktop-Projects\Helpful-Docs-Prompts\VAULTS-OBSIDIAN"
 PK_SKILLS_SUBMODULE_PATH = "deps/pk-skills1"
 PK_SKILLS_REPO_URL = "https://github.com/kingkillery/pk-skills1.git"
 REPO_RUNTIME_DEFAULT_PATHS = {
@@ -77,7 +90,10 @@ Use this workspace as a KADE-HQ-backed memory workspace. Treat `AGENTS.md`, `LLM
 ### Retrieval Order
 
 - Use `pk-qmd` first for source-backed repo, prompt, note, and wiki evidence when the right file or concept is not already known.
-- Use Obsidian MCP tools for wiki note reads, writes, moves, and tag updates when available; fall back to direct file I/O only when Obsidian is unavailable, and record that fallback in `wiki/log.md`.
+- Use Obsidian MCP tools for wiki note reads, writes, moves, and tag updates when available; fall back to direct file I/O only against the configured vault path when Obsidian is unavailable, and record that fallback in `wiki/log.md`.
+- Before creating or accessing an Obsidian vault, confirm the vault path is established by `.llm-wiki/config.json`, MCP settings, or current user instruction. If no vault path is established, ask the user where to create or access it. Do not silently use the current repo as an Obsidian vault. On this machine, Obsidian vaults normally live under `{LOCAL_OBSIDIAN_VAULTS_ROOT_HINT}`.
+- Proactively offer to save source-backed findings to Obsidian when they are likely to be useful later, especially research-paper notes, prior-art reviews, resolved investigations, durable decisions, and reusable procedures.
+- Treat `agent-cli-obsidian` as the recommended Obsidian behavior layer for wiki save/query/autoresearch conventions; treat `mcpvault` or `mcp-obsidian` as the lower-level vault transport.
 - Use `llm-wiki-skills` for reusable skill lookup, reflection, validation, evolution, and retirement.
 - Use BRV only for durable preferences, repeated workflow quirks, and decisions; do not rely on it when no provider is connected.
 - Use GitVizz for repo topology, API surface, route relationships, and graph-oriented navigation after retrieval has identified the likely area.
@@ -96,6 +112,10 @@ Use this workspace as a KADE-HQ-backed memory workspace. Treat `AGENTS.md`, `LLM
 ### Memory Writes
 
 - Write durable repo knowledge to `wiki/` pages, not chat-only memory.
+- Good answers and insights should not disappear into chat history. After a substantial answer, especially research or analysis, offer to save it; for deep research, saving should be the default unless the user opts out.
+- If Obsidian/wiki persistence would be useful but the vault path is unconfigured, ask for the vault location before saving.
+- Use the Obsidian wiki note taxonomy: `synthesis`, `concept`, `source`, `decision`, and `session`; for research use source/entity/concept/question pages plus a synthesis page when useful.
+- For research and investigation tasks, offer to write an Obsidian/wiki note that preserves the source citation, what was learned, why it mattered, caveats, and follow-up questions.
 - Write reusable procedures as skill artifacts under the configured skill lifecycle, not ad hoc notes.
 - Keep raw immutable sources under `raw/`; never edit `raw/` unless explicitly asked.
 - Update `wiki/index.md` when adding or moving durable pages.
@@ -117,6 +137,7 @@ CLAUDE_FILES = {
     ".claude/commands/wiki-query.md": PROMPTS / "10-claude-command-query.md",
     ".claude/commands/wiki-lint.md": PROMPTS / "11-claude-command-lint.md",
     ".claude/commands/wiki-skill.md": PROMPTS / "12-claude-command-skill.md",
+    ".claude/commands/wiki-save.md": PROMPTS / "14-claude-command-wiki-save.md",
 }
 
 ANTIGRAVITY_FILES = {
@@ -124,6 +145,7 @@ ANTIGRAVITY_FILES = {
     ".agent/workflows/wiki-query.md": PROMPTS / "07-antigravity-query-workflow.md",
     ".agent/workflows/wiki-lint.md": PROMPTS / "08-antigravity-lint-workflow.md",
     ".agent/workflows/wiki-skill.md": PROMPTS / "13-antigravity-skill-workflow.md",
+    ".agent/workflows/wiki-save.md": PROMPTS / "15-antigravity-wiki-save-workflow.md",
 }
 
 CODEX_FILES = {
@@ -148,6 +170,8 @@ STACK_FILES = {
     "scripts/dashboard_server.py": SUPPORT / "scripts" / "dashboard_server.py",
     "scripts/llm_wiki_memory_runtime.py": SUPPORT / "scripts" / "llm_wiki_memory_runtime.py",
     "scripts/llm_wiki_memory_controller.py": SUPPORT / "scripts" / "llm_wiki_memory_controller.py",
+    "scripts/llm_wiki_provider.py": SUPPORT / "scripts" / "llm_wiki_provider.py",
+    "scripts/llm_wiki_save.py": SUPPORT / "scripts" / "llm_wiki_save.py",
     "scripts/llm_wiki_obsidian_mcp.py": SUPPORT / "scripts" / "llm_wiki_obsidian_mcp.py",
     "scripts/llm_wiki_skill_mcp.py": SUPPORT / "scripts" / "llm_wiki_skill_mcp.py",
     "scripts/llm_wiki_skills.py": SUPPORT / "scripts" / "llm_wiki_skills.py",
@@ -182,13 +206,17 @@ STACK_FILES = {
 BOOTSTRAP_FILES = {
     "wiki/index.md": "# Wiki Index\n\n",
     "wiki/log.md": "# Wiki Log\n\n",
+    "wiki/hot.md": "---\ntype: meta\ntitle: \"Hot Cache\"\nupdated: \n---\n\n# Recent Context\n\n## Key Recent Facts\n\n## Recent Changes\n\n## Active Threads\n\n",
     "wiki/skills/index.md": "# Skill Index\n\n",
+    ".raw/.gitkeep": "",
     "raw/.gitkeep": "",
     "raw/assets/.gitkeep": "",
     "wiki/sources/.gitkeep": "",
     "wiki/entities/.gitkeep": "",
     "wiki/concepts/.gitkeep": "",
     "wiki/syntheses/.gitkeep": "",
+    "wiki/decisions/.gitkeep": "",
+    "wiki/sessions/.gitkeep": "",
     "wiki/comparisons/.gitkeep": "",
     "wiki/timelines/.gitkeep": "",
     "wiki/questions/.gitkeep": "",
@@ -549,6 +577,17 @@ def parse_args() -> argparse.Namespace:
         "--memory-vault-id",
         default=env_or_default("LLM_WIKI_MEMORY_VAULT_ID", ""),
         help="Stable vault identifier for the official memory-base vault",
+    )
+    parser.add_argument(
+        "--agent-cli-obsidian-path",
+        default=env_or_default("LLM_WIKI_AGENT_CLI_OBSIDIAN_PATH", ""),
+        help="Optional local agent-cli-obsidian checkout to import compatible behavior skills from",
+    )
+    parser.add_argument(
+        "--install-obsidian-behavior-skills",
+        action="store_true",
+        default=env_flag("LLM_WIKI_INSTALL_OBSIDIAN_BEHAVIOR_SKILLS"),
+        help="Opt in to copying compatible agent-cli-obsidian behavior skills into the installed workspace",
     )
     return parser.parse_args()
 
@@ -962,6 +1001,23 @@ def install_home_skills(home_root: Path, force: bool, dry_run: bool) -> list[str
     return results
 
 
+def install_obsidian_behavior_skills(vault: Path, checkout_path: str, force: bool, dry_run: bool) -> list[str]:
+    if not checkout_path:
+        return ["skip   Obsidian behavior skills (missing --agent-cli-obsidian-path)"]
+    source_root = Path(checkout_path).expanduser().resolve(strict=False) / "skills"
+    if not source_root.exists():
+        return [f"skip   Obsidian behavior skills (missing skills directory: {source_root})"]
+    results: list[str] = []
+    target_base = vault / ".agents" / "skills" / "agent-cli-obsidian"
+    for skill in OBSIDIAN_BEHAVIOR_SKILLS:
+        src = source_root / skill
+        if not src.exists():
+            results.append(f"skip   Obsidian behavior skill {skill} (missing)")
+            continue
+        results.extend(install_tree(target_base, skill, src, force=force, dry_run=dry_run))
+    return results
+
+
 def bootstrap_vault(vault: Path, force: bool, dry_run: bool) -> list[str]:
     results = []
     for rel, text in BOOTSTRAP_FILES.items():
@@ -1062,10 +1118,50 @@ def build_stack_config(args: argparse.Namespace) -> dict[str, object]:
         "obsidian": {
             "mcp_server_key": "obsidian",
             "package_name": DEFAULT_OBSIDIAN_PACKAGE,
+            "behavior_layer": DEFAULT_OBSIDIAN_BEHAVIOR_LAYER,
+            "behavior_layer_repo": DEFAULT_OBSIDIAN_BEHAVIOR_REPO,
+            "vault_resolution_policy": "use_configured_path_or_ask_user",
+            "known_local_vault_roots": [LOCAL_OBSIDIAN_VAULTS_ROOT_HINT],
+            "transport_layer": "mcpvault",
+            "alternate_transport": "mcp-obsidian",
+            "recommended_note_types": ["synthesis", "concept", "source", "decision", "session"],
+            "research_note_types": ["source", "entity", "concept", "question", "synthesis"],
             "wrapper_script_path": "scripts/llm_wiki_obsidian_mcp.py",
             "install_root": relative_or_absolute_path(managed_root / "obsidian-mcp", workspace_root),
             "local_command_candidates": obsidian_local_candidates,
             "vault_path": str(memory_vault_path),
+        },
+        "wiki_layer": {
+            "provider": "obsidian",
+            "behavior_layer": DEFAULT_OBSIDIAN_BEHAVIOR_LAYER,
+            "behavior_layer_repo": DEFAULT_OBSIDIAN_BEHAVIOR_REPO,
+            "vault_resolution_policy": "use_configured_path_or_ask_user",
+            "known_local_vault_roots": [LOCAL_OBSIDIAN_VAULTS_ROOT_HINT],
+            "transport": "mcpvault",
+            "alternate_transport": "mcp-obsidian",
+            "vault_path": str(memory_vault_path),
+            "raw_path": ".raw",
+            "wiki_path": "wiki",
+            "index_path": "wiki/index.md",
+            "log_path": "wiki/log.md",
+            "hot_cache_path": "wiki/hot.md",
+            "folders": {
+                "sources": "wiki/sources",
+                "concepts": "wiki/concepts",
+                "entities": "wiki/entities",
+                "questions": "wiki/questions",
+                "syntheses": "wiki/syntheses",
+                "decisions": "wiki/decisions",
+                "sessions": "wiki/sessions",
+                "meta": "wiki/meta",
+            },
+            "note_types": ["synthesis", "concept", "source", "decision", "session"],
+            "research_note_types": ["source", "entity", "concept", "question", "synthesis"],
+            "offer_save_for_substantial_answers": True,
+            "deep_research_save_default": True,
+            "update_existing_before_create": True,
+            "direct_file_fallback": True,
+            "log_transport_fallback": True,
         },
         "stack": {
             "retrieval": {
@@ -1299,6 +1395,15 @@ def install_packet_workspace(
         actions.extend(install_map(vault, CODEX_FILES, force=force, dry_run=dry_run))
 
     actions.extend(install_map(vault, STACK_FILES, force=force, dry_run=dry_run))
+    if getattr(args, "install_obsidian_behavior_skills", False):
+        actions.extend(
+            install_obsidian_behavior_skills(
+                vault,
+                getattr(args, "agent_cli_obsidian_path", ""),
+                force=force,
+                dry_run=dry_run,
+            )
+        )
     actions.append(
         write_stack_config(vault / STACK_CONFIG_PATH, build_stack_config(args), force=force, dry_run=dry_run)
     )
@@ -1338,6 +1443,8 @@ def packet_required_paths(vault: Path) -> list[Path]:
         vault / "scripts" / "dashboard_server.py",
         vault / "scripts" / "llm_wiki_memory_runtime.py",
         vault / "scripts" / "llm_wiki_memory_controller.py",
+        vault / "scripts" / "llm_wiki_provider.py",
+        vault / "scripts" / "llm_wiki_save.py",
         vault / "scripts" / "llm_wiki_obsidian_mcp.py",
         vault / "scripts" / "llm_wiki_skill_mcp.py",
         vault / "scripts" / "llm_wiki_skills.py",

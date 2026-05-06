@@ -321,6 +321,19 @@ class RuntimeTests(unittest.TestCase):
         self.assertTrue(str(runtime["qmd_source_checkout"]).endswith(".llm-wiki\\tools\\pk-qmd-main") or str(runtime["qmd_source_checkout"]).endswith(".llm-wiki/tools/pk-qmd-main"))
         self.assertTrue(str(runtime["qmd_config_dir"]).endswith(".llm-wiki\\qmd-config") or str(runtime["qmd_config_dir"]).endswith(".llm-wiki/qmd-config"))
         self.assertEqual(runtime["obsidian_package_name"], "@bitbonsai/mcpvault")
+        self.assertEqual(runtime["obsidian_behavior_layer"], "agent-cli-obsidian")
+        self.assertEqual(runtime["obsidian_behavior_layer_repo"], "https://github.com/kingkillery/agent-cli-obsidian")
+        self.assertEqual(runtime["obsidian_transport_layer"], "mcpvault")
+        self.assertEqual(runtime["obsidian_alternate_transport"], "mcp-obsidian")
+        self.assertEqual(runtime["obsidian_recommended_note_types"], ["synthesis", "concept", "source", "decision", "session"])
+        self.assertEqual(runtime["obsidian_research_note_types"], ["source", "entity", "concept", "question", "synthesis"])
+        self.assertEqual(runtime["wiki_provider"], "obsidian")
+        self.assertEqual(runtime["wiki_behavior_layer"], "agent-cli-obsidian")
+        self.assertEqual(runtime["wiki_transport"], "mcpvault")
+        self.assertEqual(runtime["wiki_alternate_transport"], "mcp-obsidian")
+        self.assertEqual(runtime["wiki_note_types"], ["synthesis", "concept", "source", "decision", "session"])
+        self.assertEqual(runtime["wiki_research_note_types"], ["source", "entity", "concept", "question", "synthesis"])
+        self.assertTrue(str(runtime["wiki_hot_cache_path"]).endswith("wiki\\hot.md") or str(runtime["wiki_hot_cache_path"]).endswith("wiki/hot.md"))
         self.assertTrue(str(runtime["obsidian_install_root"]).endswith(".llm-wiki\\tools\\obsidian-mcp") or str(runtime["obsidian_install_root"]).endswith(".llm-wiki/tools/obsidian-mcp"))
         self.assertTrue(str(runtime["failure_hook_script_path"]).endswith("scripts\\llm_wiki_failure_hook.py") or str(runtime["failure_hook_script_path"]).endswith("scripts/llm_wiki_failure_hook.py"))
         self.assertTrue(str(runtime["agent_failure_capture_script_path"]).endswith("scripts\\llm_wiki_agent_failure_capture.py") or str(runtime["agent_failure_capture_script_path"]).endswith("scripts/llm_wiki_agent_failure_capture.py"))
@@ -329,6 +342,63 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(runtime["gitvizz_repo_id"], "repo-123")
         self.assertEqual(runtime["gitvizz_authorization_env"], "GITVIZZ_AUTH")
         self.assertEqual(runtime["gitvizz_auth_token_env"], "GITVIZZ_TOKEN")
+
+    def test_verify_wiki_layer_creates_required_files_with_direct_fallback(self) -> None:
+        vault = self.workspace / "vault"
+        vault.mkdir()
+        runtime = {
+            "wiki_provider": "obsidian",
+            "wiki_behavior_layer": "agent-cli-obsidian",
+            "wiki_transport": "mcpvault",
+            "wiki_vault_path": vault,
+            "wiki_raw_path": vault / ".raw",
+            "wiki_path": vault / "wiki",
+            "wiki_index_path": vault / "wiki" / "index.md",
+            "wiki_log_path": vault / "wiki" / "log.md",
+            "wiki_hot_cache_path": vault / "wiki" / "hot.md",
+            "wiki_note_types": ["synthesis"],
+            "wiki_research_note_types": ["source"],
+            "wiki_direct_file_fallback": True,
+            "obsidian_local_candidates": [],
+        }
+        summary: list[str] = []
+        failures: list[str] = []
+
+        with mock.patch.object(self.module, "command_in_path", return_value=""):
+            self.module.verify_wiki_layer(runtime, summary, failures)
+
+        self.assertFalse(failures)
+        self.assertTrue((vault / ".raw").exists())
+        self.assertTrue((vault / "wiki" / "index.md").exists())
+        self.assertTrue((vault / "wiki" / "log.md").exists())
+        self.assertTrue((vault / "wiki" / "hot.md").exists())
+        self.assertTrue(any("direct file fallback active" in line for line in summary))
+        self.assertTrue(any("Wiki layer readiness: ok" in line for line in summary))
+
+    def test_verify_wiki_layer_fails_when_path_escapes_vault(self) -> None:
+        vault = self.workspace / "vault"
+        vault.mkdir()
+        runtime = {
+            "wiki_provider": "obsidian",
+            "wiki_behavior_layer": "agent-cli-obsidian",
+            "wiki_transport": "mcpvault",
+            "wiki_vault_path": vault,
+            "wiki_raw_path": vault / ".raw",
+            "wiki_path": self.workspace / "outside",
+            "wiki_index_path": vault / "wiki" / "index.md",
+            "wiki_log_path": vault / "wiki" / "log.md",
+            "wiki_hot_cache_path": vault / "wiki" / "hot.md",
+            "wiki_note_types": ["synthesis"],
+            "wiki_research_note_types": ["source"],
+            "wiki_direct_file_fallback": True,
+            "obsidian_local_candidates": [],
+        }
+        summary: list[str] = []
+        failures: list[str] = []
+
+        self.module.verify_wiki_layer(runtime, summary, failures)
+
+        self.assertTrue(any("escapes vault" in failure for failure in failures))
 
     def test_verify_gitvizz_reports_context_search_auth_gap(self) -> None:
         runtime = {
@@ -513,7 +583,8 @@ class RuntimeTests(unittest.TestCase):
                             with mock.patch.object(self.module, "verify_skill_pipeline"):
                                 with mock.patch.object(self.module, "ensure_skill_index"):
                                     with mock.patch.object(self.module, "verify_agent_failure_capture"):
-                                        self.module.run_setup(runtime, summary, failures, state)
+                                        with mock.patch.object(self.module, "verify_wiki_layer"):
+                                            self.module.run_setup(runtime, summary, failures, state)
 
         patch_mcp.assert_called_once_with(runtime, "pk-qmd", "C:/tools/mcpvault.cmd", summary)
         self.assertIn("pk-qmd broke", failures)

@@ -1,0 +1,70 @@
+[
+  {
+    "verifier_passed": true,
+    "success": true,
+    "verifier_score": 1.0,
+    "feedback": "Packet local evidence found the cloned fixture repo.",
+    "observations": {
+      "expected_source": "fixtures/click/src/click/core.py",
+      "evidence_excerpt": "{\n  \"command\": \"llm-wiki-packet evidence\",\n  \"version\": 1,\n  \"generated_at\": \"2026-05-06T07:24:28Z\",\n  \"workspace\": \"C:\\\\dev\\\\Desktop-Projects\\\\llm_wiki_prompt_packet\\\\llm_wiki_prompt_packet\\\\.llm-wiki\\\\playgrounds\\\\obsidian-provider-swarm\\\\main\",\n  \"query\": \"Click deprecation warnings commands options arguments parser compatibility\",\n  \"mode\": \"deep\",\n  \"plane\": \"local\",\n  \"policy\": {\n    \"retrieval\": \"broad search is explicit\",\n    \"injection\": \"rerank and inject only cited results needed for the task\",\n    \"source_precedence\": \"current source evidence overrides memory\"\n  },\n  \"retrieval_status\": {\n    \"local\": \"ok\"\n  },\n  \"evidence\": [\n    {\n      \"plane\": \"local\",\n      \"retrieval\": \"local-hybrid-lite\",\n      \"status\": \"ok\",\n      \"source\": \"fixtures/click/src/click/core.py\",\n      \"locator\": \"fixtures/click/src/click/core.py\",\n      \"title\": \"core\",\n      \"snippet\": \"UE from ._utils import UNSET from .exceptions import Abort from .exceptions import BadParameter from .exceptions import ClickException from .exceptions import Exit from .exceptions import MissingParameter from .exceptions import NoArgsIsHelpError from .exceptions import NoSuchCommand from .exceptions import UsageError from .formatting import HelpFormatter from .formatting import join_options from .globals import pop_\",\n      \"score\": 0.875,\n      \"confidence\": \"high\",\n      \"last_modified\": \"2026-05-06T07:08:07Z\",\n      \"provenance\": \"workspace-file\",\n      \"stale\": false,\n      \"contradicts\": [],\n      \"error\": \"\",\n      \"matched_terms\": [],\n      \"confidence_reason\": \"high confidence from score 0.875\",\n      \"source_precedence_reason\": \"local fallback is used when richer retrieval is unavailable or unnecessary\"\n    },\n    {\n      \"plane\": \"local\",\n      \"retrieval\": \"local-hybrid-lite\",\n      \"status\": \"ok\",\n      \"source\": \"fixtures/click/docs/advanced.md\",\n      \"locator\": \"fixtures/click/docs/advanced.md\",\n      \"title\": \"advanced\",\n      \"snippet\": \"# Advanced Patterns ```{currentmodule} click ``` In addition to common functionality, Click offers some advanced features. ```{contents} :depth: 1 :local: true ``` ## Callbacks and Eager Options Sometimes, you want a parameter to completely change the execution flow. For instance, this is the case when you want to have a `--version` parameter that prints out the version and then exits the application. Note: an\",\n      \"score\": 0.625,\n      \"confidence\": \"high\",\n      \"last_modified\": \"2026-05-06T07:08:07Z\",\n      \"provenance\": \"workspace-file\",\n      \"stale\": false,\n      \"contradicts\": [],\n      \"error\": \"\",\n      \"matched_terms\": [\n        \"click\",\n        \"options\"\n      ],\n      \"confidence_reason\": \"high confidence from score 0.625\",\n      \"source_precedence_reason\": \"local fallback is used when richer retrieval is unavailable or unnecessary\"\n    },\n    {\n      \"plane\": \"local\",\n      \"retrieval\": \"local-hybrid-lite\",\n      \"status\": \"ok\",\n      \"source\": \"fixtures/click/docs/commands.md\",\n      \"locator\": \"fixtures/click/"
+    },
+    "phase": "train",
+    "agent_name": "verifier",
+    "adapter_type": "codex-wrapper",
+    "env": "ow",
+    "env_dir": "benchmarks/cua_world/environments/obsidian_wiki_env",
+    "task_id": "retrieval",
+    "stdout_path": "C:\\dev\\Desktop-Projects\\llm_wiki_prompt_packet\\llm_wiki_prompt_packet\\.llm-wiki\\playgrounds\\obsidian-provider-swarm\\main\\.ai\\runs\\20260506_012427\\task_runs\\train\\verifier__ow__retrieval\\stdout.txt",
+    "stderr_path": "C:\\dev\\Desktop-Projects\\llm_wiki_prompt_packet\\llm_wiki_prompt_packet\\.llm-wiki\\playgrounds\\obsidian-provider-swarm\\main\\.ai\\runs\\20260506_012427\\task_runs\\train\\verifier__ow__retrieval\\stderr.txt",
+    "exit_code": 0,
+    "duration_sec": 1.228,
+    "stderr_excerpt": ""
+  },
+  {
+    "verifier_passed": true,
+    "success": true,
+    "verifier_score": 1.0,
+    "feedback": "Real Click repo fixture is present, source-backed synthesis is saved, and provider search retrieves it.",
+    "observations": {
+      "click_repo": "C:\\dev\\Desktop-Projects\\llm_wiki_prompt_packet\\llm_wiki_prompt_packet\\.llm-wiki\\playgrounds\\obsidian-provider-swarm\\main\\fixtures\\click",
+      "saved_note": "C:\\dev\\Desktop-Projects\\llm_wiki_prompt_packet\\llm_wiki_prompt_packet\\.llm-wiki\\playgrounds\\obsidian-provider-swarm\\main\\vault\\wiki\\syntheses\\Click Deprecation Handling Source-Backed Synthesis.md",
+      "search_results": [
+        {
+          "path": "wiki/syntheses/Click Deprecation Handling Source-Backed Synthesis.md",
+          "score": 36
+        },
+        {
+          "path": "wiki/hot.md",
+          "score": 15
+        },
+        {
+          "path": "wiki/log.md",
+          "score": 14
+        },
+        {
+          "path": "wiki/index.md",
+          "score": 8
+        },
+        {
+          "path": "wiki/syntheses/Canonical Obsidian Wiki Provider User Trial.md",
+          "score": 3
+        },
+        {
+          "path": "wiki/syntheses/Obsidian Provider Flywheel Practice Loop.md",
+          "score": 3
+        }
+      ]
+    },
+    "phase": "train",
+    "agent_name": "verifier",
+    "adapter_type": "codex-wrapper",
+    "env": "ow",
+    "env_dir": "benchmarks/cua_world/environments/obsidian_wiki_env",
+    "task_id": "save",
+    "stdout_path": "C:\\dev\\Desktop-Projects\\llm_wiki_prompt_packet\\llm_wiki_prompt_packet\\.llm-wiki\\playgrounds\\obsidian-provider-swarm\\main\\.ai\\runs\\20260506_012427\\task_runs\\train\\verifier__ow__save\\stdout.txt",
+    "stderr_path": "C:\\dev\\Desktop-Projects\\llm_wiki_prompt_packet\\llm_wiki_prompt_packet\\.llm-wiki\\playgrounds\\obsidian-provider-swarm\\main\\.ai\\runs\\20260506_012427\\task_runs\\train\\verifier__ow__save\\stderr.txt",
+    "exit_code": 0,
+    "duration_sec": 0.427,
+    "stderr_excerpt": ""
+  }
+]

@@ -1,0 +1,35 @@
+{
+  "tasks": [
+    {
+      "env": "ow",
+      "env_dir": "benchmarks/cua_world/environments/obsidian_wiki_env",
+      "task": "save"
+    },
+    {
+      "env": "ow",
+      "env_dir": "benchmarks/cua_world/environments/obsidian_wiki_env",
+      "task": "retrieval"
+    }
+  ],
+  "partitions": {
+    "train": [
+      {
+        "env": "ow",
+        "env_dir": "benchmarks/cua_world/environments/obsidian_wiki_env",
+        "task": "retrieval"
+      }
+    ],
+    "validation": [],
+    "holdout": [
+      {
+        "env": "ow",
+        "env_dir": "benchmarks/cua_world/environments/obsidian_wiki_env",
+        "task": "save"
+      }
+    ]
+  },
+  "selected_phases": [
+    "validation",
+    "holdout"
+  ]
+}

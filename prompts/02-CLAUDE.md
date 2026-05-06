@@ -19,6 +19,10 @@ Before editing:
 - Use `pk-qmd` for repo-specific evidence and prompt or docs lookup.
 - Use `pk-qmd` first when you still need to locate the right repo area.
 - Use `pk-qmd` first when you still need to locate the right skill page or feedback history.
+- Use Obsidian MCP tools for vault reads and writes when available.
+- Before creating or accessing an Obsidian vault, confirm the vault path is established by `.llm-wiki/config.json`, MCP settings, or current user instruction. If no vault path is established, ask the user where to create or access it. Do not silently use the current repo as an Obsidian vault. On this machine, Obsidian vaults normally live under `C:\dev\Desktop-Projects\Helpful-Docs-Prompts\VAULTS-OBSIDIAN`.
+- Proactively offer to save source-backed findings to Obsidian when they are likely to be useful later, especially research-paper notes, resolved investigations, durable decisions, and reusable procedures.
+- Treat `agent-cli-obsidian` as the recommended Obsidian behavior layer for wiki save/query/autoresearch conventions; treat `mcpvault` or `mcp-obsidian` as the lower-level vault transport.
 - Use `brv` only for durable memory and repeated workflow knowledge.
 - If `pk-qmd` and `brv` disagree, trust current source evidence.
 - If BRV has no connected provider, skip BRV query/curate and continue with source evidence.
@@ -29,6 +33,10 @@ Before editing:
 
 - Do not edit raw sources unless explicitly asked.
 - Update existing wiki pages before creating new ones.
+- Good answers and insights should not disappear into chat history. After a substantial answer, especially research or analysis, offer to save it; for deep research, saving should be the default unless the user opts out.
+- If Obsidian/wiki persistence would be useful but the vault path is unconfigured, ask for the vault location before saving.
+- Use the Obsidian wiki note taxonomy: `synthesis`, `concept`, `source`, `decision`, and `session`; for research use source/entity/concept/question pages plus a synthesis page when useful.
+- For research and investigation tasks, offer to write an Obsidian/wiki note that preserves the source citation, what was learned, why it mattered, caveats, and follow-up questions.
 - Maintain links, contradictions, and open questions.
 - Treat reusable skills as maintained assets with explicit lifecycle, feedback, and retirement.
 - Keep edits small and reversible.

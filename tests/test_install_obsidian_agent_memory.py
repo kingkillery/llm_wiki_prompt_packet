@@ -365,15 +365,19 @@ class InstallerHomeSkillTests(unittest.TestCase):
         for path in self.module.packet_required_paths(vault):
             self.assertTrue(path.exists(), path)
         self.assertTrue((vault / "scripts" / "llm_wiki_memory_controller.py").exists())
+        self.assertTrue((vault / "scripts" / "llm_wiki_provider.py").exists())
+        self.assertTrue((vault / "scripts" / "llm_wiki_save.py").exists())
         self.assertTrue((vault / ".llm-wiki" / "memory-ledger" / "candidates" / ".gitkeep").exists())
         self.assertTrue((vault / ".llm-wiki" / "memory-ledger" / "approved" / ".gitkeep").exists())
 
         index_path = vault / "wiki" / "index.md"
         log_path = vault / "wiki" / "log.md"
+        hot_path = vault / "wiki" / "hot.md"
         config_path = vault / self.module.STACK_CONFIG_PATH
 
         self.assertEqual(index_path.read_text(encoding="utf-8"), "# Wiki Index\n\n")
         self.assertEqual(log_path.read_text(encoding="utf-8"), "# Wiki Log\n\n")
+        self.assertIn("Hot Cache", hot_path.read_text(encoding="utf-8"))
 
         config = json.loads(config_path.read_text(encoding="utf-8"))
         expected_memory_path = Path(self.module.default_memory_vault_path(vault)).resolve()
@@ -381,9 +385,32 @@ class InstallerHomeSkillTests(unittest.TestCase):
         self.assertEqual(config["memory_base"]["vault_path"], str(expected_memory_path))
         self.assertEqual(config["memory_base"]["name"], expected_memory_name)
         self.assertEqual(config["obsidian"]["vault_path"], str(expected_memory_path))
+        self.assertEqual(config["obsidian"]["vault_resolution_policy"], "use_configured_path_or_ask_user")
+        self.assertIn(r"C:\dev\Desktop-Projects\Helpful-Docs-Prompts\VAULTS-OBSIDIAN", config["obsidian"]["known_local_vault_roots"])
+        self.assertEqual(config["obsidian"]["behavior_layer"], "agent-cli-obsidian")
+        self.assertEqual(config["obsidian"]["behavior_layer_repo"], "https://github.com/kingkillery/agent-cli-obsidian")
+        self.assertEqual(config["obsidian"]["transport_layer"], "mcpvault")
+        self.assertEqual(config["obsidian"]["alternate_transport"], "mcp-obsidian")
+        self.assertEqual(config["obsidian"]["recommended_note_types"], ["synthesis", "concept", "source", "decision", "session"])
+        self.assertEqual(config["obsidian"]["research_note_types"], ["source", "entity", "concept", "question", "synthesis"])
+        self.assertEqual(config["wiki_layer"]["provider"], "obsidian")
+        self.assertEqual(config["wiki_layer"]["vault_resolution_policy"], "use_configured_path_or_ask_user")
+        self.assertIn(r"C:\dev\Desktop-Projects\Helpful-Docs-Prompts\VAULTS-OBSIDIAN", config["wiki_layer"]["known_local_vault_roots"])
+        self.assertEqual(config["wiki_layer"]["behavior_layer"], "agent-cli-obsidian")
+        self.assertEqual(config["wiki_layer"]["transport"], "mcpvault")
+        self.assertEqual(config["wiki_layer"]["alternate_transport"], "mcp-obsidian")
+        self.assertEqual(config["wiki_layer"]["raw_path"], ".raw")
+        self.assertEqual(config["wiki_layer"]["index_path"], "wiki/index.md")
+        self.assertEqual(config["wiki_layer"]["log_path"], "wiki/log.md")
+        self.assertEqual(config["wiki_layer"]["hot_cache_path"], "wiki/hot.md")
+        self.assertTrue(config["wiki_layer"]["deep_research_save_default"])
+        self.assertEqual(config["wiki_layer"]["note_types"], ["synthesis", "concept", "source", "decision", "session"])
         agents_text = (vault / "AGENTS.md").read_text(encoding="utf-8")
         self.assertIn("## KADE-HQ, Memory, and Retrieval Routing", agents_text)
         self.assertIn("Use Obsidian MCP tools", agents_text)
+        self.assertIn("Good answers and insights should not disappear into chat history", agents_text)
+        self.assertIn("agent-cli-obsidian", agents_text)
+        self.assertIn("synthesis", agents_text)
         self.assertTrue(any("Packet-owned home skill install skipped" in action for action in actions))
         self.assertTrue(any("pi target uses root AGENTS.md" in action for action in actions))
 
@@ -403,6 +430,57 @@ class InstallerHomeSkillTests(unittest.TestCase):
         self.assertEqual(index_path.read_text(encoding="utf-8"), preserved_text)
         self.assertTrue(any(str(index_path) in action and "(exists)" in action for action in second_actions))
         self.assertTrue(any(str(config_path) in action and "(config current)" in action for action in second_actions))
+
+    def test_optional_agent_cli_obsidian_skill_import_is_opt_in_and_non_overwriting(self) -> None:
+        vault = self.home_root / "vault"
+        vault.mkdir(parents=True, exist_ok=True)
+        home_root = self.home_root / "home"
+        checkout = self.home_root / "agent-cli-obsidian"
+        skill = checkout / "skills" / "save"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text("upstream save skill\n", encoding="utf-8")
+        target = vault / ".agents" / "skills" / "agent-cli-obsidian" / "save" / "SKILL.md"
+        target.parent.mkdir(parents=True)
+        target.write_text("existing local skill\n", encoding="utf-8")
+        args = argparse.Namespace(
+            vault=str(vault),
+            home_root=str(home_root),
+            install_home_skills=False,
+            skip_home_skills=True,
+            install_scope="local",
+            gitvizz_frontend_url="http://localhost:3000",
+            gitvizz_backend_url="http://localhost:8003",
+            qmd_mcp_url="http://localhost:8181/mcp",
+            qmd_command="pk-qmd",
+            qmd_repo_url="https://github.com/kingkillery/pk-qmd",
+            qmd_repo_ref=self.module.DEFAULT_QMD_REPO_REF,
+            brv_command="brv",
+            allow_global_tool_install=False,
+            gitvizz_repo_url="https://github.com/example/gitvizz.git",
+            gitvizz_checkout_path="deps/gitvizz",
+            gitvizz_repo_path="",
+            g_kade_dependency_path=self.module.REPO_RUNTIME_DEFAULT_PATHS["g-kade"],
+            gstack_dependency_path=self.module.REPO_RUNTIME_DEFAULT_PATHS["gstack"],
+            memory_vault_path="",
+            memory_vault_name="",
+            memory_vault_id="",
+            install_obsidian_behavior_skills=True,
+            agent_cli_obsidian_path=str(checkout),
+        )
+
+        actions = self.module.install_packet_workspace(
+            vault,
+            ["codex"],
+            home_root,
+            force=False,
+            dry_run=False,
+            skip_home_skills=True,
+            args=args,
+        )
+
+        self.assertEqual(target.read_text(encoding="utf-8"), "existing local skill\n")
+        self.assertTrue(any("Obsidian behavior skill wiki (missing)" in action for action in actions))
+        self.assertTrue(any(str(target.parent) in action and "existing unowned skill root" in action for action in actions))
 
     def test_stack_config_refreshes_managed_defaults_and_preserves_project_values(self) -> None:
         vault = self.home_root / "vault"

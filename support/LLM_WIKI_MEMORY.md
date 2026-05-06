@@ -8,6 +8,18 @@ This vault expects the following tooling stack around the markdown wiki:
 - `pk-qmd` for repo-local evidence retrieval and MCP-backed search
 - `brv` for durable memory capture and recall
 - `GitVizz` for local repo graph and web access
+- Obsidian MCP transport (`mcpvault` by default, `mcp-obsidian` compatible) for vault reads and writes
+- `agent-cli-obsidian` conventions as the recommended Obsidian behavior layer for save, query, autoresearch, and note taxonomy
+
+## Obsidian vault resolution
+
+Use an explicitly configured Obsidian vault path from `.llm-wiki/config.json`, MCP settings, or the user's current instruction. If no vault path is established, ask the user where to create or access the Obsidian vault before reading, writing, creating, or assuming any vault.
+
+Do not silently treat the current repo as an Obsidian vault. On this machine, the user's Obsidian vaults normally live under:
+
+```text
+C:\dev\Desktop-Projects\Helpful-Docs-Prompts\VAULTS-OBSIDIAN
+```
 
 ## Routing rules
 
@@ -35,6 +47,7 @@ Use this table to decide where new knowledge belongs:
 | What you have | Write to |
 |---|---|
 | Durable repo fact, concept, or synthesis | `wiki/concepts/`, `wiki/syntheses/`, etc. |
+| Substantial answer, research finding, comparison, or source-backed insight | Offer to save to Obsidian/wiki; for deep research, save by default unless the user opts out |
 | Reusable task shortcut (procedural) | `wiki/skills/active/` via skill pipeline |
 | Stable user preference or repeated workflow quirk | `brv` (curate) |
 | Prior architecture or tooling decision | `wiki/` if it affects future agents; `brv` if it is a personal/workflow preference |
@@ -43,6 +56,9 @@ Use this table to decide where new knowledge belongs:
 
 Rules:
 - `wiki/` is for knowledge that future agents should find via `pk-qmd` search.
+- Good answers and insights should not disappear into chat history; save or update durable wiki notes when the work would be expensive to rediscover.
+- Before saving to Obsidian/wiki, confirm the vault path is configured. If it is not configured, ask where the vault should be created or accessed.
+- Use the Obsidian wiki note taxonomy from `agent-cli-obsidian`: `synthesis`, `concept`, `source`, `decision`, and `session`; research flows use source/entity/concept/question pages plus a synthesis page when useful.
 - `brv` is for preferences and decisions that only matter at runtime and should survive project boundaries.
 - Do not write to both for the same fact — pick one based on the table above.
 - When `brv` has no connected provider, write preference-class knowledge to `wiki/concepts/` temporarily and note it should be migrated to `brv` once the provider is connected.

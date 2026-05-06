@@ -9,6 +9,9 @@ __pycache__/
 node_modules/
 npm-debug.log*
 .llm-wiki/tools/
+.llm-wiki/playgrounds/**/.llm-wiki/tools/
+.llm-wiki/playgrounds/**/.git/
+.llm-wiki/playgrounds/obsidian-provider-swarm/main/fixtures/click/docs/changes.rst
 .llm-wiki/skill-index.json
 .llm-wiki/memory-ledger/candidates/*
 !.llm-wiki/memory-ledger/candidates/.gitkeep

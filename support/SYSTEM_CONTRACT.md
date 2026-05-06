@@ -13,6 +13,7 @@ This repo packages the combined `Kade-HQ` + `G-Stack` + `pk-qmd` + `Byterover` +
 - Durable memory plane: `Byterover` (`brv`)
 - Graph and web plane: `GitVizz`
 - Vault scribing plane: `obsidian` MCP (pivotal but optional)
+- Obsidian behavior layer: `agent-cli-obsidian` conventions for save, query, autoresearch, and wiki note taxonomy
 
 ## MCP Servers (stdio via `.mcp.json`)
 
@@ -27,10 +28,16 @@ Four MCP servers are configured for direct agent access without Docker:
 
 ### Obsidian: pivotal but optional
 
-The `obsidian` MCP server provides `read_note`, `write_note`, `search_notes`, `manage_tags`, and `move_note` tools against the Kade-HQ vault. It is the preferred path for all wiki mutations.
+The `obsidian` MCP server provides `read_note`, `write_note`, `search_notes`, `manage_tags`, and `move_note` tools against the configured Obsidian vault. It is the preferred path for all wiki mutations.
+
+Vault resolution rule: use an explicitly configured vault path from `.llm-wiki/config.json`, MCP settings, or a user-provided setting. If no vault path is established, ask the user where to create or access the Obsidian vault before reading, writing, creating, or assuming any vault. Do not silently use the current repo as an Obsidian vault.
+
+Agents should offer Obsidian persistence whenever an answer produces reusable knowledge that would be expensive to rediscover, including research-paper summaries, source-backed findings, solved debugging trails, durable decisions, procedures, and prior-art comparisons. Accepted saves should become compact source-backed notes with citations/source links, key claims, caveats, open questions, and useful tags.
+
+Clean layering: `llm_wiki_prompt_packet` owns installer, MCP wiring, and cross-agent retrieval; `agent-cli-obsidian` owns Obsidian wiki behavior and skills; `mcpvault` or `mcp-obsidian` owns vault read/write transport. The Obsidian note taxonomy is `synthesis`, `concept`, `source`, `decision`, and `session`; research flows also use source/entity/concept/question pages plus a synthesis page. For deep research, saving is the default outcome unless the user opts out.
 
 When `obsidian` is unavailable:
-1. Fall back to direct file I/O against the vault path.
+1. Fall back to direct file I/O only against the configured vault path.
 2. Log the fallback in `wiki/log.md`.
 3. For renames and moves, prefer pausing and asking the user to open Obsidian (link-integrity risk).
 4. The system remains fully functional — `pk-qmd` and `llm-wiki-skills` provide evidence and skill management independently.
@@ -72,6 +79,7 @@ When `brv` has no connected provider, skip `brv query`/`brv curate` and continue
 - Official Obsidian vault name: `kade-hq`
 - Official vault id: `fd8411f00d3a9d21`
 - Official vault path: `C:\dev\Desktop-Projects\Helpful-Docs-Prompts\VAULTS-OBSIDIAN\Kade-HQ`
+- Local vault root hint for this machine: `C:\dev\Desktop-Projects\Helpful-Docs-Prompts\VAULTS-OBSIDIAN`
 - Repo mirrors:
   - `AGENTS.md`
   - `.factory/memories.md`
