@@ -412,6 +412,92 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(runtime["gitvizz_authorization_env"], "GITVIZZ_AUTH")
         self.assertEqual(runtime["gitvizz_auth_token_env"], "GITVIZZ_TOKEN")
 
+    def test_build_runtime_disables_brv_when_config_disabled(self) -> None:
+        config_path = self.write_config(
+            {
+                "byterover": {
+                    "enabled": False,
+                    "command": "",
+                    "local_command_candidates": [".llm-wiki/tools/brv/node_modules/.bin/brv.cmd"],
+                }
+            }
+        )
+        args = self.module.argparse.Namespace(
+            mode="setup",
+            workspace=str(self.workspace),
+            config_path=str(config_path),
+            qmd_source="",
+            qmd_source_checkout="",
+            qmd_repo_url="",
+            qmd_command="",
+            qmd_collection="",
+            qmd_context="",
+            brv_command="",
+            obsidian_vault_path="",
+            gitvizz_frontend_url="",
+            gitvizz_backend_url="",
+            gitvizz_repo_url="",
+            gitvizz_checkout_path="",
+            gitvizz_repo_path="",
+            skip_qmd=False,
+            skip_mcp=False,
+            enable_mcp=False,
+            skip_qmd_bootstrap=False,
+            skip_qmd_embed=False,
+            skip_brv=False,
+            skip_brv_init=False,
+            skip_gitvizz=False,
+            skip_gitvizz_start=False,
+            allow_global_tool_install=False,
+            verify_only=False,
+        )
+
+        runtime = self.module.build_runtime(args)
+
+        self.assertFalse(runtime["brv_enabled"])
+        self.assertEqual(runtime["brv_command"], "")
+        self.assertEqual(runtime["brv_local_candidates"], [])
+        self.assertTrue(runtime["skip_brv"])
+
+    def test_build_runtime_disables_brv_when_enabled_missing_and_command_empty(self) -> None:
+        config_path = self.write_config({"byterover": {"command": "", "local_command_candidates": [".llm-wiki/tools/brv/node_modules/.bin/brv.cmd"]}})
+        args = self.module.argparse.Namespace(
+            mode="setup",
+            workspace=str(self.workspace),
+            config_path=str(config_path),
+            qmd_source="",
+            qmd_source_checkout="",
+            qmd_repo_url="",
+            qmd_command="",
+            qmd_collection="",
+            qmd_context="",
+            brv_command="",
+            obsidian_vault_path="",
+            gitvizz_frontend_url="",
+            gitvizz_backend_url="",
+            gitvizz_repo_url="",
+            gitvizz_checkout_path="",
+            gitvizz_repo_path="",
+            skip_qmd=False,
+            skip_mcp=False,
+            enable_mcp=False,
+            skip_qmd_bootstrap=False,
+            skip_qmd_embed=False,
+            skip_brv=False,
+            skip_brv_init=False,
+            skip_gitvizz=False,
+            skip_gitvizz_start=False,
+            allow_global_tool_install=False,
+            verify_only=False,
+        )
+
+        runtime = self.module.build_runtime(args)
+
+        self.assertFalse(runtime["brv_enabled"])
+        self.assertEqual(runtime["brv_command"], "")
+        self.assertEqual(runtime["brv_local_candidates"], [])
+        self.assertTrue(runtime["skip_brv"])
+
     def test_verify_wiki_layer_creates_required_files_with_direct_fallback(self) -> None:
         vault = self.workspace / "vault"
         vault.mkdir()
@@ -657,6 +743,28 @@ class RuntimeTests(unittest.TestCase):
 
         patch_mcp.assert_called_once_with(runtime, "pk-qmd", "C:/tools/mcpvault.cmd", summary)
         self.assertIn("pk-qmd broke", failures)
+
+    def test_ensure_brv_command_skips_when_disabled(self) -> None:
+        runtime = {
+            "brv_enabled": False,
+            "brv_local_candidates": [],
+            "brv_command": "",
+            "verify_only": False,
+            "allow_global_tool_install": False,
+            "workspace_root": self.workspace,
+            "brv_install_root": self.workspace / ".llm-wiki" / "tools" / "brv",
+            "brv_package_name": "byterover-cli",
+        }
+        summary: list[str] = []
+        failures: list[str] = []
+
+        with mock.patch.object(self.module, "run_command") as run_command:
+            resolved = self.module.ensure_brv_command(runtime, summary, failures, {})
+
+        self.assertIsNone(resolved)
+        self.assertFalse(failures)
+        self.assertFalse(run_command.called)
+        self.assertTrue(any("disabled in config" in line for line in summary))
 
     def test_ensure_managed_qmd_falls_back_when_existing_command_is_unusable(self) -> None:
         source_root = self.workspace / "deps" / "pk-qmd"

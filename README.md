@@ -802,7 +802,9 @@ The installer writes `.llm-wiki/config.json` using these defaults:
 - `LLM_WIKI_QMD_MCP_URL=http://localhost:8181/mcp`
 - `LLM_WIKI_QMD_COLLECTION=<vault-folder-name>`
 - `LLM_WIKI_QMD_CONTEXT=Primary llm-wiki-memory vault for <vault-path>`
-- `LLM_WIKI_BRV_COMMAND=brv`
+- `LLM_WIKI_BRV_COMMAND=<unset>` (optional; set to `brv` to enable `/memory/status`)
+- `LLM_WIKI_BRV_QUERY_SCRIPT=<unset>` (optional; enables `/memory/query`)
+- `LLM_WIKI_BRV_CURATE_SCRIPT=<unset>` (optional; enables `/memory/curate`)
 - `LLM_WIKI_GITVIZZ_FRONTEND_URL=http://localhost:3000`
 - `LLM_WIKI_GITVIZZ_BACKEND_URL=http://localhost:8003`
 - `LLM_WIKI_GITVIZZ_REPO_URL=<optional git URL for managed checkout>`
@@ -834,7 +836,7 @@ Default container behavior:
 - host gateway bind: `127.0.0.1:8181` by default
 - `pk-qmd` is exposed on `/mcp`
 - GitVizz backend is exposed on `/graph/*`
-- BRV is exposed through `/memory/status`, `/memory/query`, and `/memory/curate`
+- BRV memory routes are optional: `/memory/status` requires `LLM_WIKI_BRV_COMMAND`, `/memory/query` requires `LLM_WIKI_BRV_QUERY_SCRIPT`, and `/memory/curate` requires `LLM_WIKI_BRV_CURATE_SCRIPT`
 - targets installed into the mounted vault: `claude,codex,droid,pi`
 - GitVizz checks are skipped by default in-container unless you opt in
 - optional full-stack mode can also wire in-container GitVizz services from a mounted GitVizz checkout
@@ -850,6 +852,9 @@ Useful overrides:
 - `LLM_WIKI_ENABLE_GITVIZZ=1`
 - `LLM_WIKI_GITVIZZ_SOURCE_HOST_PATH=/absolute/path/to/GitVizz`
 - `LLM_WIKI_AGENT_API_TOKEN=<optional bearer token for hosted use>`
+- `LLM_WIKI_BRV_COMMAND=brv` to opt in to `/memory/status`
+- `LLM_WIKI_BRV_QUERY_SCRIPT=/workspace/scripts/brv_query.sh` to opt in to `/memory/query`
+- `LLM_WIKI_BRV_CURATE_SCRIPT=/workspace/scripts/brv_curate.sh` to opt in to `/memory/curate`
 - `BYTEROVER_API_KEY=<key>`
 - `GEMINI_API_KEY=<key>`
 - `GH_TOKEN=<token>` or `GITHUB_TOKEN=<token>` for private `pk-qmd` fetches
@@ -861,6 +866,7 @@ Host agent examples:
 ```bash
 curl http://127.0.0.1:8181/healthz
 curl http://127.0.0.1:8181/graph/openapi.json
+# only after LLM_WIKI_BRV_QUERY_SCRIPT is configured
 curl -X POST http://127.0.0.1:8181/memory/query -H "Content-Type: application/json" -d '{"query":"what prior decisions matter here?"}'
 ```
 

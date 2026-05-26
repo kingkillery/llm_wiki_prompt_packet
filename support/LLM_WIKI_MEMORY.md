@@ -306,7 +306,7 @@ When you run the local Docker path, the host-facing gateway is loopback-only by 
 
 - `/mcp` for `pk-qmd`
 - `/graph/*` for the configured GitVizz backend
-- `/memory/status`, `/memory/query`, and `/memory/curate` as a narrow BRV adapter
+- optional BRV adapter routes: `/memory/status` requires `LLM_WIKI_BRV_COMMAND`, `/memory/query` requires `LLM_WIKI_BRV_QUERY_SCRIPT`, and `/memory/curate` requires `LLM_WIKI_BRV_CURATE_SCRIPT`
 
 Local Docker mode does not require auth on those routes because the host bind is loopback-only. Set `LLM_WIKI_AGENT_API_TOKEN` only when you intentionally need a bearer gate, such as hosted or tunnelled access.
 
@@ -483,6 +483,8 @@ The setup helpers honor these environment variables:
 - `LLM_WIKI_QMD_COLLECTION`
 - `LLM_WIKI_QMD_CONTEXT`
 - `LLM_WIKI_BRV_COMMAND`
+- `LLM_WIKI_BRV_QUERY_SCRIPT`
+- `LLM_WIKI_BRV_CURATE_SCRIPT`
 - `LLM_WIKI_GITVIZZ_FRONTEND_URL`
 - `LLM_WIKI_GITVIZZ_BACKEND_URL`
 - `LLM_WIKI_GITVIZZ_REPO_URL`
