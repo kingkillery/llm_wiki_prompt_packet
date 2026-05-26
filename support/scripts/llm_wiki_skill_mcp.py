@@ -428,6 +428,18 @@ class SkillStore:
     def _write_frontier_snapshot(self) -> None:
         self.frontier_path.write_text(json.dumps(self.data.get("frontier", []), indent=2) + "\n", encoding="utf-8")
 
+    def bootstrap(self) -> dict[str, Any]:
+        """Initialize skill lifecycle workspace scaffolding and verify all required paths exist."""
+        registry_was_new = not self.registry_path.exists()
+        if registry_was_new:
+            self._save()
+        return {
+            "status": "ok",
+            "workspace": str(self.workspace),
+            "registry_path": self._relative(self.registry_path),
+            "registry_created": registry_was_new,
+        }
+
     def _build_similarity_matches(self, candidate: dict[str, Any], exclude_id: str | None = None) -> list[dict[str, Any]]:
         matches: list[dict[str, Any]] = []
         cand_meta = tokenize(candidate.get("title", ""), candidate.get("problem", ""), candidate.get("trigger", ""))
@@ -2467,6 +2479,14 @@ def mcp_tools() -> list[dict[str, Any]]:
                 },
             },
         },
+        {
+            "name": "wiki_bootstrap",
+            "description": "Initialize skill lifecycle workspace scaffolding. Creates required directories and the skills registry if they do not already exist.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
+            },
+        },
     ]
 
 
@@ -2584,6 +2604,9 @@ def run_mcp(workspace: str) -> int:
             elif name == "skill_retire":
                 result = store.retire(str(arguments["skill_id"]), str(arguments["reason"]))
                 write_message({"jsonrpc": "2.0", "id": msg_id, "result": tool_result(result, result.get("status") in {"blocked", "missing"})})
+            elif name == "wiki_bootstrap":
+                result = store.bootstrap()
+                write_message({"jsonrpc": "2.0", "id": msg_id, "result": tool_result(result)})
             else:
                 write_message({"jsonrpc": "2.0", "id": msg_id, "error": {"code": -32601, "message": f"Unknown tool: {name}"}})
         elif msg_id is not None:
@@ -2870,6 +2893,7 @@ def main(argv: list[str] | None = None) -> int:
     get_cmd.add_argument("--skill-id", required=True)
 
     sub.add_parser("sync-index")
+    sub.add_parser("wiki-bootstrap")
 
     args = parser.parse_args(argv)
 
@@ -2912,6 +2936,8 @@ def main(argv: list[str] | None = None) -> int:
             "evolution_runs": store.list_evolution_runs(payload["skill_id"]),
             "frontier": store.list_frontier(skill_id=payload["skill_id"]),
         } if skill else {"status": "missing", "skill_id": payload["skill_id"]}
+    elif command == "wiki-bootstrap":
+        result = store.bootstrap()
     else:
         store._sync_index()
         result = {"status": "ok", "index_path": str(store.index_path)}

@@ -43,6 +43,7 @@ The script prints a JSON result to stdout and exits 0 on success, 1 on `blocked`
 | `skill_frontier` | `frontier` | (none required) |
 | `skill_get` | `get` | `--skill-id` |
 | `skill_retire` | `retire` | `--skill-id`, `--reason` |
+| `wiki_bootstrap` | `wiki-bootstrap` | (none required) |
 
 ### Common CLI patterns
 
