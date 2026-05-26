@@ -628,12 +628,14 @@ def ensure_safe_install_root(target_root: Path, home_root: Path, *, allow_home_r
     if allow_home_root:
         return
 
-    dangerous_paths = [home_root]
-    dangerous_paths.extend(home_root / relative for relative in DANGEROUS_HOME_TARGETS)
-    if any(target_root == path.resolve() for path in dangerous_paths):
+    resolved_target = target_root.expanduser().resolve(strict=False)
+    resolved_home = home_root.expanduser().resolve(strict=False)
+    dangerous_paths = [resolved_home]
+    dangerous_paths.extend((resolved_home / relative).resolve(strict=False) for relative in DANGEROUS_HOME_TARGETS)
+    if resolved_target in dangerous_paths:
         raise SystemExit(
             "Refusing to install into a shared home path: "
-            f"{target_root}. Pass --allow-home-root only if you explicitly intend to manage that shared root."
+            f"{resolved_target}. Pass --allow-home-root only if you explicitly intend to manage that shared root."
         )
 
 
