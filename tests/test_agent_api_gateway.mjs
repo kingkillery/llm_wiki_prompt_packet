@@ -61,7 +61,7 @@ async function startGateway(options) {
       LLM_WIKI_AGENT_API_UNSAFE_NO_AUTH: options.allowUnsafeNoAuth ? "1" : "",
       LLM_WIKI_BRV_QUERY_SCRIPT: options.queryScript || "",
       LLM_WIKI_BRV_CURATE_SCRIPT: options.curateScript || "",
-      LLM_WIKI_BRV_COMMAND: options.brvCommand ?? "brv",
+      LLM_WIKI_BRV_COMMAND: options.brvCommand || "",
       LLM_WIKI_VAULT: options.vaultPath || repoRoot,
     },
     stdio: ["ignore", "pipe", "pipe"],

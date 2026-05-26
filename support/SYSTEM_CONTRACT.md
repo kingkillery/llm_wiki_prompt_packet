@@ -52,7 +52,7 @@ When `brv` has no connected provider, skip `brv query`/`brv curate` and continue
 - Routes:
   - `/mcp` -> `pk-qmd`
   - `/graph/*` -> GitVizz backend
-  - `/memory/status`, `/memory/query`, `/memory/curate` -> narrow BRV adapter
+  - `/memory/status`, `/memory/query`, `/memory/curate` -> optional narrow BRV adapter routes, disabled unless their BRV env vars are explicitly configured
 - Auth rule:
   - loopback-only binds may run without auth
   - non-loopback binds must set `LLM_WIKI_AGENT_API_TOKEN`, unless an explicit unsafe override is set
