@@ -19,8 +19,9 @@ const brvCommand = brvCommandConfig || "brv";
 const brvQueryScript = brvQueryScriptConfig || path.join(vaultPath, "scripts", "brv_query.sh");
 const brvCurateScript = brvCurateScriptConfig || path.join(vaultPath, "scripts", "brv_curate.sh");
 const memoryStatusConfigured = Boolean(brvCommandConfig);
-const memoryQueryConfigured = Boolean(brvQueryScriptConfig);
-const memoryCurateConfigured = Boolean(brvCurateScriptConfig);
+const hasCustomMemoryScriptConfig = Boolean(brvQueryScriptConfig || brvCurateScriptConfig);
+const memoryQueryConfigured = Boolean(brvQueryScriptConfig) || (!hasCustomMemoryScriptConfig && memoryStatusConfigured);
+const memoryCurateConfigured = Boolean(brvCurateScriptConfig) || (!hasCustomMemoryScriptConfig && memoryStatusConfigured);
 const graphBackendUrl = process.env.LLM_WIKI_GITVIZZ_BACKEND_URL || "";
 
 function isLoopbackBindHost(host) {
