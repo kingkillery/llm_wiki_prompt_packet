@@ -427,10 +427,35 @@ def discover_skills(active_dir: Path) -> list[Skill]:
 def _naive_frontmatter(text: str) -> dict[str, Any]:
     """Parse simple key: value lines without requiring PyYAML."""
     result: dict[str, Any] = {}
+    current_list: str | None = None
+    current_item: dict[str, str] | None = None
     for line in text.splitlines():
-        if ":" in line and not line.strip().startswith("-"):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if current_list and stripped.startswith("- "):
+            current_item = {}
+            result.setdefault(current_list, []).append(current_item)
+            stripped = stripped[2:].strip()
+            if ":" in stripped:
+                key, _, val = stripped.partition(":")
+                current_item[key.strip()] = val.strip().strip('"').strip("'")
+            continue
+        if current_item is not None and line.startswith(" ") and ":" in stripped:
+            key, _, val = stripped.partition(":")
+            current_item[key.strip()] = val.strip().strip('"').strip("'")
+            continue
+        current_list = None
+        current_item = None
+        if ":" in line and not stripped.startswith("-"):
             key, _, val = line.partition(":")
-            result[key.strip()] = val.strip().strip('"').strip("'")
+            key = key.strip()
+            value = val.strip().strip('"').strip("'")
+            if not value and key == "related_skills":
+                result[key] = []
+                current_list = key
+            else:
+                result[key] = value
     return result
 
 
