@@ -12,9 +12,15 @@ const bodyLimitBytes = Number(process.env.LLM_WIKI_AGENT_API_BODY_LIMIT_BYTES ||
 const authToken = process.env.LLM_WIKI_AGENT_API_TOKEN || "";
 const allowUnsafeNoAuth = /^(1|true|yes|on)$/i.test(process.env.LLM_WIKI_AGENT_API_UNSAFE_NO_AUTH || "");
 const vaultPath = process.env.LLM_WIKI_VAULT || "/workspace";
-const brvCommand = process.env.LLM_WIKI_BRV_COMMAND || "brv";
-const brvQueryScript = process.env.LLM_WIKI_BRV_QUERY_SCRIPT || path.join(vaultPath, "scripts", "brv_query.sh");
-const brvCurateScript = process.env.LLM_WIKI_BRV_CURATE_SCRIPT || path.join(vaultPath, "scripts", "brv_curate.sh");
+const brvCommandConfig = (process.env.LLM_WIKI_BRV_COMMAND || "").trim();
+const brvQueryScriptConfig = (process.env.LLM_WIKI_BRV_QUERY_SCRIPT || "").trim();
+const brvCurateScriptConfig = (process.env.LLM_WIKI_BRV_CURATE_SCRIPT || "").trim();
+const brvCommand = brvCommandConfig || "brv";
+const brvQueryScript = brvQueryScriptConfig || path.join(vaultPath, "scripts", "brv_query.sh");
+const brvCurateScript = brvCurateScriptConfig || path.join(vaultPath, "scripts", "brv_curate.sh");
+const memoryStatusConfigured = Boolean(brvCommandConfig);
+const memoryQueryConfigured = Boolean(brvQueryScriptConfig);
+const memoryCurateConfigured = Boolean(brvCurateScriptConfig);
 const graphBackendUrl = process.env.LLM_WIKI_GITVIZZ_BACKEND_URL || "";
 
 function isLoopbackBindHost(host) {
@@ -215,6 +221,11 @@ async function runBrvStatus() {
 }
 
 async function handleMemoryStatus(res) {
+  if (!memoryStatusConfigured) {
+    json(res, 503, { ok: false, error: "LLM_WIKI_BRV_COMMAND is not configured" });
+    return;
+  }
+
   try {
     const result = await runBrvStatus();
     const payload = parseLastJsonLine(result.stdout);
@@ -237,6 +248,14 @@ async function handleMemoryStatus(res) {
 }
 
 async function handleMemoryCommand(req, res, mode) {
+  const routeConfigured = mode === "query" ? memoryQueryConfigured : memoryCurateConfigured;
+  const variable = mode === "query" ? "LLM_WIKI_BRV_QUERY_SCRIPT" : "LLM_WIKI_BRV_CURATE_SCRIPT";
+
+  if (!routeConfigured) {
+    json(res, 503, { ok: false, error: `${variable} is not configured` });
+    return;
+  }
+
   if (req.method !== "POST") {
     text(res, 405, "Method not allowed");
     return;
@@ -314,9 +333,9 @@ function healthPayload(includeDetails) {
     routes: {
       mcp: true,
       graph: Boolean(graphBackendUrl),
-      memory_status: true,
-      memory_query: true,
-      memory_curate: true,
+      memory_status: memoryStatusConfigured,
+      memory_query: memoryQueryConfigured,
+      memory_curate: memoryCurateConfigured,
     },
     memory: {
       command: brvCommand,

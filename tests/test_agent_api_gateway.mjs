@@ -61,7 +61,7 @@ async function startGateway(options) {
       LLM_WIKI_AGENT_API_UNSAFE_NO_AUTH: options.allowUnsafeNoAuth ? "1" : "",
       LLM_WIKI_BRV_QUERY_SCRIPT: options.queryScript || "",
       LLM_WIKI_BRV_CURATE_SCRIPT: options.curateScript || "",
-      LLM_WIKI_BRV_COMMAND: options.brvCommand || "brv",
+      LLM_WIKI_BRV_COMMAND: options.brvCommand ?? "brv",
       LLM_WIKI_VAULT: options.vaultPath || repoRoot,
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -207,6 +207,64 @@ test("gateway enforces bearer auth when a token is configured", async (t) => {
     headers: { Authorization: "Bearer secret-token" },
   });
   assert.equal(authorized.status, 200);
+});
+
+test("gateway gates BRV routes independently by configured capability", async (t) => {
+  const qmd = createJsonServer(async (_req, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ ok: true }));
+  });
+  const { port: qmdPort } = await listen(qmd.server);
+
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "llm-wiki-gateway-"));
+  const queryScript = path.join(tempDir, "query.mjs");
+  await writeFile(
+    queryScript,
+    "console.log(JSON.stringify({success:true,data:{result:'query only'}}));\n",
+    "utf-8"
+  );
+
+  const probe = http.createServer();
+  const { port: gatewayPort } = await listen(probe);
+  await closeServer(probe);
+
+  const gateway = await startGateway({
+    listenPort: gatewayPort,
+    qmdPort,
+    queryScript,
+    brvCommand: "",
+  });
+
+  t.after(async () => {
+    await gateway.stop();
+    await closeServer(qmd.server);
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  const statusResponse = await fetch(`http://127.0.0.1:${gatewayPort}/memory/status`);
+  assert.equal(statusResponse.status, 503);
+  assert.match((await statusResponse.json()).error, /LLM_WIKI_BRV_COMMAND is not configured/);
+
+  const queryResponse = await fetch(`http://127.0.0.1:${gatewayPort}/memory/query`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ query: "what matters?" }),
+  });
+  assert.equal(queryResponse.status, 200);
+  assert.equal((await queryResponse.json()).payload.data.result, "query only");
+
+  const curateResponse = await fetch(`http://127.0.0.1:${gatewayPort}/memory/curate`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ content: "durable note" }),
+  });
+  assert.equal(curateResponse.status, 503);
+  assert.match((await curateResponse.json()).error, /LLM_WIKI_BRV_CURATE_SCRIPT is not configured/);
+
+  const healthPayload = await (await fetch(`http://127.0.0.1:${gatewayPort}/healthz`)).json();
+  assert.equal(healthPayload.routes.memory_status, false);
+  assert.equal(healthPayload.routes.memory_query, true);
+  assert.equal(healthPayload.routes.memory_curate, false);
 });
 
 test("gateway refuses non-loopback binds without auth unless explicitly overridden", async () => {
