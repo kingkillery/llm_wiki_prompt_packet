@@ -20,6 +20,14 @@ def load_module():
     return module
 
 
+def canonical_path(value: str) -> str:
+    return str(Path(value).resolve(strict=False))
+
+
+def assert_path_args_equal(testcase: unittest.TestCase, actual: list[str], expected: list[str]) -> None:
+    testcase.assertEqual([canonical_path(item) for item in actual], [canonical_path(item) for item in expected])
+
+
 class ObsidianMcpWrapperTests(unittest.TestCase):
     def setUp(self) -> None:
         self.module = load_module()
@@ -43,7 +51,7 @@ class ObsidianMcpWrapperTests(unittest.TestCase):
                     result = self.module.main()
 
         self.assertEqual(result, 0)
-        self.assertEqual(run.call_args.args[0], [str(tool), str(vault.resolve(strict=False))])
+        assert_path_args_equal(self, run.call_args.args[0], [str(tool), str(vault.resolve(strict=False))])
 
     def test_cli_vault_argument_takes_precedence_over_environment(self) -> None:
         tool = self.workspace / ".llm-wiki" / "tools" / "obsidian-mcp" / "node_modules" / ".bin" / "mcpvault.cmd"
@@ -60,7 +68,7 @@ class ObsidianMcpWrapperTests(unittest.TestCase):
                     result = self.module.main()
 
         self.assertEqual(result, 0)
-        self.assertEqual(run.call_args.args[0], [str(tool), str(cli_vault.resolve(strict=False))])
+        assert_path_args_equal(self, run.call_args.args[0], [str(tool), str(cli_vault.resolve(strict=False))])
 
     def test_configured_vault_path_is_used_when_environment_is_absent(self) -> None:
         tool = self.workspace / ".llm-wiki" / "tools" / "obsidian-mcp" / "node_modules" / ".bin" / "mcpvault.cmd"
@@ -77,7 +85,7 @@ class ObsidianMcpWrapperTests(unittest.TestCase):
                     result = self.module.main()
 
         self.assertEqual(result, 0)
-        self.assertEqual(run.call_args.args[0], [str(tool), str(vault.resolve(strict=False))])
+        assert_path_args_equal(self, run.call_args.args[0], [str(tool), str(vault.resolve(strict=False))])
 
 
 if __name__ == "__main__":

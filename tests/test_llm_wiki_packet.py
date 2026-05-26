@@ -25,6 +25,10 @@ def load_module():
     return module
 
 
+def canonical_path(value: str) -> str:
+    return str(Path(value).resolve(strict=False))
+
+
 class PacketCliTests(unittest.TestCase):
     def setUp(self) -> None:
         self.module = load_module()
@@ -77,15 +81,9 @@ class PacketCliTests(unittest.TestCase):
 
             self.assertEqual(exit_code, 0)
             invoked = run_mock.call_args.args[0]
-            self.assertEqual(
-                invoked,
-                [
-                    "python",
-                    str(workspace_root / "scripts" / "llm_wiki_memory_runtime.py"),
-                    "check",
-                    "--skip-gitvizz",
-                ],
-            )
+            self.assertEqual(invoked[0], "python")
+            self.assertEqual(canonical_path(invoked[1]), canonical_path(str(workspace_root / "scripts" / "llm_wiki_memory_runtime.py")))
+            self.assertEqual(invoked[2:], ["check", "--skip-gitvizz"])
 
     def test_harness_enable_disable_status_switches_managed_block_only(self) -> None:
         with tempfile.TemporaryDirectory() as workspace_dir:
@@ -169,7 +167,7 @@ class PacketCliTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             invoked = run_mock.call_args.args[0]
             self.assertEqual(invoked[0], "python")
-            self.assertEqual(invoked[1], str(adapter))
+            self.assertEqual(canonical_path(invoked[1]), canonical_path(str(adapter)))
             self.assertIn("smoke", invoked)
             self.assertIn("--seed", invoked)
             self.assertIn("99", invoked)
@@ -196,7 +194,7 @@ class PacketCliTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             invoked = run_mock.call_args.args[0]
             self.assertEqual(invoked[0], "python")
-            self.assertEqual(invoked[1], str(adapter))
+            self.assertEqual(canonical_path(invoked[1]), canonical_path(str(adapter)))
             self.assertIn("smoke", invoked)
 
     def test_context_command_returns_compact_bundle_with_expansion_suggestions(self) -> None:
