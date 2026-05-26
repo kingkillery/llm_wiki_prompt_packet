@@ -24,6 +24,7 @@ LEGACY_HUMAN_MD_TEXT = (
 HUMAN_MD_SOURCE_CANDIDATES = (
     REPO_ROOT / "deps" / "pk-skills1" / "kade-headquarters" / "HUMAN.md",
     REPO_ROOT / "deps" / "pk-skills1" / "kade-hq" / "templates" / "HUMAN.md",
+    REPO_ROOT / "installers" / "assets" / "kade" / "HUMAN.md",
 )
 
 
