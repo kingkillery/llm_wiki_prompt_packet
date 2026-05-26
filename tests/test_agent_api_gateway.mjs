@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { mkdtemp, writeFile, rm, mkdir, chmod } from "node:fs/promises";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { spawn } from "node:child_process";
 
 const repoRoot = path.resolve(import.meta.dirname, "..");
@@ -267,27 +267,12 @@ test("gateway gates BRV routes independently by configured capability", async (t
   assert.equal(healthPayload.routes.memory_curate, false);
 });
 
-test("gateway supports command-only BRV setup with default wrapper scripts", async (t) => {
-  if (process.platform === "win32") {
-    t.skip("default .sh wrapper execution is Linux/Docker-only");
-    return;
-  }
-
+test("gateway command-only BRV setup enables status route only", async (t) => {
   const qmd = createJsonServer(async (_req, res) => {
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({ ok: true }));
   });
   const { port: qmdPort } = await listen(qmd.server);
-
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), "llm-wiki-gateway-vault-"));
-  const scriptsDir = path.join(tempDir, "scripts");
-  const queryScript = path.join(scriptsDir, "brv_query.sh");
-  const curateScript = path.join(scriptsDir, "brv_curate.sh");
-  await mkdir(scriptsDir, { recursive: true });
-  await writeFile(queryScript, "#!/usr/bin/env bash\necho '{\"data\":{\"result\":\"default query\"}}'\n", "utf-8");
-  await writeFile(curateScript, "#!/usr/bin/env bash\necho '{\"data\":{\"message\":\"default curate\"}}'\n", "utf-8");
-  await chmod(queryScript, 0o755);
-  await chmod(curateScript, 0o755);
 
   const probe = http.createServer();
   const { port: gatewayPort } = await listen(probe);
@@ -297,13 +282,11 @@ test("gateway supports command-only BRV setup with default wrapper scripts", asy
     listenPort: gatewayPort,
     qmdPort,
     brvCommand: "brv",
-    vaultPath: tempDir,
   });
 
   t.after(async () => {
     await gateway.stop();
     await closeServer(qmd.server);
-    await rm(tempDir, { recursive: true, force: true });
   });
 
   const queryResponse = await fetch(`http://127.0.0.1:${gatewayPort}/memory/query`, {
@@ -311,21 +294,21 @@ test("gateway supports command-only BRV setup with default wrapper scripts", asy
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ query: "what matters?" }),
   });
-  assert.equal(queryResponse.status, 200);
-  assert.equal((await queryResponse.json()).payload.data.result, "default query");
+  assert.equal(queryResponse.status, 503);
+  assert.match((await queryResponse.json()).error, /LLM_WIKI_BRV_QUERY_SCRIPT is not configured/);
 
   const curateResponse = await fetch(`http://127.0.0.1:${gatewayPort}/memory/curate`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ content: "durable note" }),
   });
-  assert.equal(curateResponse.status, 200);
-  assert.equal((await curateResponse.json()).payload.data.message, "default curate");
+  assert.equal(curateResponse.status, 503);
+  assert.match((await curateResponse.json()).error, /LLM_WIKI_BRV_CURATE_SCRIPT is not configured/);
 
   const healthPayload = await (await fetch(`http://127.0.0.1:${gatewayPort}/healthz`)).json();
   assert.equal(healthPayload.routes.memory_status, true);
-  assert.equal(healthPayload.routes.memory_query, true);
-  assert.equal(healthPayload.routes.memory_curate, true);
+  assert.equal(healthPayload.routes.memory_query, false);
+  assert.equal(healthPayload.routes.memory_curate, false);
 });
 
 test("gateway refuses non-loopback binds without auth unless explicitly overridden", async () => {
