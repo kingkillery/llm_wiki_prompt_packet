@@ -28,58 +28,76 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$repoRoot = if ($PSScriptRoot) { Split-Path -Parent $PSScriptRoot } else { (Get-Location).Path }
-if (-not $repoRoot) {
-    $repoRoot = (Get-Location).Path
-}
-if (-not $WorkspaceRoot) {
-    $WorkspaceRoot = $repoRoot
-}
-$WorkspaceRoot = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
-$runtimeScript = Join-Path $repoRoot "support\scripts\llm_wiki_memory_runtime.py"
+function Add-OptionalArgument {
+    param(
+        [System.Collections.Generic.List[string]]$Target,
+        [string]$Flag,
+        [string]$Value
+    )
 
+    if (-not [string]::IsNullOrWhiteSpace($Value)) {
+        $Target.Add($Flag)
+        $Target.Add($Value)
+    }
+}
+
+function Add-SwitchArgument {
+    param(
+        [System.Collections.Generic.List[string]]$Target,
+        [string]$Flag,
+        [bool]$Enabled
+    )
+
+    if ($Enabled) {
+        $Target.Add($Flag)
+    }
+}
+
+$runtimeScript = Join-Path $PSScriptRoot "llm_wiki_memory_runtime.py"
 if (-not (Test-Path $runtimeScript)) {
     throw "Missing shared runtime: $runtimeScript"
 }
 
-Push-Location $repoRoot
-try {
-    $python = Get-Command python -ErrorAction SilentlyContinue
-    if (-not $python) { $python = Get-Command py -ErrorAction SilentlyContinue }
-    if (-not $python) { throw "Python is required to run setup_llm_wiki_memory.ps1" }
-
-    $runtimeArgs = @("setup", "--workspace=$WorkspaceRoot")
-    $optionMap = @{
-        ConfigPath = "config-path"; QmdSource = "qmd-source"; QmdRepoUrl = "qmd-repo-url";
-        QmdCommand = "qmd-command"; QmdCollection = "qmd-collection"; QmdContext = "qmd-context";
-        BrvCommand = "brv-command"; GitvizzFrontendUrl = "gitvizz-frontend-url";
-        GitvizzBackendUrl = "gitvizz-backend-url"; GitvizzRepoUrl = "gitvizz-repo-url";
-        GitvizzCheckoutPath = "gitvizz-checkout-path"; GitvizzRepoPath = "gitvizz-repo-path"
-    }
-    foreach ($key in $optionMap.Keys) {
-        $value = Get-Variable -Name $key -ValueOnly
-        if (-not [string]::IsNullOrWhiteSpace([string]$value)) {
-            $runtimeArgs += "--$($optionMap[$key])=$value"
-        }
-    }
-    $switchMap = @{
-        SkipQmd = "skip-qmd"; SkipMcp = "skip-mcp"; SkipQmdBootstrap = "skip-qmd-bootstrap";
-        SkipQmdEmbed = "skip-qmd-embed"; SkipBrv = "skip-brv"; SkipBrvInit = "skip-brv-init";
-        SkipGitvizz = "skip-gitvizz"; SkipGitvizzStart = "skip-gitvizz-start";
-        AllowGlobalToolInstall = "allow-global-tool-install"; VerifyOnly = "verify-only"
-    }
-    foreach ($key in $switchMap.Keys) {
-        $value = Get-Variable -Name $key -ValueOnly
-        if ($value.IsPresent) { $runtimeArgs += "--$($switchMap[$key])" }
-    }
-    if ($Arguments) { $runtimeArgs += $Arguments }
-
-    if ($python.Name -eq "py") {
-        & py -3 $runtimeScript @runtimeArgs
-    } else {
-        & $python.Name $runtimeScript @runtimeArgs
-    }
-    exit $LASTEXITCODE
-} finally {
-    Pop-Location
+$python = Get-Command python -ErrorAction SilentlyContinue
+if (-not $python) {
+    $python = Get-Command py -ErrorAction SilentlyContinue
 }
+if (-not $python) {
+    throw "Python is required to run setup_llm_wiki_memory.ps1"
+}
+
+$runtimeArgs = New-Object 'System.Collections.Generic.List[string]'
+Add-OptionalArgument $runtimeArgs "--workspace" $WorkspaceRoot
+Add-OptionalArgument $runtimeArgs "--config-path" $ConfigPath
+Add-OptionalArgument $runtimeArgs "--qmd-source" $QmdSource
+Add-OptionalArgument $runtimeArgs "--qmd-repo-url" $QmdRepoUrl
+Add-OptionalArgument $runtimeArgs "--qmd-command" $QmdCommand
+Add-OptionalArgument $runtimeArgs "--qmd-collection" $QmdCollection
+Add-OptionalArgument $runtimeArgs "--qmd-context" $QmdContext
+Add-OptionalArgument $runtimeArgs "--brv-command" $BrvCommand
+Add-OptionalArgument $runtimeArgs "--gitvizz-frontend-url" $GitvizzFrontendUrl
+Add-OptionalArgument $runtimeArgs "--gitvizz-backend-url" $GitvizzBackendUrl
+Add-OptionalArgument $runtimeArgs "--gitvizz-repo-url" $GitvizzRepoUrl
+Add-OptionalArgument $runtimeArgs "--gitvizz-checkout-path" $GitvizzCheckoutPath
+Add-OptionalArgument $runtimeArgs "--gitvizz-repo-path" $GitvizzRepoPath
+Add-SwitchArgument $runtimeArgs "--skip-qmd" $SkipQmd.IsPresent
+Add-SwitchArgument $runtimeArgs "--skip-mcp" $SkipMcp.IsPresent
+Add-SwitchArgument $runtimeArgs "--skip-qmd-bootstrap" $SkipQmdBootstrap.IsPresent
+Add-SwitchArgument $runtimeArgs "--skip-qmd-embed" $SkipQmdEmbed.IsPresent
+Add-SwitchArgument $runtimeArgs "--skip-brv" $SkipBrv.IsPresent
+Add-SwitchArgument $runtimeArgs "--skip-brv-init" $SkipBrvInit.IsPresent
+Add-SwitchArgument $runtimeArgs "--skip-gitvizz" $SkipGitvizz.IsPresent
+Add-SwitchArgument $runtimeArgs "--skip-gitvizz-start" $SkipGitvizzStart.IsPresent
+Add-SwitchArgument $runtimeArgs "--allow-global-tool-install" $AllowGlobalToolInstall.IsPresent
+Add-SwitchArgument $runtimeArgs "--verify-only" $VerifyOnly.IsPresent
+if ($Arguments) {
+    $runtimeArgs.AddRange([string[]]$Arguments)
+}
+
+if ($python.Name -eq "py") {
+    & py -3 $runtimeScript setup @runtimeArgs
+} else {
+    & $python.Name $runtimeScript setup @runtimeArgs
+}
+
+exit $LASTEXITCODE
