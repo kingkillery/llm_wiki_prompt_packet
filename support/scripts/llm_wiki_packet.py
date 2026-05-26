@@ -499,8 +499,19 @@ def append_existing_candidate(candidates: list[str], path: Path | None) -> None:
     candidates.append(str(path.resolve(strict=False)))
 
 
+def section_enabled(section_payload: dict[str, Any]) -> bool:
+    enabled = section_payload.get("enabled")
+    if isinstance(enabled, bool):
+        return enabled
+    if isinstance(enabled, str):
+        return enabled.strip().lower() not in {"0", "false", "no", "off"}
+    return True
+
+
 def configured_command_candidates(workspace_root: Path, config: dict[str, Any], section: str, command_key: str = "command") -> list[str]:
     section_payload = config.get(section) if isinstance(config.get(section), dict) else {}
+    if not section_enabled(section_payload):
+        return []
     candidates: list[str] = []
     for item in section_payload.get("local_command_candidates", []):
         if isinstance(item, str) and item.strip():

@@ -86,6 +86,18 @@ def env_flag(name: str) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def config_enabled_flag(value: Any, default: bool = True) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+    return default
+
+
 def resolve_runtime_root(script_path: Path) -> Path:
     script_parent = script_path.parent
     script_grandparent = script_parent.parent
@@ -478,6 +490,7 @@ def default_runtime_settings(workspace_root: Path, config_path: Path) -> dict[st
             qmd_checkout_path / "dist" / "cli" / "qmd.js",
         ]
 
+    brv_enabled = config_enabled_flag(byterover.get("enabled"), default=True)
     local_brv_candidates = [
         path
         for path in (
@@ -486,7 +499,9 @@ def default_runtime_settings(workspace_root: Path, config_path: Path) -> dict[st
         )
         if path
     ]
-    if not local_brv_candidates:
+    if not brv_enabled:
+        local_brv_candidates = []
+    elif not local_brv_candidates:
         local_brv_candidates = [
             brv_install_root / "node_modules" / ".bin" / "brv.cmd",
             brv_install_root / "node_modules" / ".bin" / "brv.ps1",
@@ -545,7 +560,8 @@ def default_runtime_settings(workspace_root: Path, config_path: Path) -> dict[st
         "qmd_config_dir": resolve_optional_path(pk_qmd.get("config_dir"), workspace_root) or workspace_root / DEFAULT_QMD_CONFIG_DIR,
         "qmd_source_checkout": resolve_optional_path(pk_qmd.get("source_checkout_path"), workspace_root),
         "qmd_source_path": resolve_optional_path(pk_qmd.get("source_path"), workspace_root) or memory_base_path,
-        "brv_command": str(byterover.get("command") or "brv"),
+        "brv_enabled": brv_enabled,
+        "brv_command": str(byterover.get("command") or ("brv" if brv_enabled else "")),
         "brv_package_name": str(byterover.get("package_name") or DEFAULT_BRV_PACKAGE),
         "brv_install_root": brv_install_root,
         "brv_local_candidates": local_brv_candidates,
@@ -684,7 +700,7 @@ def build_runtime(args: argparse.Namespace) -> dict[str, Any]:
     runtime["skip_mcp"] = args.skip_mcp or not getattr(args, "enable_mcp", False) or args.mode == "check"
     runtime["skip_qmd_bootstrap"] = args.skip_qmd_bootstrap
     runtime["skip_qmd_embed"] = args.skip_qmd_embed
-    runtime["skip_brv"] = args.skip_brv
+    runtime["skip_brv"] = args.skip_brv or not bool(runtime.get("brv_enabled", True))
     runtime["skip_brv_init"] = args.skip_brv_init
     runtime["skip_gitvizz"] = args.skip_gitvizz
     runtime["skip_gitvizz_start"] = args.skip_gitvizz or args.skip_gitvizz_start or args.mode == "check"
@@ -867,6 +883,9 @@ def ensure_managed_qmd(runtime: dict[str, Any], summary: list[str], failures: li
 
 
 def ensure_brv_command(runtime: dict[str, Any], summary: list[str], failures: list[str], state: dict[str, Any]) -> str | None:
+    if not bool(runtime.get("brv_enabled", True)):
+        summary.append("BRV install state: disabled in config; skipping command resolution")
+        return None
     local_candidates: list[Path] = runtime["brv_local_candidates"]
     existing_candidate = first_existing(local_candidates)
     if existing_candidate:

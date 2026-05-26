@@ -678,6 +678,24 @@ class PacketCliTests(unittest.TestCase):
             self.assertEqual(payload["preference_hints"][0]["retrieval"], "preference-file")
             self.assertEqual(payload["preference_hints"][0]["status"], "degraded")
 
+    def test_configured_command_candidates_skip_disabled_brv_section(self) -> None:
+        with tempfile.TemporaryDirectory() as workspace_dir:
+            workspace_root = Path(workspace_dir)
+            managed_candidate = workspace_root / ".llm-wiki" / "tools" / "brv" / "node_modules" / ".bin" / "brv"
+            managed_candidate.parent.mkdir(parents=True, exist_ok=True)
+            managed_candidate.write_text("#!/usr/bin/env sh\n", encoding="utf-8")
+            config = {
+                "byterover": {
+                    "enabled": False,
+                    "command": "",
+                    "local_command_candidates": [".llm-wiki/tools/brv/node_modules/.bin/brv"],
+                }
+            }
+
+            candidates = self.module.configured_command_candidates(workspace_root, config, "byterover")
+
+            self.assertEqual(candidates, [])
+
     def test_brv_connected_provider_query_parses_current_json_shape(self) -> None:
         with tempfile.TemporaryDirectory() as workspace_dir:
             workspace_root = Path(workspace_dir)
