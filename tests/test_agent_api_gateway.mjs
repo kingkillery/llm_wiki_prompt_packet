@@ -268,6 +268,11 @@ test("gateway gates BRV routes independently by configured capability", async (t
 });
 
 test("gateway supports command-only BRV setup with default wrapper scripts", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("default .sh wrapper execution is Linux/Docker-only");
+    return;
+  }
+
   const qmd = createJsonServer(async (_req, res) => {
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({ ok: true }));
