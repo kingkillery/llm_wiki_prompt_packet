@@ -508,6 +508,17 @@ def section_enabled(section_payload: dict[str, Any]) -> bool:
     return True
 
 
+def byterover_enabled(section_payload: dict[str, Any]) -> bool:
+    if not section_enabled(section_payload):
+        return False
+    if "enabled" in section_payload:
+        return True
+    command = section_payload.get("command")
+    if isinstance(command, str):
+        return bool(command.strip())
+    return bool(command)
+
+
 def configured_command_candidates(workspace_root: Path, config: dict[str, Any], section: str, command_key: str = "command") -> list[str]:
     section_payload = config.get(section) if isinstance(config.get(section), dict) else {}
     if not section_enabled(section_payload):
@@ -1200,6 +1211,12 @@ def retrieve_memory_ledger_records(
 
 def retrieve_brv_records(workspace_root: Path, query: str, *, limit: int, timeout_sec: int) -> list[dict[str, Any]]:
     config = load_json(workspace_root / ".llm-wiki" / "config.json")
+    byterover = config.get("byterover") if isinstance(config.get("byterover"), dict) else {}
+    if not byterover_enabled(byterover):
+        fallback = retrieve_preference_file_records(workspace_root, query, limit=limit, status="degraded")
+        if fallback:
+            return fallback
+        return [status_record("preference", "brv", "unavailable", "BRV is disabled or command is empty.")]
     candidates = configured_command_candidates(workspace_root, config, "byterover")
     if not candidates:
         fallback = retrieve_preference_file_records(workspace_root, query, limit=limit, status="degraded")

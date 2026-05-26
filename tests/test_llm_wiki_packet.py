@@ -696,6 +696,31 @@ class PacketCliTests(unittest.TestCase):
 
             self.assertEqual(candidates, [])
 
+    def test_retrieve_brv_records_skips_when_enabled_missing_and_command_empty(self) -> None:
+        with tempfile.TemporaryDirectory() as workspace_dir:
+            workspace_root = Path(workspace_dir)
+            (workspace_root / ".llm-wiki").mkdir(parents=True, exist_ok=True)
+            (workspace_root / ".llm-wiki" / "config.json").write_text(
+                json.dumps(
+                    {
+                        "byterover": {
+                            "command": "",
+                            "local_command_candidates": [".llm-wiki/tools/brv/node_modules/.bin/brv"],
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (workspace_root / ".factory").mkdir(parents=True, exist_ok=True)
+            (workspace_root / ".factory" / "memories.md").write_text("Prefer compact context.\n", encoding="utf-8")
+
+            with mock.patch.object(self.module, "run_capture") as run_capture:
+                records = self.module.retrieve_brv_records(workspace_root, "compact context", limit=3, timeout_sec=5)
+
+            self.assertFalse(run_capture.called)
+            self.assertEqual(records[0]["retrieval"], "preference-file")
+            self.assertEqual(records[0]["status"], "degraded")
+
     def test_brv_connected_provider_query_parses_current_json_shape(self) -> None:
         with tempfile.TemporaryDirectory() as workspace_dir:
             workspace_root = Path(workspace_dir)

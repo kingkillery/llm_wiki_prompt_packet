@@ -98,6 +98,15 @@ def config_enabled_flag(value: Any, default: bool = True) -> bool:
     return default
 
 
+def brv_enabled_from_config(byterover: dict[str, Any]) -> bool:
+    if "enabled" in byterover:
+        return config_enabled_flag(byterover.get("enabled"), default=False)
+    command = byterover.get("command")
+    if isinstance(command, str):
+        return bool(command.strip())
+    return bool(command)
+
+
 def resolve_runtime_root(script_path: Path) -> Path:
     script_parent = script_path.parent
     script_grandparent = script_parent.parent
@@ -490,7 +499,7 @@ def default_runtime_settings(workspace_root: Path, config_path: Path) -> dict[st
             qmd_checkout_path / "dist" / "cli" / "qmd.js",
         ]
 
-    brv_enabled = config_enabled_flag(byterover.get("enabled"), default=True)
+    brv_enabled = brv_enabled_from_config(byterover)
     local_brv_candidates = [
         path
         for path in (
