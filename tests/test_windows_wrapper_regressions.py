@@ -145,6 +145,9 @@ class WindowsWrapperRegressionTests(unittest.TestCase):
         )
 
     def test_cmd_wrapper_preserves_exclamation_marks_in_forwarded_arguments(self) -> None:
+        if not shutil.which("cmd"):
+            self.skipTest("cmd.exe is not available")
+
         wrapper_dir = self.root / "cmd"
         wrapper_dir.mkdir(parents=True, exist_ok=True)
         wrapper_path = wrapper_dir / CMD_WRAPPER.name
