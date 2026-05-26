@@ -488,6 +488,7 @@ class SkillPipelineTests(unittest.TestCase):
             tool_names = [tool["name"] for tool in tools["result"]["tools"]]
             self.assertIn("skill_lookup", tool_names)
             self.assertIn("skill_pipeline_run", tool_names)
+            self.assertIn("wiki_bootstrap", tool_names)
         finally:
             if proc.stdin is not None:
                 proc.stdin.close()
@@ -500,6 +501,48 @@ class SkillPipelineTests(unittest.TestCase):
 
         stderr = proc.stderr.read().decode("utf-8", errors="replace").strip() if proc.stderr is not None else ""
         self.assertEqual(stderr, "")
+
+    def test_bootstrap_creates_registry_on_fresh_workspace(self) -> None:
+        store = self.make_store()
+        registry_path = self.workspace / ".llm-wiki" / "skills-registry.json"
+        # Remove registry to simulate a fresh workspace missing only the file
+        registry_path.unlink(missing_ok=True)
+
+        result = store.bootstrap()
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["workspace"], str(self.workspace))
+        self.assertEqual(result["registry_path"], ".llm-wiki/skills-registry.json")
+        self.assertTrue(result["registry_created"])
+        self.assertTrue(registry_path.exists())
+
+    def test_bootstrap_idempotent_on_existing_workspace(self) -> None:
+        store = self.make_store()
+        # Prime the workspace by bootstrapping once
+        store.bootstrap()
+
+        result = store.bootstrap()
+
+        self.assertEqual(result["status"], "ok")
+        self.assertFalse(result["registry_created"])
+
+    def test_cli_wiki_bootstrap_subcommand(self) -> None:
+        proc = subprocess.run(
+            [
+                sys.executable,
+                str(MODULE_PATH),
+                "--workspace",
+                str(self.workspace),
+                "wiki-bootstrap",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        result = json.loads(proc.stdout)
+        self.assertEqual(result["status"], "ok")
+        self.assertIn("registry_path", result)
+        self.assertIn("registry_created", result)
 
 
 if __name__ == "__main__":
