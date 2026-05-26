@@ -484,7 +484,7 @@ def sort_command_candidates(candidates: list[str]) -> list[str]:
 
 
 def unusable_windows_shell_shim(path: Path) -> bool:
-    if os.name != "nt" or path.suffix.lower() not in {"", ".cmd", ".bat", ".ps1"} or not path.exists():
+    if path.suffix.lower() not in {"", ".cmd", ".bat", ".ps1"} or not path.exists():
         return False
     try:
         text = path.read_text(encoding="utf-8", errors="ignore")[:3000].lower()
