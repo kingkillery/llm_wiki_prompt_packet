@@ -311,6 +311,7 @@ Three opt-in HF surfaces are wired into the packet:
 
 ### Claude Code
 
+- `.claude/settings.json`
 - `.claude/commands/wiki-ingest.md`
 - `.claude/commands/wiki-query.md`
 - `.claude/commands/wiki-lint.md`
@@ -321,6 +322,8 @@ Three opt-in HF surfaces are wired into the packet:
 
 ### Codex
 
+- `.codex/config.toml`
+- `.codex/hooks.json`
 - `.agents/skills/llm-wiki-organizer/SKILL.md`
 - `.agents/skills/llm-wiki-organizer/assets/system-prompt.md`
 - `.agents/skills/llm-wiki-organizer/assets/tool-directives.md`
@@ -353,6 +356,9 @@ Three opt-in HF surfaces are wired into the packet:
 - `scripts/check_llm_wiki_memory.sh`
 - `scripts/llm_wiki_skill_mcp.py`
 - `scripts/llm_wiki_agent_failure_capture.py`
+- `scripts/llm_wiki_agent_updater.py`
+- `scripts/llm_wiki_agent_updater_hook.py`
+- `scripts/wire_repo_agent_hooks.py`
 - `scripts/auto_reducer_watcher.py`
 - `scripts/build_skill_index.py`
 - `scripts/skill_index.py`
@@ -368,6 +374,14 @@ Three opt-in HF surfaces are wired into the packet:
 - `scripts/gitvizz_api.sh`
 - `scripts/launch_gitvizz.ps1`
 - `scripts/launch_gitvizz.sh`
+
+### Lifecycle updater hooks
+
+Claude and Codex installs include lifecycle hooks for `SessionStart`, `UserPromptSubmit`, `Stop`, and `SessionEnd`. The hook records the event under `.llm-wiki/state/agent-updater/` and launches `scripts/llm_wiki_agent_updater.py` as a background updater worker.
+
+Set `SILICONFLOW_API_KEY` or `LLM_WIKI_SILICONFLOW_API_KEY` to enable the SiliconFlow extraction path. Without a key, the updater still runs and falls back to the local rule-based memory controller. Set `LLM_WIKI_UPDATER_ENABLED=0` to disable launch enforcement for a session.
+
+Use `python installers/wire_repo_agent_hooks.py --workspace <repo-root> --agents claude,codex` from a packet checkout, or `python plugins/llm-wiki-organizer/scripts/install_repo_hooks.py --workspace <repo-root> --agents claude,codex` from the plugin package, to wire an existing repo after `kade-hq` or `g-kade` bootstrap.
 
 ### Home skill roots
 
