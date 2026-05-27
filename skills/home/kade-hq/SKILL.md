@@ -61,6 +61,14 @@ When bootstrapping a repo workspace, prefer:
 - `powershell -NoProfile -ExecutionPolicy Bypass -File .\installers\install_g_kade_workspace.ps1 --workspace <repo-root>`
 - `bash ./installers/install_g_kade_workspace.sh --workspace <repo-root>`
 
+After the workspace files are present, wire Claude and Codex lifecycle hooks:
+
+- `python installers/wire_repo_agent_hooks.py --workspace <repo-root> --agents claude,codex`
+
+If invoked from the Codex plugin package instead of the packet checkout, use:
+
+- `python plugins/llm-wiki-organizer/scripts/install_repo_hooks.py --workspace <repo-root> --agents claude,codex`
+
 This flow should leave these KADE surfaces in place:
 
 - `~/.kade/HUMAN.md`

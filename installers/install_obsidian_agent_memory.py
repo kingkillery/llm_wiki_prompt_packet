@@ -140,6 +140,7 @@ ROOT_FILES = {
 }
 
 CLAUDE_FILES = {
+    ".claude/settings.json": PACKET_ROOT / ".claude" / "settings.json",
     ".claude/commands/wiki-ingest.md": PROMPTS / "09-claude-command-ingest.md",
     ".claude/commands/wiki-query.md": PROMPTS / "10-claude-command-query.md",
     ".claude/commands/wiki-lint.md": PROMPTS / "11-claude-command-lint.md",
@@ -160,6 +161,8 @@ ANTIGRAVITY_FILES = {
 }
 
 CODEX_FILES = {
+    ".codex/config.toml": PACKET_ROOT / ".codex" / "config.toml",
+    ".codex/hooks.json": PACKET_ROOT / ".codex" / "hooks.json",
     ".agents/skills/llm-wiki-organizer/SKILL.md": PROMPTS / "03-codex-skill-SKILL.md",
     ".agents/skills/llm-wiki-organizer/assets/system-prompt.md": PROMPTS / "00-system-prompt.md",
     ".agents/skills/llm-wiki-organizer/assets/tool-directives.md": PROMPTS / "04-tool-directives.md",
@@ -199,6 +202,9 @@ STACK_FILES = {
     "scripts/llm_wiki_failure_collector.py": SUPPORT / "scripts" / "llm_wiki_failure_collector.py",
     "scripts/llm_wiki_failure_hook.py": SUPPORT / "scripts" / "llm_wiki_failure_hook.py",
     "scripts/llm_wiki_agent_failure_capture.py": SUPPORT / "scripts" / "llm_wiki_agent_failure_capture.py",
+    "scripts/llm_wiki_agent_updater.py": SUPPORT / "scripts" / "llm_wiki_agent_updater.py",
+    "scripts/llm_wiki_agent_updater_hook.py": SUPPORT / "scripts" / "llm_wiki_agent_updater_hook.py",
+    "scripts/wire_repo_agent_hooks.py": PACKET_ROOT / "installers" / "wire_repo_agent_hooks.py",
     "scripts/run_llm_wiki_agent.ps1": SUPPORT / "scripts" / "run_llm_wiki_agent.ps1",
     "scripts/run_llm_wiki_agent.sh": SUPPORT / "scripts" / "run_llm_wiki_agent.sh",
     "scripts/run_llm_wiki_agent.cmd": SUPPORT / "scripts" / "run_llm_wiki_agent.cmd",
@@ -1429,6 +1435,23 @@ def build_stack_config(args: argparse.Namespace) -> dict[str, object]:
                 "pi": "pi",
             },
         },
+        "agent_updater_hooks": {
+            "enabled": True,
+            "installer_script_path": "scripts/wire_repo_agent_hooks.py",
+            "hook_script_path": "scripts/llm_wiki_agent_updater_hook.py",
+            "worker_script_path": "scripts/llm_wiki_agent_updater.py",
+            "state_dir": ".llm-wiki/state/agent-updater",
+            "agents": ["claude", "codex"],
+            "events": ["SessionStart", "UserPromptSubmit", "Stop", "SessionEnd", "SubagentStop", "TaskCompleted"],
+            "provider": {
+                "default": "siliconflow",
+                "api_key_env": "SILICONFLOW_API_KEY",
+                "alternate_api_key_env": "LLM_WIKI_SILICONFLOW_API_KEY",
+                "endpoint_env": "LLM_WIKI_SILICONFLOW_ENDPOINT",
+                "model_env": "LLM_WIKI_SILICONFLOW_MODEL",
+                "fallback": "local-rule-based-memory-controller",
+            },
+        },
     }
 
 
@@ -1537,6 +1560,9 @@ def packet_required_paths(vault: Path) -> list[Path]:
         vault / "scripts" / "llm_wiki_skills.cmd",
         vault / "scripts" / "llm_wiki_failure_hook.py",
         vault / "scripts" / "llm_wiki_agent_failure_capture.py",
+        vault / "scripts" / "llm_wiki_agent_updater.py",
+        vault / "scripts" / "llm_wiki_agent_updater_hook.py",
+        vault / "scripts" / "wire_repo_agent_hooks.py",
         vault / "scripts" / "pokemon_benchmark_adapter.py",
         vault / "scripts" / "run_llm_wiki_agent.ps1",
         vault / "scripts" / "run_llm_wiki_agent.sh",

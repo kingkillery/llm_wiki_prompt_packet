@@ -16,6 +16,8 @@
     "codex"
   ],
   "skills": "./skills/",
+  "hooks": "./hooks.json",
+  "scripts": "./scripts/",
   "interface": {
     "displayName": "LLM Wiki Memory Organizer",
     "shortDescription": "Retrieve, curate, and lint the llm-wiki memory stack.",

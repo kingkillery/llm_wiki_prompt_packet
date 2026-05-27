@@ -1,0 +1,22 @@
+[features]
+hooks = true
+
+[[hooks.SessionStart]]
+hooks = [
+  { type = "command", command = "python \"scripts/llm_wiki_agent_updater_hook.py\" --agent codex --workspace \".\"", timeout = 5 }
+]
+
+[[hooks.UserPromptSubmit]]
+hooks = [
+  { type = "command", command = "python \"scripts/llm_wiki_agent_updater_hook.py\" --agent codex --workspace \".\"", timeout = 5 }
+]
+
+[[hooks.Stop]]
+hooks = [
+  { type = "command", command = "python \"scripts/llm_wiki_agent_updater_hook.py\" --agent codex --workspace \".\"", timeout = 5 }
+]
+
+[[hooks.SessionEnd]]
+hooks = [
+  { type = "command", command = "python \"scripts/llm_wiki_agent_updater_hook.py\" --agent codex --workspace \".\"", timeout = 5 }
+]
