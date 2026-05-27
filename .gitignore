@@ -37,3 +37,5 @@ graph/tmp/
 .env
 .llm-wiki/state/
 
+# Temporary provider debug scripts
+test_openrouter*.py

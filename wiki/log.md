@@ -3,6 +3,19 @@ type: log
 title: Wiki Log
 ---
 
+## Auto-Update — 2026-05-27T07:50:09+00:00
+
+## Wiki Update: Compiled 18 Pages
+
+* **Compilation:** 18 pages compiled successfully. No pending source changes.
+* **Linting:** Clean run (0 errors, 0 warnings). 15 info-level notes generated.
+* **Skill Registry:** Summary generation failed due to a Unicode encoding error (`\\u2011` character not supported by `charmap` codec).
+
+**Skills registered:**
+[LLM skill summary failed: 'charmap' codec can't encode character '\u2011' in position 166: character maps to <undefined>]
+
+---
+
 ## Auto-Update — 2026-05-27T07:47:49+00:00
 
 ## Wiki Update: Compilation & Skills
