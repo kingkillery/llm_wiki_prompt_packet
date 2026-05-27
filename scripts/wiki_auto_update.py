@@ -34,6 +34,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+# Fix Windows console encoding so Unicode from LLMs doesn't crash
+if sys.platform == "win32":
+    import ctypes
+    ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except AttributeError:
+        pass
+
 # ---------------------------------------------------------------------------
 # Provider registry — each slot is fully self-contained
 # ---------------------------------------------------------------------------
