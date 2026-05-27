@@ -401,6 +401,18 @@ Plugin package wiring:
 python plugins\llm-wiki-organizer\scripts\install_repo_hooks.py --workspace . --agents claude,codex --self-test
 ```
 
+From a different target repo, run the packet checkout by absolute path:
+
+```powershell
+python C:\dev\Desktop-Projects\llm_wiki_prompt_packet\llm_wiki_prompt_packet\installers\wire_repo_agent_hooks.py --workspace . --agents claude,codex --self-test
+```
+
+For a full repo bootstrap from a different target repo, run:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\dev\Desktop-Projects\llm_wiki_prompt_packet\llm_wiki_prompt_packet\install.ps1 -WireRepo -Vault .
+```
+
 Successful self-test output includes `self-test ok` and creates `.llm-wiki/state/agent-updater/hook-events.jsonl`. If live Codex sessions do not fire hooks, run the self-test first: a passing self-test means the installed hook command is valid and the remaining issue is Codex project config/trust activation, not the updater script.
 
 ### Home skill roots
