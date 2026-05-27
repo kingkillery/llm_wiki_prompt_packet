@@ -188,11 +188,6 @@
     },
     "model_pool": [
       {
-        "model": "nvidia/nemotron-3-nano-4b",
-        "provider": "lmstudio",
-        "note": "local priority slot"
-      },
-      {
         "model": "deepseek-ai/DeepSeek-V4-Flash",
         "provider": "siliconflow"
       },

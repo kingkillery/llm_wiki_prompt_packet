@@ -45,9 +45,6 @@ LMSTUDIO_COMPAT_API  = f"{LMSTUDIO_BASE}/v1"        # OpenAI-compat endpoint
 
 # fmt: off
 MODEL_POOL: list[dict[str, str]] = [
-    # ── LM Studio (local, zero-cost, priority slot) ───────────────────
-    #    Probed at startup; silently skipped if server not running.
-    {"model": "nvidia/nemotron-3-nano-4b", "provider": "lmstudio"},
     # ── SiliconFlow ───────────────────────────────────────────────────
     {"model": "deepseek-ai/DeepSeek-V4-Flash",       "provider": "siliconflow"},
     # ── OpenRouter free tier ──────────────────────────────────────────
@@ -154,14 +151,8 @@ def probe_lmstudio(verbose: bool = False) -> bool:
 
 
 def build_active_pool(verbose: bool = False) -> list[dict[str, str]]:
-    """Return MODEL_POOL with lmstudio slots removed if server is unreachable."""
-    lm_up = probe_lmstudio(verbose)
-    if lm_up:
-        print("  [lmstudio] [OK] online -- local slot active")
-        return MODEL_POOL
-    else:
-        print("  [lmstudio] [--] offline -- skipping local slot")
-        return [s for s in MODEL_POOL if s["provider"] != "lmstudio"]
+    """Return MODEL_POOL (all slots assumed online per config)."""
+    return MODEL_POOL
 
 
 def patient_sleep(seconds: float, verbose: bool = False) -> None:
@@ -231,7 +222,14 @@ def llm_chat(
             resp = httpx.post(url, json=payload, headers=headers, timeout=60.0)
             if resp.status_code == 200:
                 data = resp.json()
-                return data["choices"][0]["message"]["content"].strip()
+                msg = data["choices"][0]["message"]
+                content = msg.get("content")
+                if content is None:
+                    # Some reasoning models return text in "reasoning" instead of "content"
+                    content = msg.get("reasoning")
+                if content is None:
+                    raise RuntimeError(f"{provider} returned empty content")
+                return content.strip()
             elif resp.status_code in (429, 500, 502, 503, 504):
                 wait = min(backoff + jitter(*JITTER_RANGE), MAX_BACKOFF_S)
                 print(
@@ -455,9 +453,10 @@ def generate_wiki_update_note(
 # ---------------------------------------------------------------------------
 
 def write_log_entry(workspace: Path, header: str, body: str, dry_run: bool) -> None:
-    """Prepend a new entry to wiki/log.md."""
+    """Prepend a new entry to wiki/log.md, preserving YAML frontmatter if present."""
     log_path = workspace / "wiki" / "log.md"
-    entry = f"{header}\n\n{body.strip()}\n\n---\n\n"
+    safe_body = (body or "").strip()
+    entry = f"{header}\n\n{safe_body}\n\n---\n\n"
 
     if dry_run:
         print(f"\n[dry-run] would write to {log_path}:\n{entry}")
@@ -465,6 +464,17 @@ def write_log_entry(workspace: Path, header: str, body: str, dry_run: bool) -> N
 
     log_path.parent.mkdir(parents=True, exist_ok=True)
     existing = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+
+    # Preserve frontmatter if present
+    if existing.startswith("---\n"):
+        parts = existing.split("---", 2)
+        if len(parts) >= 3:
+            frontmatter = f"---{parts[1]}---"
+            rest = parts[2].lstrip("\n")
+            log_path.write_text(frontmatter + "\n\n" + entry + rest, encoding="utf-8")
+            print(f"  [log] wrote entry to {log_path.relative_to(workspace)}")
+            return
+
     log_path.write_text(entry + existing, encoding="utf-8")
     print(f"  [log] wrote entry to {log_path.relative_to(workspace)}")
 
