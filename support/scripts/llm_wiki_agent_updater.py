@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import urllib.error
@@ -14,8 +15,12 @@ from typing import Any
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-DEFAULT_SILICONFLOW_ENDPOINT = "https://api.siliconflow.cn/v1/chat/completions"
+DEFAULT_SILICONFLOW_ENDPOINT = "https://api.siliconflow.com/v1/chat/completions"
 DEFAULT_SILICONFLOW_MODEL = "Qwen/Qwen2.5-7B-Instruct"
+DEFAULT_OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
+DEFAULT_OPENROUTER_MODEL = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
+DEFAULT_PROVIDER_ORDER = "siliconflow,openrouter"
+DEFAULT_CONTEXT_TIMEOUT_SEC = 8.0
 
 
 def utc_now() -> str:
@@ -24,7 +29,7 @@ def utc_now() -> str:
 
 def read_json(path: Path) -> dict[str, Any]:
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, json.JSONDecodeError):
         return {}
     return data if isinstance(data, dict) else {}
@@ -60,12 +65,57 @@ def event_text(payload: dict[str, Any]) -> str:
     return "\n".join(parts).strip()
 
 
-def siliconflow_claims(text: str) -> tuple[list[str], str]:
-    api_key = os.getenv("SILICONFLOW_API_KEY") or os.getenv("LLM_WIKI_SILICONFLOW_API_KEY")
+def extract_json_object(text: str) -> dict[str, Any]:
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        stripped = re.sub(r"^```(?:json)?\s*", "", stripped, flags=re.IGNORECASE)
+        stripped = re.sub(r"\s*```$", "", stripped)
+    try:
+        parsed = json.loads(stripped)
+        return parsed if isinstance(parsed, dict) else {}
+    except json.JSONDecodeError:
+        pass
+
+    match = re.search(r"\{.*\}", stripped, flags=re.DOTALL)
+    if not match:
+        return {}
+    try:
+        parsed = json.loads(match.group(0))
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def claims_from_response(raw: str) -> list[str]:
+    parsed = json.loads(raw)
+    content = parsed["choices"][0]["message"].get("content") or parsed["choices"][0]["message"].get("reasoning") or ""
+    claims_payload = extract_json_object(str(content))
+    claims = claims_payload.get("claims", [])
+    return [str(claim).strip() for claim in claims if str(claim).strip()]
+
+
+def provider_claims(provider: str, text: str) -> tuple[list[str], str]:
+    if provider == "siliconflow":
+        api_key = os.getenv("SILICONFLOW_API_KEY") or os.getenv("LLM_WIKI_SILICONFLOW_API_KEY")
+        endpoint = os.getenv("LLM_WIKI_SILICONFLOW_ENDPOINT", DEFAULT_SILICONFLOW_ENDPOINT)
+        model = os.getenv("LLM_WIKI_SILICONFLOW_MODEL", DEFAULT_SILICONFLOW_MODEL)
+        headers = {"content-type": "application/json", "authorization": f"Bearer {api_key}"}
+    elif provider == "openrouter":
+        api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("LLM_WIKI_OPENROUTER_API_KEY")
+        endpoint = os.getenv("LLM_WIKI_OPENROUTER_ENDPOINT", DEFAULT_OPENROUTER_ENDPOINT)
+        model = os.getenv("LLM_WIKI_OPENROUTER_MODEL", DEFAULT_OPENROUTER_MODEL)
+        headers = {
+            "content-type": "application/json",
+            "authorization": f"Bearer {api_key}",
+            "HTTP-Referer": os.getenv("LLM_WIKI_OPENROUTER_REFERER", "https://github.com/kingkillery/llm_wiki_prompt_packet"),
+            "X-Title": os.getenv("LLM_WIKI_OPENROUTER_TITLE", "llm-wiki-context-agent"),
+        }
+    else:
+        return [], f"unsupported-provider:{provider}"
+
     if not api_key:
-        return [], "missing-api-key"
-    endpoint = os.getenv("LLM_WIKI_SILICONFLOW_ENDPOINT", DEFAULT_SILICONFLOW_ENDPOINT)
-    model = os.getenv("LLM_WIKI_SILICONFLOW_MODEL", DEFAULT_SILICONFLOW_MODEL)
+        return [], f"{provider}:missing-api-key"
+
     body = {
         "model": model,
         "messages": [
@@ -85,22 +135,38 @@ def siliconflow_claims(text: str) -> tuple[list[str], str]:
     request = urllib.request.Request(
         endpoint,
         data=json.dumps(body).encode("utf-8"),
-        headers={"content-type": "application/json", "authorization": f"Bearer {api_key}"},
+        headers=headers,
         method="POST",
     )
+    timeout = float(os.getenv("LLM_WIKI_CONTEXT_TIMEOUT_SEC", str(DEFAULT_CONTEXT_TIMEOUT_SEC)))
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
             raw = response.read().decode("utf-8", errors="replace")
     except (OSError, urllib.error.URLError) as exc:
-        return [], f"siliconflow-error:{exc}"
+        return [], f"{provider}:error:{exc}"
     try:
-        parsed = json.loads(raw)
-        content = parsed["choices"][0]["message"]["content"]
-        claims_payload = json.loads(content)
-        claims = claims_payload.get("claims", [])
+        claims = claims_from_response(raw)
     except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
-        return [], f"siliconflow-parse-error:{exc}"
-    return [str(claim).strip() for claim in claims if str(claim).strip()], "siliconflow"
+        return [], f"{provider}:parse-error:{exc}"
+    return claims, provider
+
+
+def configured_provider_order() -> list[str]:
+    raw = os.getenv("LLM_WIKI_CONTEXT_PROVIDERS", DEFAULT_PROVIDER_ORDER)
+    providers = [item.strip().lower() for item in raw.split(",") if item.strip()]
+    return providers or ["local"]
+
+
+def context_claims(text: str) -> tuple[list[str], str, list[str]]:
+    statuses: list[str] = []
+    for provider in configured_provider_order():
+        if provider == "local":
+            return [], "local-rule-based", statuses
+        claims, status = provider_claims(provider, text)
+        statuses.append(status)
+        if claims:
+            return claims, provider, statuses
+    return [], "local-rule-based", statuses
 
 
 def run_memory_extract(workspace: Path, text: str, task: str) -> dict[str, Any]:
@@ -154,12 +220,13 @@ def main() -> int:
     }
 
     if len(text) >= 20 and event in {"UserPromptSubmit", "Stop", "SessionEnd", "SubagentStop", "TaskCompleted"}:
-        claims, provider_status = siliconflow_claims(text)
+        claims, provider, provider_statuses = context_claims(text)
         if claims:
-            result["provider"] = "siliconflow"
+            result["provider"] = provider
+            result["provider_statuses"] = provider_statuses
             extract_text = "\n".join(f"Durable fact: {claim}" for claim in claims)
         else:
-            result["provider_status"] = provider_status
+            result["provider_statuses"] = provider_statuses
             extract_text = text
         result["memory_extract"] = run_memory_extract(workspace, extract_text, task)
 
