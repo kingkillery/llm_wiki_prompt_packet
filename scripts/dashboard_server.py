@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Lightweight read-only dashboard for llm-wiki-memory.
 
 Serves at /dashboard on the local gateway or as a standalone process.
@@ -13,6 +13,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote_plus, urlsplit
@@ -29,6 +30,9 @@ from skill_index import ensure_index
 
 class DashboardHandler(BaseHTTPRequestHandler):
     workspace: Path = Path.cwd()
+    registry_root: Path = Path.cwd()
+    workspace_scan_limit: int = 250
+    session_scan_limit: int = 80
 
     def log_message(self, fmt: str, *args) -> None:
         # Suppress default logging for cleaner output
@@ -112,7 +116,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             content = path.read_text(encoding="utf-8", errors="ignore")
             if query and query.lower() not in (title + content).lower():
                 continue
-            vault = self._read_config().get("vault_name", "llm-wiki")
+            vault = DashboardHandler._read_config(self).get("vault_name", "llm-wiki")
             normalized_rel = rel.replace("/", "%2F").replace("\\", "%2F")
             pages.append({
                 "path": rel,
@@ -223,6 +227,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 "outcome": outcome,
                 "candidacy": candidacy,
             })
+        return drafts
+
     def _parse_wiki_links(self, content: str) -> list[str]:
         import re
         links = []
@@ -230,58 +236,358 @@ class DashboardHandler(BaseHTTPRequestHandler):
             links.append(match.group(1).strip())
         return links
 
-    def _list_available_wikis(self) -> list[dict]:
-        wikis = []
-        candidates = set()
-        
-        # Add current workspace
-        candidates.add(self.workspace.resolve())
-        
-        # Check parent and grand-parent directories
-        search_roots = []
-        if self.workspace.exists():
-            search_roots.append(self.workspace.parent)
-            if self.workspace.parent.exists():
-                search_roots.append(self.workspace.parent.parent)
-                
-        for root in search_roots:
-            if not root or not root.exists() or not root.is_dir():
+    def _is_hidden_or_heavy_dir(self, path: Path) -> bool:
+        return path.name in {
+            ".git",
+            ".hg",
+            ".svn",
+            ".llm-wiki",
+            ".venv",
+            "__pycache__",
+            "node_modules",
+            "dist",
+            "build",
+            ".next",
+            ".cache",
+        }
+
+    def _workspace_search_roots(self) -> list[Path]:
+        roots: list[Path] = []
+        for candidate in (
+            self.workspace,
+            self.workspace.parent,
+            self.workspace.parent.parent if self.workspace.parent else None,
+            Path("C:/dev/Desktop-Projects"),
+            Path.home() / "Desktop",
+            Path.home() / "Documents",
+        ):
+            if candidate and candidate.exists() and candidate.is_dir():
+                resolved = candidate.resolve()
+                if resolved not in roots:
+                    roots.append(resolved)
+        return roots
+
+    def _project_markers(self, path: Path) -> list[str]:
+        markers = []
+        for name in (".git", "pyproject.toml", "package.json", "Cargo.toml", "go.mod", ".llm-wiki"):
+            if (path / name).exists():
+                markers.append(name)
+        return markers
+
+    def _wiki_registry_path(self) -> Path:
+        return DashboardHandler.registry_root / ".llm-wiki" / "dashboard-wiki-projects.json"
+
+    def _load_wiki_registry(self) -> dict[str, dict]:
+        path = DashboardHandler._wiki_registry_path(self)
+        if not path.exists():
+            return {}
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+        projects = payload.get("projects", []) if isinstance(payload, dict) else []
+        registry = {}
+        for item in projects:
+            if isinstance(item, dict) and item.get("path"):
+                registry[str(item["path"])] = item
+        return registry
+
+    def _save_wiki_registry(self, items: list[dict]) -> None:
+        path = DashboardHandler._wiki_registry_path(self)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "version": 1,
+                "updated_at": int(time.time()),
+                "projects": items,
+            }
+            path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        except OSError:
+            pass
+
+    def _wiki_project_item(self, path: Path, active: Path) -> dict:
+        markers = DashboardHandler._project_markers(self, path)
+        try:
+            pages = sum(1 for _ in (path / "wiki").rglob("*.md"))
+        except OSError:
+            pages = 0
+        return {
+            "name": path.name,
+            "path": str(path),
+            "active": path == active,
+            "markers": markers,
+            "page_count": pages,
+            "kind": "repo" if ".git" in markers else "project",
+        }
+
+    def _discover_wiki_projects(self, root: Path, max_depth: int = 3) -> list[Path]:
+        found: list[Path] = []
+        queue: list[tuple[Path, int]] = [(root, 0)]
+        visited: set[Path] = set()
+        while queue and len(visited) < self.workspace_scan_limit:
+            current, depth = queue.pop(0)
+            try:
+                resolved = current.resolve()
+            except OSError:
+                continue
+            if resolved in visited:
+                continue
+            visited.add(resolved)
+            if (resolved / "wiki").is_dir():
+                found.append(resolved)
+            if depth >= max_depth or DashboardHandler._is_hidden_or_heavy_dir(self, resolved):
                 continue
             try:
-                for child in root.iterdir():
-                    if child.is_dir():
-                        candidates.add(child.resolve())
-                        try:
-                            for grandchild in child.iterdir():
-                                if grandchild.is_dir():
-                                    candidates.add(grandchild.resolve())
-                        except Exception:
-                            pass
-            except Exception:
-                pass
-                
-        for path in sorted(candidates):
-            if path.name.startswith("."):
+                children = sorted([child for child in resolved.iterdir() if child.is_dir()], key=lambda p: p.name.lower())
+            except OSError:
                 continue
-            has_wiki = (path / "wiki").is_dir()
-            has_config = (path / ".llm-wiki").exists()
-            if not has_wiki and not has_config:
-                try:
-                    for sub in path.iterdir():
-                        if sub.is_dir() and not sub.name.startswith("."):
-                            if (sub / "wiki").is_dir() or (sub / ".llm-wiki").exists():
-                                path = sub
-                                has_wiki = True
-                                break
-                except Exception:
-                    pass
-            if has_wiki or has_config:
-                wikis.append({
-                    "name": path.name,
-                    "path": str(path),
-                    "active": path.resolve() == self.workspace.resolve(),
-                })
+            for child in children:
+                if not DashboardHandler._is_hidden_or_heavy_dir(self, child):
+                    queue.append((child, depth + 1))
+        return found
+
+    def _list_available_wikis(self, refresh: bool = False) -> list[dict]:
+        active = self.workspace.resolve()
+        cached = DashboardHandler._load_wiki_registry(self)
+        if cached and not refresh:
+            items = []
+            for raw in cached.values():
+                path = Path(str(raw.get("path", "")))
+                if not path.exists() or not (path / "wiki").is_dir():
+                    continue
+                item = dict(raw)
+                item["active"] = path.resolve() == active
+                items.append(item)
+            if active and (active / "wiki").is_dir() and str(active) not in {item["path"] for item in items}:
+                items.append(DashboardHandler._wiki_project_item(self, active, active))
+            return sorted(items, key=lambda item: item.get("path", "").lower())
+
+        projects: dict[str, Path] = {}
+        for root in DashboardHandler._workspace_search_roots(self):
+            for project in DashboardHandler._discover_wiki_projects(self, root):
+                projects[str(project)] = project
+        if (active / "wiki").is_dir():
+            projects[str(active)] = active
+
+        wikis = []
+        for path in sorted(projects.values(), key=lambda item: str(item).lower()):
+            wikis.append(DashboardHandler._wiki_project_item(self, path, active))
+        DashboardHandler._save_wiki_registry(self, wikis)
         return wikis
+
+    def _jsonl_records(self, path: Path, head: int = 20, tail: int = 80) -> list[dict]:
+        try:
+            lines: list[str] = []
+            if head:
+                with path.open("r", encoding="utf-8", errors="ignore") as handle:
+                    for _ in range(head):
+                        line = handle.readline()
+                        if not line:
+                            break
+                        lines.append(line.rstrip("\r\n"))
+            if tail:
+                with path.open("rb") as handle:
+                    size = handle.seek(0, os.SEEK_END)
+                    handle.seek(max(0, size - 262144))
+                    tail_text = handle.read().decode("utf-8", errors="ignore")
+                tail_lines = tail_text.splitlines()[-tail:]
+                lines.extend(tail_lines)
+        except OSError:
+            return []
+        records = []
+        for line in lines:
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(item, dict):
+                records.append(item)
+        return records
+
+    def _short_time(self, timestamp: float) -> str:
+        age = max(0, time.time() - timestamp)
+        if age < 60:
+            return "just now"
+        if age < 3600:
+            return f"{int(age // 60)}m ago"
+        if age < 86400:
+            return f"{int(age // 3600)}h ago"
+        return f"{int(age // 86400)}d ago"
+
+    def _record_text(self, record: dict) -> str:
+        message = record.get("message")
+        if isinstance(message, dict):
+            content = message.get("content")
+            if isinstance(content, str):
+                return content
+            if isinstance(content, list):
+                parts = [item["text"] for item in content if isinstance(item, dict) and isinstance(item.get("text"), str)]
+                if parts:
+                    return " ".join(parts)
+        payload = record.get("payload")
+        if isinstance(payload, dict) and isinstance(payload.get("text"), str):
+            return payload["text"]
+        for key in ("lastPrompt", "text", "aiTitle", "thread_name"):
+            value = record.get(key)
+            if isinstance(value, str):
+                return value
+        return ""
+
+    def _session_item(
+        self,
+        provider: str,
+        session_id: str,
+        title: str,
+        path: Path,
+        cwd: str = "",
+        command: str = "",
+        status: str = "available",
+    ) -> dict:
+        try:
+            updated = path.stat().st_mtime
+            size = path.stat().st_size
+        except OSError:
+            updated = 0
+            size = 0
+        return {
+            "provider": provider,
+            "id": session_id,
+            "title": title or session_id or path.stem,
+            "path": str(path),
+            "cwd": cwd,
+            "updated_at": updated,
+            "updated_label": DashboardHandler._short_time(self, updated) if updated else "unknown",
+            "size": size,
+            "resume_command": command,
+            "status": status,
+        }
+
+    def _codex_session_titles(self) -> dict[str, str]:
+        titles: dict[str, str] = {}
+        index_path = Path.home() / ".codex" / "session_index.jsonl"
+        if index_path.exists():
+            for record in DashboardHandler._jsonl_records(self, index_path, head=0, tail=500):
+                session_id = str(record.get("id") or "")
+                title = str(record.get("thread_name") or "")
+                if session_id and title:
+                    titles[session_id] = title
+        history_path = Path.home() / ".codex" / "history.jsonl"
+        if history_path.exists():
+            for record in DashboardHandler._jsonl_records(self, history_path, head=0, tail=300):
+                session_id = str(record.get("session_id") or "")
+                text = str(record.get("text") or "").strip()
+                if session_id and text:
+                    titles[session_id] = text[:90]
+        return titles
+
+    def _codex_sessions(self) -> tuple[dict, list[dict]]:
+        root = Path.home() / ".codex"
+        sessions_root = root / "sessions"
+        if not root.exists():
+            return {"provider": "OpenCodecs", "available": False, "message": "No ~/.codex state directory found"}, []
+        titles = DashboardHandler._codex_session_titles(self)
+        files = []
+        if sessions_root.exists():
+            files = sorted(sessions_root.rglob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)[: self.session_scan_limit]
+        sessions = []
+        for path in files:
+            records = DashboardHandler._jsonl_records(self, path, head=30, tail=40)
+            meta = next((r.get("payload") for r in records if r.get("type") == "session_meta" and isinstance(r.get("payload"), dict)), {})
+            session_id = str(meta.get("id") or path.stem.split("-")[-1])
+            cwd = str(meta.get("cwd") or "")
+            title = titles.get(session_id, "")
+            if not title:
+                for record in reversed(records):
+                    text = DashboardHandler._record_text(self, record).strip()
+                    if text:
+                        title = text[:90]
+                        break
+            command = f"codex resume {session_id}"
+            if cwd:
+                command = f'cd "{cwd}" && {command}'
+            sessions.append(DashboardHandler._session_item(self, "OpenCodecs", session_id, title, path, cwd, command))
+        return {"provider": "OpenCodecs", "available": True, "message": f"{len(sessions)} sessions found"}, sessions
+
+    def _claude_sessions(self) -> tuple[dict, list[dict]]:
+        projects_root = Path.home() / ".claude" / "projects"
+        if not projects_root.exists():
+            return {"provider": "Claude Code", "available": False, "message": "No ~/.claude/projects directory found"}, []
+        files = sorted(projects_root.rglob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)[: self.session_scan_limit]
+        sessions = []
+        for path in files:
+            records = DashboardHandler._jsonl_records(self, path, head=20, tail=80)
+            session_id = path.stem
+            cwd = ""
+            title = ""
+            for record in records:
+                if record.get("sessionId"):
+                    session_id = str(record.get("sessionId"))
+                if record.get("cwd"):
+                    cwd = str(record.get("cwd"))
+                if record.get("type") == "ai-title" and record.get("aiTitle"):
+                    title = str(record.get("aiTitle"))
+            if not title:
+                for record in reversed(records):
+                    text = DashboardHandler._record_text(self, record).strip()
+                    if text:
+                        title = text[:90]
+                        break
+            command = f"claude --resume {session_id}"
+            if cwd:
+                command = f'cd "{cwd}" && {command}'
+            sessions.append(DashboardHandler._session_item(self, "Claude Code", session_id, title, path, cwd, command))
+        return {"provider": "Claude Code", "available": True, "message": f"{len(sessions)} sessions found"}, sessions
+
+    def _generic_provider_sessions(self, provider: str, roots: list[Path], command_name: str = "") -> tuple[dict, list[dict]]:
+        existing = [root for root in roots if root.exists()]
+        if not existing:
+            return {"provider": provider, "available": False, "message": "No known state directory found"}, []
+        files: list[Path] = []
+        for root in existing:
+            try:
+                files.extend([p for p in root.rglob("*") if p.is_file() and p.suffix.lower() in {".jsonl", ".json", ".log"}])
+            except OSError:
+                continue
+        files = sorted(files, key=lambda p: p.stat().st_mtime, reverse=True)[: self.session_scan_limit]
+        sessions = []
+        for path in files:
+            session_id = path.stem
+            title = path.name
+            command = f"{command_name} resume {session_id}" if command_name else ""
+            sessions.append(DashboardHandler._session_item(self, provider, session_id, title, path, "", command, "detected"))
+        return {"provider": provider, "available": True, "message": f"{len(sessions)} candidate session artifacts found"}, sessions
+
+    def _session_sources(self) -> dict:
+        local = Path(os.environ.get("LOCALAPPDATA", ""))
+        roaming = Path(os.environ.get("APPDATA", ""))
+        providers = []
+        sessions = []
+        for status, items in (
+            DashboardHandler._codex_sessions(self),
+            DashboardHandler._claude_sessions(self),
+            DashboardHandler._generic_provider_sessions(self, "AGY-AntiGravity", [Path.home() / ".antigravity", local / "agy", local / "antigravity", roaming / "Antigravity"], "agy"),
+            DashboardHandler._generic_provider_sessions(self, "Chemi", [Path.home() / ".chemi", local / "Chemi", roaming / "Chemi"], "chemi"),
+        ):
+            providers.append(status)
+            sessions.extend(items)
+        sessions.sort(key=lambda item: item.get("updated_at", 0), reverse=True)
+        return {"providers": providers, "sessions": sessions[:200]}
+
+    def _session_detail(self, provider: str, session_id: str) -> dict:
+        data = DashboardHandler._session_sources(self)
+        for item in data["sessions"]:
+            if item["provider"] == provider and item["id"] == session_id:
+                path = Path(item["path"])
+                records = DashboardHandler._jsonl_records(self, path, head=10, tail=30) if path.suffix.lower() == ".jsonl" else []
+                preview = []
+                for record in records[-12:]:
+                    text = DashboardHandler._record_text(self, record).strip()
+                    if text:
+                        preview.append(text[:240])
+                item = dict(item)
+                item["preview"] = preview
+                return {"session": item}
+        return {"session": None}
 
     def _graph_data(self) -> dict:
         nodes = []
@@ -301,7 +607,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     "path": p["path"],
                     "size": 10,
                 })
-            
+
             full_path = self.workspace / p["path"]
             if full_path.exists():
                 try:
@@ -379,7 +685,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         query = query.strip()
         if not query:
             return {"results": {}}
-        
+
         prefix = ""
         term = query
         if ":" in query:
@@ -403,17 +709,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 p_title = p["title"].lower()
                 p_path = p["path"].lower()
                 term_l = term.lower()
-                
+
                 if term_l in p_title:
                     score += 0.6
                     reason.append("match in title")
                 if term_l in p_path:
                     score += 0.3
                     reason.append("match in path")
-                
+
                 if prefix == "concept" and "concepts/" not in p_path:
                     continue
-                
+
                 if score > 0:
                     score = min(1.0, score + 0.1)
                     results["pages"].append({
@@ -436,7 +742,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 s_id = s.get("id", "").lower()
                 s_desc = s.get("description", "").lower()
                 term_l = term.lower()
-                
+
                 if term_l in s_title:
                     score += 0.6
                     reason.append("match in title")
@@ -446,7 +752,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 if term_l in s_desc:
                     score += 0.2
                     reason.append("match in description")
-                
+
                 if score > 0:
                     score = min(1.0, score + 0.1)
                     results["skills"].append({
@@ -466,14 +772,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 m_claim = m.get("claim", "").lower()
                 m_id = m.get("id", "").lower()
                 term_l = term.lower()
-                
+
                 if term_l in m_claim:
                     score += 0.7
                     reason.append("match in claim text")
                 if term_l in m_id:
                     score += 0.4
                     reason.append("match in ID")
-                
+
                 if score > 0:
                     score = min(1.0, score + 0.1)
                     results["memories"].append({
@@ -494,14 +800,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 e_heading = e.get("heading", "").lower()
                 e_body = e.get("body", "").lower()
                 term_l = term.lower()
-                
+
                 if term_l in e_heading:
                     score += 0.6
                     reason.append("match in heading")
                 if term_l in e_body:
                     score += 0.3
                     reason.append("match in body")
-                
+
                 if score > 0:
                     score = min(1.0, score + 0.1)
                     results["logs"].append({
@@ -514,13 +820,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
         for cat in results:
             results[cat].sort(key=lambda x: x["score"], reverse=True)
-            
+
         return {"results": results}
 
     def _context_pack_data(self, obj_id: str) -> dict:
         packet = ""
         summary = ""
-        
+
         if obj_id.startswith("page:"):
             rel_path = obj_id[5:]
             full_path = self.workspace / rel_path
@@ -553,7 +859,7 @@ Summary:
                 if s.get("id") == s_id:
                     skill = s
                     break
-            
+
             if skill:
                 title = skill.get("title", "Active Skill")
                 summary = skill.get("description", "")
@@ -582,7 +888,7 @@ Trigger Phrases:
                 if m.get("id") == m_id:
                     memory = m
                     break
-            
+
             if memory:
                 summary = memory.get("claim", "")
                 packet = f"""# Context Packet: Memory Claim
@@ -610,10 +916,40 @@ Contradicts:
 [End of Packet]"""
             else:
                 packet = f"Memory not found: {m_id}"
-                
+
+        elif obj_id.startswith("session:"):
+            parts = obj_id.split(":", 2)
+            if len(parts) == 3:
+                provider = parts[1]
+                session_id = parts[2]
+                detail = DashboardHandler._session_detail(self, provider, session_id).get("session")
+                if detail:
+                    summary = detail.get("title", "")
+                    packet = f"""# Context Packet: LLM Session
+
+Provider: {detail.get('provider', provider)}
+Session ID: {detail.get('id', session_id)}
+Title: {detail.get('title', '')}
+Workspace: {detail.get('cwd', '')}
+Artifact: {detail.get('path', '')}
+Updated: {detail.get('updated_label', '')}
+
+Resume Command:
+{detail.get('resume_command', '') or 'Open this session manually in the provider app.'}
+
+Recent Preview:
+{chr(10).join('- ' + line for line in detail.get('preview', []))}
+
+---
+[End of Packet]"""
+                else:
+                    packet = f"Session not found: {provider}:{session_id}"
+            else:
+                packet = f"Malformed session id: {obj_id}"
+
         else:
             packet = f"Unknown object type: {obj_id}"
-            
+
         return {"id": obj_id, "packet": packet, "summary": summary}
 
     def _debug_retrieval_data(self, query: str) -> dict:
@@ -630,7 +966,7 @@ Contradicts:
         for p in pages:
             p_title = p["title"].lower()
             p_path = p["path"].lower()
-            
+
             semantic = 0.45
             if query in p_title:
                 semantic += 0.35
@@ -643,15 +979,15 @@ Contradicts:
                     "reason": "weak semantic match",
                 })
                 continue
-                
+
             recency = 0.02
             if "log" in p_path or "today" in p_path:
                 recency = 0.09
             elif "concept" in p_path:
                 recency = 0.05
-                
+
             graph_offset = 0.04
-            
+
             total_score = round(min(1.00, semantic + recency + graph_offset), 2)
             results.append({
                 "id": f"page:{p['path']}",
@@ -669,7 +1005,7 @@ Contradicts:
         for m in memories:
             m_claim = m["claim"].lower()
             m_id = m["id"].lower()
-            
+
             semantic = 0.40
             if query in m_claim:
                 semantic += 0.45
@@ -682,15 +1018,15 @@ Contradicts:
                     "reason": "below semantic threshold",
                 })
                 continue
-                
+
             recency = 0.03
             if m["status"] == "approved":
                 recency += 0.04
-                
+
             graph_offset = 0.03
             if m.get("rank_score", 0) > 2:
                 graph_offset += 0.05
-                
+
             total_score = round(min(1.00, semantic + recency + graph_offset), 2)
             results.append({
                 "id": f"memory:{m['id']}",
@@ -756,7 +1092,16 @@ Contradicts:
         elif path == "/dashboard/api/debug":
             self._serve_api_debug()
         elif path == "/dashboard/api/workspace/list":
-            self._send_json({"wikis": self._list_available_wikis()})
+            query = parse_qs(urlsplit(self.path).query)
+            refresh = query.get("refresh", ["0"])[0] in {"1", "true", "yes"}
+            self._send_json({"wikis": self._list_available_wikis(refresh=refresh)})
+        elif path == "/dashboard/api/sessions":
+            self._send_json(self._session_sources())
+        elif path == "/dashboard/api/sessions/detail":
+            query = parse_qs(urlsplit(self.path).query)
+            provider = query.get("provider", [""])[0]
+            session_id = query.get("id", [""])[0]
+            self._send_json(self._session_detail(provider, session_id))
         elif path == "/dashboard/api/workspace/switch":
             query = parse_qs(urlsplit(self.path).query)
             target_path = query.get("path", [""])[0]
@@ -767,7 +1112,13 @@ Contradicts:
             if not target.exists() or not target.is_dir():
                 self._send_json({"status": "error", "message": f"Path '{target_path}' does not exist or is not a directory"})
                 return
+            if not (target / "wiki").is_dir():
+                self._send_json({"status": "error", "message": f"Path '{target_path}' does not contain a wiki directory"})
+                return
             DashboardHandler.workspace = target
+            registry = DashboardHandler._load_wiki_registry(self)
+            registry[str(target)] = DashboardHandler._wiki_project_item(self, target, target)
+            DashboardHandler._save_wiki_registry(self, list(registry.values()))
             self._send_json({
                 "status": "ok",
                 "message": f"Switched to workspace '{target.name}' successfully",
@@ -855,10 +1206,10 @@ Contradicts:
     --danger-bg: rgba(244, 67, 54, 0.1);
     --warning: #ff9800;
     --warning-bg: rgba(255, 152, 0, 0.1);
-    
+
     --font-display: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
     --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
-    
+
     --transition-quint: cubic-bezier(0.23, 1, 0.32, 1);
   }
 
@@ -1353,8 +1704,9 @@ Contradicts:
       <select id="wiki-selector" onchange="switchWorkspace(this.value)" style="background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-color); font-family: var(--font-display); font-size: 0.8rem; font-weight: 600; padding: 0.2rem 0.5rem; border-radius: 4px; outline: none; cursor: pointer; transition: all 0.25s;">
         <option value="">Loading Wikis...</option>
       </select>
+      <button class="btn-dev btn-copy" onclick="loadWorkspaceList(true)" title="Refresh wiki project registry">Refresh Wikis</button>
     </div>
-    
+
     <div class="command-palette-wrapper">
       <input type="text" id="palette-search" class="palette-input" placeholder="Search pages, memories, skills, logs, reducers, IDs, concepts... (e.g. page:retrieval, skill:dry)" oninput="handlePaletteSearch(this.value)">
       <div id="palette-dropdown" class="palette-dropdown"></div>
@@ -1374,9 +1726,10 @@ Contradicts:
       <span id="stat-skills">0 Active Skills</span>
       <span id="stat-reducers">0 Reducer Drafts</span>
       <span id="stat-memories">0 Memories</span>
+      <span id="stat-sessions">0 LLM Sessions</span>
       <span id="stat-logs">0 Recent Logs</span>
     </div>
-    
+
     <div class="strip-system">
       <div class="status-item">
         <span class="dot dot-green"></span>
@@ -1394,7 +1747,7 @@ Contradicts:
 
   <!-- Main Three-Rail split view -->
   <div class="workspace-split">
-    
+
     <!-- Left Rail: filters & Stable navigation -->
     <div class="rail-left">
       <div>
@@ -1420,6 +1773,10 @@ Contradicts:
             <span>Memories</span>
             <span class="nav-count" id="nav-count-memories">0</span>
           </li>
+          <li class="nav-item" id="nav-item-sessions" onclick="setLeftFilter('sessions'); setCenterTab('sessions')">
+            <span>LLM Sessions</span>
+            <span class="nav-count" id="nav-count-sessions">0</span>
+          </li>
           <li class="nav-item" id="nav-item-logs" onclick="setLeftFilter('logs')">
             <span>System Logs</span>
             <span class="nav-count" id="nav-count-logs">0</span>
@@ -1439,12 +1796,13 @@ Contradicts:
 
     <!-- Center rail: Fast exploration surface -->
     <div class="rail-center">
-      
+
       <!-- Human UI Pane -->
       <div class="human-ui-pane" style="display:flex; flex-direction:column; height:100%; overflow:hidden;">
         <div class="explorer-tabs">
           <button class="tab-btn active" id="tab-btn-list" onclick="setCenterTab('list')">List Explorer</button>
           <button class="tab-btn" id="tab-btn-graph" onclick="setCenterTab('graph')">Knowledge Graph</button>
+          <button class="tab-btn" id="tab-btn-sessions" onclick="setCenterTab('sessions')">LLM Sessions</button>
           <button class="tab-btn" id="tab-btn-timeline" onclick="setCenterTab('timeline')">Session Timeline</button>
           <button class="tab-btn" id="tab-btn-logs" onclick="setCenterTab('logs')">Developer Logs</button>
           <button class="tab-btn" id="tab-btn-debug" onclick="setCenterTab('debug')">Retrieval Debug</button>
@@ -1481,7 +1839,7 @@ Contradicts:
               <span class="count-badge" id="graph-node-count">0 nodes</span>
             </div>
           </div>
-          
+
           <!-- Floating config HUD -->
           <div id="graph-controls" style="position: absolute; top: 1rem; right: 1.5rem; z-index: 10; background: rgba(14, 18, 27, 0.92); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.8rem; font-family: var(--font-display); width: 220px; transition: all 0.3s var(--transition-quint); max-height: calc(100% - 2rem); overflow: hidden; font-size: 0.75rem;">
             <div style="font-weight: 700; font-size: 0.8rem; margin-bottom: 0.6rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.3rem; color: var(--accent); display: flex; justify-content: space-between; align-items: center;">
@@ -1502,7 +1860,7 @@ Contradicts:
                 <span style="font-size: 0.68rem; color: var(--text-muted);">Gravity: <span id="val-gravity">0.015</span></span>
                 <input type="range" min="0.005" max="0.08" step="0.005" value="0.015" oninput="updateForceParam('gravity', this.value)" style="width:100%;">
               </label>
-              
+
               <div style="font-weight: 500; margin-bottom: 0.4rem; color: var(--text-secondary); border-top: 1px solid var(--border-color); padding-top: 0.4rem;">Display</div>
               <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer; margin-bottom: 0.3rem;">
                 <input type="checkbox" id="chk-labels" checked onchange="updateDisplayParam('labels', this.checked)">
@@ -1528,20 +1886,35 @@ Contradicts:
           </ul>
         </div>
 
-        <!-- Tab 4: Monospace Dev Logs -->
+        <!-- Tab 4: LLM Session Switcher -->
+        <div class="explorer-sheet" id="sheet-sessions">
+          <div class="retrieval-debug-header">
+            <select id="session-provider-filter" class="palette-input" style="width: 220px;" onchange="renderSessionExplorer()">
+              <option value="all">All providers</option>
+            </select>
+            <input type="text" id="session-search" class="palette-input" style="width: 50%;" placeholder="Filter sessions by title, project, provider, or ID..." oninput="renderSessionExplorer()">
+            <button class="btn-dev btn-copy" onclick="loadSessions()">Refresh</button>
+          </div>
+          <ul class="timeline-list" id="session-list-body">
+            <li class="timeline-card">Sessions loading...</li>
+          </ul>
+          <div class="meta-info" id="session-provider-status" style="margin-top: 1rem;"></div>
+        </div>
+
+        <!-- Tab 5: Monospace Dev Logs -->
         <div class="explorer-sheet" id="sheet-logs">
           <ul class="log-list-mono" id="log-list-body">
             <li class="meta-info">Logs loading...</li>
           </ul>
         </div>
 
-        <!-- Tab 5: Retrieval Debugger -->
+        <!-- Tab 6: Retrieval Debugger -->
         <div class="explorer-sheet" id="sheet-debug">
           <div class="retrieval-debug-header">
             <input type="text" id="debug-query" class="palette-input" style="width: 70%;" placeholder="Enter query string (e.g. memory review gating)..." onkeydown="if(event.key==='Enter') runDebugAnalysis()">
             <button class="btn-dev btn-dev-approve" onclick="runDebugAnalysis()">Analyze Retrieval Weights</button>
           </div>
-          
+
           <div style="font-weight: 500; font-size: 0.9rem; margin-bottom: 0.75rem; color: var(--accent);">Top Retrieval Candidates</div>
           <ul class="log-list-mono" id="debug-results-body" style="margin-bottom: 1.5rem;">
             <li class="meta-info">Enter a query to run retrieval analysis.</li>
@@ -1622,7 +1995,7 @@ Contradicts:
     <div class="rail-right" id="inspector-rail">
       <!-- Welcome Inspector display -->
       <div style="color: var(--text-muted); font-size: 0.85rem; text-align: center; margin-top: 5rem;" id="inspector-placeholder">
-        <span style="font-size: 1.5rem; display: block; margin-bottom: 0.5rem;">❖</span>
+        <span style="font-size: 1.5rem; display: block; margin-bottom: 0.5rem;">â–</span>
         Select any node, table row, search hit, or filter to inspect live telemetry context.
       </div>
 
@@ -1713,13 +2086,15 @@ let activeCenterTab = 'list';
 let selectedObjectId = null;
 let humanMode = true;
 let allRecordsCache = [];
+let sessionRecordsCache = [];
+let sessionProviderStatusCache = [];
 let obsidianVaultName = 'llm-wiki';
 
 function setUiMode(mode) {
   humanMode = (mode === 'human');
   const btnHuman = document.getElementById('btn-toggle-human');
   const btnAgent = document.getElementById('btn-toggle-agent');
-  
+
   if (humanMode) {
     document.body.classList.remove('agent-mode-active');
     btnHuman.style.background = 'var(--bg-card)';
@@ -1741,40 +2116,40 @@ function setUiMode(mode) {
 
 function setLeftFilter(filter) {
   activeLeftFilter = filter;
-  
+
   // Highlight Left rail active item
-  const items = ['all', 'pages', 'skills', 'reducers', 'memories', 'logs'];
+  const items = ['all', 'pages', 'skills', 'reducers', 'memories', 'sessions', 'logs'];
   items.forEach(it => {
     const el = document.getElementById('nav-item-' + it);
     if (el) el.classList.remove('active');
   });
-  
+
   const activeEl = document.getElementById('nav-item-' + filter);
   if (activeEl) activeEl.classList.add('active');
-  
+
   // Filter Explorer List Sheet
   renderListExplorer();
 }
 
 function setCenterTab(tab) {
   activeCenterTab = tab;
-  
+
   // Highlight Tab Button
-  const tabs = ['list', 'graph', 'timeline', 'logs', 'debug'];
+  const tabs = ['list', 'graph', 'sessions', 'timeline', 'logs', 'debug'];
   tabs.forEach(t => {
     const el = document.getElementById('tab-btn-' + t);
     if (el) el.classList.remove('active');
-    
+
     const sheet = document.getElementById('sheet-' + t);
     if (sheet) sheet.classList.remove('active');
   });
-  
+
   const activeTabEl = document.getElementById('tab-btn-' + tab);
   if (activeTabEl) activeTabEl.classList.add('active');
-  
+
   const activeSheetEl = document.getElementById('sheet-' + tab);
   if (activeSheetEl) activeSheetEl.classList.add('active');
-  
+
   if (tab === 'graph') {
     // Resize canvas when tab opens
     setupCanvasElement();
@@ -1784,19 +2159,22 @@ function setCenterTab(tab) {
 // Compile Unified Records Cache
 async function prefetchSystemData() {
   try {
-    const [pagesData, skillsData, memoriesData, reducersData, logsData, configData] = await Promise.all([
+    const [pagesData, skillsData, memoriesData, reducersData, logsData, configData, sessionsData] = await Promise.all([
       api('/pages'),
       api('/skills'),
       api('/memory'),
       api('/reducer/drafts'),
       api('/log'),
-      api('/config')
+      api('/config'),
+      api('/sessions')
     ]);
 
     obsidianVaultName = configData.vault_name || configData.workspace_name || 'llm-wiki';
+    sessionRecordsCache = sessionsData.sessions || [];
+    sessionProviderStatusCache = sessionsData.providers || [];
 
     allRecordsCache = [];
-    
+
     // Add Pages
     (pagesData.pages || []).forEach(p => {
       allRecordsCache.push({
@@ -1849,11 +2227,25 @@ async function prefetchSystemData() {
       });
     });
 
+    // Add LLM Sessions
+    sessionRecordsCache.forEach(s => {
+      allRecordsCache.push({
+        id: 'session:' + s.provider + ':' + s.id,
+        name: s.title,
+        type: 'LLM Session',
+        links: 2,
+        lastUsed: s.updated_label || 'unknown',
+        hotness: s.resume_command ? 5 : 2,
+        meta: s
+      });
+    });
+
     // Update Strip Status Counts
     document.getElementById('stat-pages').innerText = (pagesData.pages || []).length + " Pages";
     document.getElementById('stat-skills').innerText = (skillsData.skills || []).length + " Active Skills";
     document.getElementById('stat-reducers').innerText = (reducersData.drafts || []).length + " Reducer Drafts";
     document.getElementById('stat-memories').innerText = (memoriesData.memories || []).length + " Memories";
+    document.getElementById('stat-sessions').innerText = sessionRecordsCache.length + " LLM Sessions";
     document.getElementById('stat-logs').innerText = (logsData.entries || []).length + " Recent Logs";
 
     document.getElementById('nav-count-all').innerText = allRecordsCache.length;
@@ -1861,9 +2253,11 @@ async function prefetchSystemData() {
     document.getElementById('nav-count-skills').innerText = (skillsData.skills || []).length;
     document.getElementById('nav-count-reducers').innerText = (reducersData.drafts || []).length;
     document.getElementById('nav-count-memories').innerText = (memoriesData.memories || []).length;
+    document.getElementById('nav-count-sessions').innerText = sessionRecordsCache.length;
     document.getElementById('nav-count-logs').innerText = (logsData.entries || []).length;
 
     renderListExplorer();
+    renderSessionExplorer();
     renderTimelineExplorer(logsData.entries || []);
     renderLogsExplorer(logsData.entries || []);
   } catch (err) {
@@ -1874,7 +2268,7 @@ async function prefetchSystemData() {
 // Render Explorer List Table
 function renderListExplorer() {
   const body = document.getElementById('list-table-body');
-  
+
   // Filter cache
   let filtered = allRecordsCache;
   if (activeLeftFilter === 'pages') {
@@ -1885,6 +2279,8 @@ function renderListExplorer() {
     filtered = allRecordsCache.filter(r => r.type === 'Reducer Draft');
   } else if (activeLeftFilter === 'memories') {
     filtered = allRecordsCache.filter(r => r.type === 'Memory Item');
+  } else if (activeLeftFilter === 'sessions') {
+    filtered = allRecordsCache.filter(r => r.type === 'LLM Session');
   } else if (activeLeftFilter === 'logs') {
     filtered = []; // Logs are rendered in separate monospace list tab
   }
@@ -1895,7 +2291,7 @@ function renderListExplorer() {
   }
 
   body.innerHTML = filtered.map(r => {
-    let hotGauge = '█'.repeat(r.hotness) + '░'.repeat(5 - r.hotness);
+    let hotGauge = 'â–ˆ'.repeat(r.hotness) + 'â–‘'.repeat(5 - r.hotness);
     return `
       <tr onclick="inspectObject('${escapeHtml(r.id)}')">
         <td><strong>${escapeHtml(r.name)}</strong></td>
@@ -1906,6 +2302,107 @@ function renderListExplorer() {
       </tr>
     `;
   }).join('');
+}
+
+async function loadSessions() {
+  try {
+    const data = await api('/sessions');
+    sessionRecordsCache = data.sessions || [];
+    sessionProviderStatusCache = data.providers || [];
+    renderSessionExplorer();
+    prefetchSystemData();
+  } catch (err) {
+    console.error('Failed to load sessions', err);
+  }
+}
+
+function renderSessionExplorer() {
+  const body = document.getElementById('session-list-body');
+  const providerFilter = document.getElementById('session-provider-filter');
+  const status = document.getElementById('session-provider-status');
+  if (!body || !providerFilter) return;
+
+  const providers = Array.from(new Set(sessionProviderStatusCache.map(p => p.provider).concat(sessionRecordsCache.map(s => s.provider)))).filter(Boolean);
+  const currentProvider = providerFilter.value || 'all';
+  providerFilter.innerHTML = '<option value="all">All providers</option>' + providers.map(provider => `
+    <option value="${escapeHtml(provider)}" ${provider === currentProvider ? 'selected' : ''}>${escapeHtml(provider)}</option>
+  `).join('');
+
+  const qEl = document.getElementById('session-search');
+  const query = qEl ? qEl.value.toLowerCase().trim() : '';
+  let sessions = sessionRecordsCache;
+  if (currentProvider !== 'all') {
+    sessions = sessions.filter(s => s.provider === currentProvider);
+  }
+  if (query) {
+    sessions = sessions.filter(s => [s.provider, s.title, s.id, s.cwd, s.path].join(' ').toLowerCase().includes(query));
+  }
+
+  body.innerHTML = sessions.length
+    ? sessions.map(s => {
+        const command = s.resume_command || '';
+        const encodedCommand = encodeURIComponent(command);
+        const commandHtml = command
+          ? `<button class="btn-dev btn-dev-approve" onclick="event.stopPropagation(); copyText(decodeURIComponent('${encodedCommand}'), this)">Copy Resume</button>`
+          : `<span class="meta-info">Manual reopen</span>`;
+        return `
+          <li class="timeline-card" onclick="inspectSession('${escapeHtml(s.provider)}', '${escapeHtml(s.id)}')">
+            <div style="display:flex; justify-content:space-between; gap:1rem; align-items:flex-start;">
+              <div>
+                <div style="font-weight:700; color:var(--accent); margin-bottom:0.25rem;">${escapeHtml(s.title)}</div>
+                <div class="meta-info">${escapeHtml(s.provider)} | ${escapeHtml(s.updated_label || 'unknown')} | ${escapeHtml(s.cwd || s.path)}</div>
+              </div>
+              ${commandHtml}
+            </div>
+          </li>
+        `;
+      }).join('')
+    : '<li class="meta-info">No sessions found for this filter.</li>';
+
+  if (status) {
+    status.innerHTML = sessionProviderStatusCache.map(p => {
+      const state = p.available ? 'status-ok' : 'status-bad';
+      return `<span class="${state}">${escapeHtml(p.provider)}</span>: ${escapeHtml(p.message)}`;
+    }).join(' | ');
+  }
+}
+
+async function inspectSession(provider, id) {
+  try {
+    const data = await api('/sessions/detail?provider=' + encodeURIComponent(provider) + '&id=' + encodeURIComponent(id));
+    const s = data.session;
+    if (!s) return;
+    selectedObjectId = 'session:' + provider + ':' + id;
+    const placeholder = document.getElementById('inspector-placeholder');
+    const content = document.getElementById('inspector-content');
+    placeholder.style.display = 'none';
+    content.style.display = 'flex';
+    document.getElementById('inspect-title').innerText = s.title;
+    document.getElementById('inspect-badge').innerText = s.provider;
+    document.getElementById('inspect-id').innerText = s.id;
+    document.getElementById('inspect-path').innerText = s.cwd || s.path;
+    document.getElementById('inspect-score').innerText = s.updated_label || 'unknown';
+    document.getElementById('inspect-reason').innerText = s.resume_command || 'Session artifact detected; reopen manually in the provider app.';
+    document.getElementById('inspect-packet-body').innerText = [
+      '# Session Resume Packet',
+      '',
+      'Provider: ' + s.provider,
+      'Session: ' + s.id,
+      'Title: ' + s.title,
+      'Workspace: ' + (s.cwd || ''),
+      'Artifact: ' + s.path,
+      'Resume: ' + (s.resume_command || 'manual'),
+      '',
+      'Recent preview:',
+      ...(s.preview || []).map(line => '- ' + line)
+    ].join('\\n');
+    document.getElementById('inspect-links').innerHTML = `<li>${escapeHtml(s.provider)}</li><li>${escapeHtml(s.updated_label || 'unknown')}</li>`;
+    document.getElementById('inspect-btn-copyid').onclick = function() { copyText(s.id, this); };
+    document.getElementById('inspect-btn-copytext').onclick = function() { copyText(s.resume_command || s.path, this); };
+    document.getElementById('inspect-btn-obsidian').href = '#';
+  } catch (err) {
+    console.error('Failed to inspect session', err);
+  }
 }
 
 // Render Session Timeline
@@ -1942,22 +2439,22 @@ async function inspectObject(id) {
   selectedObjectId = id;
   const placeholder = document.getElementById('inspector-placeholder');
   const content = document.getElementById('inspector-content');
-  
+
   placeholder.style.display = 'none';
   content.style.display = 'flex';
-  
+
   try {
     const data = await api('/context-pack?id=' + encodeURIComponent(id));
-    
+
     document.getElementById('inspect-title').innerText = id.split(':')[1];
     document.getElementById('inspect-badge').innerText = id.split(':')[0].toUpperCase();
     document.getElementById('inspect-id').innerText = id;
     document.getElementById('inspect-path').innerText = id.split(':')[1];
     document.getElementById('inspect-score').innerText = '0.90';
-    
+
     document.getElementById('inspect-packet-body').innerText = data.packet;
     document.getElementById('inspect-reason').innerText = data.summary || "Grounded retrieval score trace compiled for workspace AI agents.";
-    
+
     // Connections mapping
     const linksUl = document.getElementById('inspect-links');
     linksUl.innerHTML = `
@@ -1972,11 +2469,11 @@ async function inspectObject(id) {
     document.getElementById('inspect-btn-copytext').onclick = function() {
       copyText(data.packet, this);
     };
-    
+
     // Obsidian URI link
     const rel = id.split(':')[1];
-    document.getElementById('inspect-btn-obsidian').href = `obsidian://open?vault=${encodeURIComponent(obsidianVaultName)}&file=${encodeURIComponent(rel.replace(/\\/g, '/'))}`;
-    
+    document.getElementById('inspect-btn-obsidian').href = `obsidian://open?vault=${encodeURIComponent(obsidianVaultName)}&file=${encodeURIComponent(rel.replaceAll(String.fromCharCode(92), '/'))}`;
+
   } catch (err) {
     console.error('Failed to load inspected object details', err);
   }
@@ -1989,13 +2486,13 @@ async function handlePaletteSearch(q) {
     dropdown.style.display = 'none';
     return;
   }
-  
+
   try {
     const data = await api('/search?q=' + encodeURIComponent(q));
     const res = data.results;
-    
+
     let htmlStr = '';
-    
+
     if (res.pages && res.pages.length) {
       htmlStr += `<div class="dropdown-group"><div class="group-title">Pages</div>`;
       htmlStr += res.pages.map(p => `
@@ -2085,18 +2582,18 @@ async function runDebugAnalysis() {
   const query = document.getElementById('debug-query').value;
   const resultsBody = document.getElementById('debug-results-body');
   const rejectedBody = document.getElementById('debug-rejected-body');
-  
+
   if (!query.trim()) return;
-  
+
   resultsBody.innerHTML = '<li class="meta-info">Analyzing weights...</li>';
   rejectedBody.innerHTML = '<li class="meta-info">Scanning...</li>';
-  
+
   try {
     const data = await api('/debug?q=' + encodeURIComponent(query));
-    
+
     resultsBody.innerHTML = data.results.length
       ? data.results.map((r, idx) => {
-          let scoreBar = '█'.repeat(Math.round(r.score * 5)) + '░'.repeat(5 - Math.round(r.score * 5));
+          let scoreBar = 'â–ˆ'.repeat(Math.round(r.score * 5)) + 'â–‘'.repeat(5 - Math.round(r.score * 5));
           return `
             <li class="timeline-card" onclick="inspectObject('${escapeHtml(r.id)}')">
               <div style="display:flex; justify-content:space-between; font-weight:700;">
@@ -2113,7 +2610,7 @@ async function runDebugAnalysis() {
           `;
         }).join('')
       : '<li class="meta-info">No top results found.</li>';
-      
+
     rejectedBody.innerHTML = data.rejected.length
       ? data.rejected.map(r => `
           <li class="timeline-card" style="border-color: rgba(244,67,54,0.15);" onclick="inspectObject('${escapeHtml(r.id)}')">
@@ -2175,7 +2672,7 @@ function isNodeVisible(n) {
   const root = getRootNode();
   if (root && n.id === root.id) return true;
   if (expandedNodeIds.has(n.id)) return true;
-  
+
   const idx = graphNodes.indexOf(n);
   return graphLinks.some(l => {
     const s = graphNodes[l.source];
@@ -2219,7 +2716,7 @@ function toggleControls() {
   const panel = document.getElementById('graph-controls');
   const body = document.getElementById('controls-body');
   const toggleBtn = panel.querySelector('span[onclick]');
-  
+
   if (panel.style.height === '35px') {
     panel.style.height = '';
     panel.style.width = '220px';
@@ -2237,7 +2734,7 @@ function setLayoutMode(mode) {
   layoutMode = mode;
   const btnGalaxy = document.getElementById('btn-mode-galaxy');
   const btnMindmap = document.getElementById('btn-mode-mindmap');
-  
+
   if (mode === 'galaxy') {
     btnGalaxy.style.background = 'var(--bg-card)';
     btnGalaxy.style.color = 'var(--accent)';
@@ -2258,21 +2755,21 @@ function setLayoutMode(mode) {
 
 function calculateMindMapLayout() {
   if (graphNodes.length === 0 || !canvas) return;
-  
+
   const width = canvas.width;
   const height = canvas.height;
   const cx = width / 2;
   const cy = height / 2;
-  
+
   let root = getRootNode();
   if (!root) return;
-  
+
   const rootIdx = graphNodes.indexOf(root);
   let queue = [rootIdx];
   let visited = new Set([rootIdx]);
   let depths = {};
   depths[rootIdx] = 0;
-  
+
   let adj = {};
   graphNodes.forEach((_, i) => adj[i] = []);
   graphLinks.forEach(l => {
@@ -2283,11 +2780,11 @@ function calculateMindMapLayout() {
       adj[l.target].push(l.source);
     }
   });
-  
+
   while (queue.length > 0) {
     let curr = queue.shift();
     let d = depths[curr];
-    
+
     adj[curr].forEach(neighbor => {
       const neighborNode = graphNodes[neighbor];
       if (neighborNode && isNodeVisible(neighborNode) && !visited.has(neighbor)) {
@@ -2297,7 +2794,7 @@ function calculateMindMapLayout() {
       }
     });
   }
-  
+
   let depthGroups = {};
   graphNodes.forEach((n, i) => {
     if (!isNodeVisible(n)) return;
@@ -2305,22 +2802,22 @@ function calculateMindMapLayout() {
     if (!depthGroups[d]) depthGroups[d] = [];
     depthGroups[d].push(i);
   });
-  
+
   const horizontalGap = 170;
   const verticalGap = 45;
-  
+
   Object.keys(depthGroups).forEach(dKey => {
     let d = parseInt(dKey);
     let group = depthGroups[d];
     let count = group.length;
-    
+
     group.sort((a, b) => {
       let nA = graphNodes[a];
       let nB = graphNodes[b];
       if (nA.kind !== nB.kind) return nA.kind === 'page' ? -1 : 1;
       return 0;
     });
-    
+
     group.forEach((nodeIdx, idx) => {
       let node = graphNodes[nodeIdx];
       node.targetX = cx - 120 + d * horizontalGap;
@@ -2349,7 +2846,7 @@ function initGraphPhysics(resetPositions = false) {
   const rect = canvas.getBoundingClientRect();
   const cx = rect.width / 2;
   const cy = rect.height / 2;
-  
+
   if (resetPositions) {
     graphZoom = 1.0;
     graphPanX = 0;
@@ -2385,7 +2882,7 @@ function toggleFreezeGraph() {
 
 function runPhysicsStep() {
   if (graphFreeze || graphNodes.length === 0) return;
-  
+
   // Glue invisible nodes to their visible parent in all layout modes before layout/physics steps!
   graphNodes.forEach(n => {
     if (!isNodeVisible(n)) {
@@ -2427,18 +2924,18 @@ function runPhysicsStep() {
   const height = canvas.height;
   const cx = width / 2;
   const cy = height / 2;
-  
-  const kRepulsion = physicsParams.repulsion; 
-  const kSpring = 0.05;   
-  const lRest = physicsParams.linklen;       
-  const kCenter = physicsParams.gravity;  
-  const damping = 0.85;   
-  
+
+  const kRepulsion = physicsParams.repulsion;
+  const kSpring = 0.05;
+  const lRest = physicsParams.linklen;
+  const kCenter = physicsParams.gravity;
+  const damping = 0.85;
+
   for (let i = 0; i < graphNodes.length; i++) {
     const n1 = graphNodes[i];
     if (n1 === draggedNode) continue;
     if (!isNodeVisible(n1)) continue;
-    
+
     for (let j = i + 1; j < graphNodes.length; j++) {
       const n2 = graphNodes[j];
       if (!isNodeVisible(n2)) continue;
@@ -2446,12 +2943,12 @@ function runPhysicsStep() {
       const dy = n2.y - n1.y;
       const distSq = dx * dx + dy * dy + 0.1;
       const dist = Math.sqrt(distSq);
-      
+
       if (dist < 300) {
         const force = kRepulsion / distSq;
         const fx = (dx / dist) * force;
         const fy = (dy / dist) * force;
-        
+
         n1.vx -= fx;
         n1.vy -= fy;
         n2.vx += fx;
@@ -2459,22 +2956,22 @@ function runPhysicsStep() {
       }
     }
   }
-  
+
   graphLinks.forEach(l => {
     const n1 = graphNodes[l.source];
     const n2 = graphNodes[l.target];
     if (!n1 || !n2) return;
     if (!isNodeVisible(n1) || !isNodeVisible(n2)) return;
-    
+
     const dx = n2.x - n1.x;
     const dy = n2.y - n1.y;
     const dist = Math.sqrt(dx * dx + dy * dy) + 0.1;
-    
+
     const displacement = dist - lRest;
     const force = kSpring * displacement;
     const fx = (dx / dist) * force;
     const fy = (dy / dist) * force;
-    
+
     if (n1 !== draggedNode) {
       n1.vx += fx;
       n1.vy += fy;
@@ -2484,14 +2981,14 @@ function runPhysicsStep() {
       n2.vy -= fy;
     }
   });
-  
+
   graphNodes.forEach(n => {
     if (n === draggedNode) return;
     if (!isNodeVisible(n)) return;
-    
+
     n.vx += (cx - n.x) * kCenter;
     n.vy += (cy - n.y) * kCenter;
-    
+
     n.x += n.vx;
     n.y += n.vy;
     n.vx *= damping;
@@ -2501,18 +2998,18 @@ function runPhysicsStep() {
 
 function drawGraph() {
   if (!canvas || !ctx) return;
-  
-  ctx.fillStyle = '#18181c'; 
+
+  ctx.fillStyle = '#18181c';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  
+
   if (displayParams.grid) {
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.015)';
     ctx.lineWidth = 1;
     const gridSize = 45;
-    
+
     const startX = (graphPanX % gridSize);
     const startY = (graphPanY % gridSize);
-    
+
     for (let x = startX; x < canvas.width; x += gridSize) {
       ctx.beginPath();
       ctx.moveTo(x, 0);
@@ -2530,19 +3027,19 @@ function drawGraph() {
   ctx.save();
   ctx.translate(graphPanX, graphPanY);
   ctx.scale(graphZoom, graphZoom);
-  
+
   const searchQuery = document.getElementById('palette-search').value.toLowerCase();
-  
+
   graphLinks.forEach(l => {
     const n1 = graphNodes[l.source];
     const n2 = graphNodes[l.target];
     if (!n1 || !n2) return;
     if (!isNodeVisible(n1) || !isNodeVisible(n2)) return; // Only visible links!
-    
+
     ctx.beginPath();
     ctx.moveTo(n1.x, n1.y);
     ctx.lineTo(n2.x, n2.y);
-    
+
     if (l.type === 'contradicts') {
       ctx.strokeStyle = 'rgba(244, 67, 54, 0.4)';
       ctx.lineWidth = 1.5;
@@ -2558,16 +3055,16 @@ function drawGraph() {
     }
     ctx.stroke();
   });
-  
+
   graphNodes.forEach(n => {
     if (!isNodeVisible(n)) return; // Only visible nodes!
-    
+
     ctx.beginPath();
     ctx.arc(n.x, n.y, n.size, 0, Math.PI * 2);
-    
+
     let nodeColor = '#62626e';
     let isMatched = searchQuery ? n.label.toLowerCase().includes(searchQuery) || (n.claim && n.claim.toLowerCase().includes(searchQuery)) : true;
-    
+
     if (n.kind === 'page') {
       nodeColor = '#a3a3a6';
     } else if (n.kind === 'memory') {
@@ -2577,18 +3074,18 @@ function drawGraph() {
         nodeColor = '#00bcd4';
       }
     }
-    
+
     const isSelected = n === selectedNode || n === hoveredNode;
     ctx.fillStyle = nodeColor;
-    
+
     if (searchQuery && !isMatched) {
       ctx.globalAlpha = 0.25;
     } else {
       ctx.globalAlpha = 1.0;
     }
-    
+
     ctx.fill();
-    
+
     if (isSelected || (searchQuery && isMatched)) {
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 1.8;
@@ -2598,7 +3095,7 @@ function drawGraph() {
       ctx.lineWidth = 1;
       ctx.stroke();
     }
-    
+
     // Draw expansion indicator for progressive mode!
     const collapsedCount = getCollapsedCount(n);
     if (collapsedCount > 0) {
@@ -2609,24 +3106,24 @@ function drawGraph() {
       ctx.setLineDash([2, 3]); // dashed line!
       ctx.stroke();
       ctx.setLineDash([]); // restore solid line!
-      
+
       // Draw a tiny badge showing the count!
       ctx.fillStyle = 'var(--accent)';
       ctx.font = "bold 8px 'JetBrains Mono', monospace";
       ctx.textAlign = 'left';
       ctx.fillText("+" + collapsedCount, n.x + n.size + 2, n.y + 3);
     }
-    
+
     if ((displayParams.labels && graphZoom > 0.8) || isSelected || (searchQuery && isMatched)) {
       ctx.fillStyle = '#e3e3e6';
       ctx.font = "500 " + Math.max(7, Math.round(9 / graphZoom)) + "px 'Outfit', sans-serif";
       ctx.textAlign = 'center';
       ctx.fillText(n.label, n.x, n.y - n.size - 4);
     }
-    
+
     ctx.globalAlpha = 1.0;
   });
-  
+
   ctx.restore();
 }
 
@@ -2636,7 +3133,7 @@ function handleCanvasMouseDown(e) {
   const mouseY = e.clientY - rect.top;
   const worldX = (mouseX - graphPanX) / graphZoom;
   const worldY = (mouseY - graphPanY) / graphZoom;
-  
+
   let foundNode = null;
   for (let i = graphNodes.length - 1; i >= 0; i--) {
     const n = graphNodes[i];
@@ -2647,13 +3144,13 @@ function handleCanvasMouseDown(e) {
       break;
     }
   }
-  
+
   if (foundNode) {
     draggedNode = foundNode;
     selectedNode = foundNode;
     canvas.style.cursor = 'grabbing';
     inspectObject(foundNode.id);
-    
+
     // Toggle progressive disclosure state!
     if (displayParams.progressive) {
       if (expandedNodeIds.has(foundNode.id)) {
@@ -2682,7 +3179,7 @@ function handleCanvasMouseMove(e) {
   const mouseY = e.clientY - rect.top;
   const worldX = (mouseX - graphPanX) / graphZoom;
   const worldY = (mouseY - graphPanY) / graphZoom;
-  
+
   if (draggedNode) {
     draggedNode.x = worldX;
     draggedNode.y = worldY;
@@ -2701,7 +3198,7 @@ function handleCanvasMouseMove(e) {
         break;
       }
     }
-    
+
     if (foundNode !== hoveredNode) {
       hoveredNode = foundNode;
       canvas.style.cursor = foundNode ? 'pointer' : 'grab';
@@ -2720,13 +3217,13 @@ function handleCanvasWheel(e) {
   const rect = canvas.getBoundingClientRect();
   const mouseX = e.clientX - rect.left;
   const mouseY = e.clientY - rect.top;
-  
+
   const worldX = (mouseX - graphPanX) / graphZoom;
   const worldY = (mouseY - graphPanY) / graphZoom;
-  
+
   const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
   graphZoom = Math.max(0.2, Math.min(4.0, graphZoom * zoomFactor));
-  
+
   graphPanX = mouseX - worldX * graphZoom;
   graphPanY = mouseY - worldY * graphZoom;
 }
@@ -2735,17 +3232,17 @@ function setupCanvasElement() {
   canvas = document.getElementById('concept-map');
   if (!canvas) return;
   ctx = canvas.getContext('2d');
-  
+
   function resize() {
     const rect = canvas.getBoundingClientRect();
     canvas.width = rect.width;
     canvas.height = rect.height;
     initGraphPhysics(false);
   }
-  
+
   window.addEventListener('resize', resize);
   resize();
-  
+
   canvas.addEventListener('mousedown', handleCanvasMouseDown);
   canvas.addEventListener('mousemove', handleCanvasMouseMove);
   canvas.addEventListener('mouseup', handleCanvasMouseUp);
@@ -2771,15 +3268,15 @@ async function rejectDraft(id) {
   prefetchSystemData();
 }
 
-async function loadWorkspaceList() {
+async function loadWorkspaceList(refresh = false) {
   try {
-    const data = await api('/workspace/list');
+    const data = await api('/workspace/list' + (refresh ? '?refresh=1' : ''));
     const select = document.getElementById('wiki-selector');
     if (!select) return;
-    
+
     select.innerHTML = data.wikis.map(w => `
       <option value="${escapeHtml(w.path)}" ${w.active ? 'selected' : ''}>
-        📂 ${escapeHtml(w.name)}
+        ${escapeHtml(w.name)} (${escapeHtml(String(w.page_count || 0))} pages)
       </option>
     `).join('');
   } catch (err) {
@@ -2872,6 +3369,7 @@ requestAnimationFrame(animate);
 
 def run_server(workspace: Path, host: str, port: int) -> None:
     DashboardHandler.workspace = workspace
+    DashboardHandler.registry_root = workspace
     server = HTTPServer((host, port), DashboardHandler)
     print(f"Dashboard serving at http://{host}:{port}/dashboard")
     print(f"Workspace: {workspace}")

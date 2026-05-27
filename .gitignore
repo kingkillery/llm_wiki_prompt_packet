@@ -1,4 +1,4 @@
-.omx/
+﻿.omx/
 .omc/
 .tmp/
 .pytest_cache/
@@ -36,6 +36,7 @@ graph/tmp/
 
 .env
 .llm-wiki/state/
+.llm-wiki/dashboard-wiki-projects.json
 
 # Temporary provider debug scripts
 test_openrouter*.py

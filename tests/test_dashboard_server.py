@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Tests for dashboard server (M5)."""
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import threading
 import unittest
 from pathlib import Path
 from urllib.request import Request, urlopen
+from unittest.mock import patch
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DASHBOARD_MODULE_PATH = REPO_ROOT / "support" / "scripts" / "dashboard_server.py"
@@ -29,6 +30,7 @@ class TestDashboardServer(unittest.TestCase):
         self.dashboard = load_module(DASHBOARD_MODULE_PATH, "dashboard_server")
         self.tempdir = tempfile.TemporaryDirectory()
         self.workspace = Path(self.tempdir.name)
+        self.dashboard.DashboardHandler.registry_root = self.workspace
         # Seed minimal wiki structure
         (self.workspace / "wiki" / "concepts").mkdir(parents=True)
         (self.workspace / "wiki" / "concepts" / "memory-layering.md").write_text(
@@ -140,6 +142,104 @@ class TestDashboardServer(unittest.TestCase):
         pages = handler._wiki_pages(handler, "")
         self.assertEqual(len(pages), 1)
         self.assertIn("obsidian://", pages[0]["obsidian_url"])
+
+    def test_workspace_list_detects_nested_projects_with_wiki_dirs(self) -> None:
+        handler = self.dashboard.DashboardHandler
+        handler.workspace = self.workspace
+        nested = self.workspace / "repo-with-wiki"
+        (nested / ".git").mkdir(parents=True, exist_ok=True)
+        (nested / "wiki").mkdir(exist_ok=True)
+        (nested / "wiki" / "index.md").write_text("# Index\n", encoding="utf-8")
+
+        wikis = handler._list_available_wikis(handler)
+        by_path = {item["path"]: item for item in wikis}
+        self.assertIn(str(nested.resolve()), by_path)
+        self.assertEqual(by_path[str(nested.resolve())]["kind"], "repo")
+        self.assertEqual(by_path[str(nested.resolve())]["page_count"], 1)
+
+    def test_workspace_list_uses_saved_registry_without_rescanning(self) -> None:
+        handler = self.dashboard.DashboardHandler
+        handler.workspace = self.workspace
+        handler.registry_root = self.workspace
+        cached = self.workspace / "cached-repo"
+        (cached / "wiki").mkdir(parents=True)
+        (cached / "wiki" / "index.md").write_text("# Cached\n", encoding="utf-8")
+        registry = self.workspace / ".llm-wiki" / "dashboard-wiki-projects.json"
+        registry.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "projects": [
+                        {
+                            "name": "cached-repo",
+                            "path": str(cached.resolve()),
+                            "active": False,
+                            "markers": [],
+                            "page_count": 1,
+                            "kind": "project",
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with patch.object(handler, "_discover_wiki_projects", side_effect=AssertionError("should not rescan")):
+            wikis = handler._list_available_wikis(handler)
+
+        self.assertEqual({item["path"] for item in wikis}, {str(cached.resolve()), str(self.workspace.resolve())})
+
+    def test_session_sources_reads_codex_and_claude_sessions(self) -> None:
+        handler = self.dashboard.DashboardHandler
+        handler.workspace = self.workspace
+        codex_file = self.workspace / ".codex" / "sessions" / "2026" / "05" / "27" / "rollout-test.jsonl"
+        codex_file.parent.mkdir(parents=True)
+        codex_file.write_text(
+            json.dumps(
+                {
+                    "type": "session_meta",
+                    "payload": {
+                        "id": "codex-session",
+                        "cwd": str(self.workspace),
+                    },
+                }
+            )
+            + "\n"
+            + json.dumps({"payload": {"text": "Improve dashboard session tracking"}})
+            + "\n",
+            encoding="utf-8",
+        )
+        (self.workspace / ".codex" / "session_index.jsonl").write_text(
+            json.dumps({"id": "codex-session", "thread_name": "Dashboard sessions"}) + "\n",
+            encoding="utf-8",
+        )
+        claude_file = self.workspace / ".claude" / "projects" / "C--dev" / "claude-session.jsonl"
+        claude_file.parent.mkdir(parents=True)
+        claude_file.write_text(
+            json.dumps(
+                {
+                    "type": "ai-title",
+                    "aiTitle": "Claude project handoff",
+                    "sessionId": "claude-session",
+                    "cwd": str(self.workspace),
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        with patch("pathlib.Path.home", return_value=self.workspace):
+            data = handler._session_sources(handler)
+
+        providers = {item["provider"]: item for item in data["providers"]}
+        self.assertTrue(providers["OpenCodecs"]["available"])
+        self.assertTrue(providers["Claude Code"]["available"])
+        titles = {item["title"] for item in data["sessions"]}
+        self.assertIn("Dashboard sessions", titles)
+        self.assertIn("Claude project handoff", titles)
+        commands = {item["id"]: item["resume_command"] for item in data["sessions"]}
+        self.assertIn("codex resume codex-session", commands["codex-session"])
+        self.assertIn("claude --resume claude-session", commands["claude-session"])
 
     def test_http_pages_route_accepts_query_string(self) -> None:
         self.dashboard.DashboardHandler.workspace = self.workspace
