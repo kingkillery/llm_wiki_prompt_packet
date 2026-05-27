@@ -1,3 +1,10 @@
+---
+type: synthesis
+title: Packet Gap Closure Roadmap (2026)
+sources:
+  - internal
+---
+
 # Packet Gap Closure Roadmap (2026)
 
 > **Goal:** Turn the four strategic gaps identified in `wiki/comparisons/llm-wiki-vs-sota-memory-systems.md` into a prioritized, phased execution plan. Each experiment includes MVP scope, acceptance criteria, dependencies, and risk.

@@ -19,7 +19,7 @@
   "stack": {
     "retrieval": {
       "primary": "pk-qmd",
-      "memory": "byterover",
+      "memory": "none",
       "graph": "gitvizz"
     },
     "retrieval_planner": {
@@ -64,28 +64,6 @@
     "collection_name": "llm_wiki_prompt_packet",
     "context": "Primary llm-wiki-memory vault for C:\\dev\\Desktop-Projects\\llm_wiki_prompt_packet\\llm_wiki_prompt_packet",
     "local_dependency_manifest": ".llm-wiki/package.json"
-  },
-  "byterover": {
-    "command": "brv",
-    "api_key_env": "BYTEROVER_API_KEY",
-    "working_dir": ".brv",
-    "context_tree_dir": ".brv/context-tree",
-    "default_provider": "openrouter",
-    "default_model": "google/gemini-3.1-flash-lite-preview",
-    "query_experiment_provider": "google",
-    "query_experiment_model": "google/gemini-3.1-flash-lite-preview",
-    "curate_preferred_provider": "openrouter",
-    "curate_preferred_model": "google/gemini-3.1-flash-lite-preview",
-    "candidate_models": [
-      "google/gemini-3.1-flash-lite-preview",
-      "openai/gpt-oss-safeguard-20b",
-      "x-ai/grok-4.20-multi-agent",
-      "liquid/lfm-2.5-1.2b-thinking:free",
-      "openai/gpt-5-nano",
-      "arcee-ai/trinity-large-thinking"
-    ],
-    "query_format": "json",
-    "curate_format": "json"
   },
   "memory_controller": {
     "script_path": "scripts/llm_wiki_memory_controller.py",
@@ -170,13 +148,77 @@
       "shell": "scripts/run_llm_wiki_agent.sh",
       "cmd": "scripts/run_llm_wiki_agent.cmd"
     },
-    "wrapper_supported_agents": ["claude", "codex", "droid", "pi"],
-    "native_hook_agents": ["claude"],
+    "wrapper_supported_agents": [
+      "claude",
+      "codex",
+      "droid",
+      "pi"
+    ],
+    "native_hook_agents": [
+      "claude"
+    ],
     "commands": {
       "claude": "claude",
       "codex": "codex",
       "droid": "droid",
       "pi": "pi"
+    }
+  },
+  "wiki_layer": {
+    "vault_path": "."
+  },
+  "wiki_auto_update": {
+    "script_path": "scripts/wiki_auto_update.py",
+    "rotation_strategy": "round-robin",
+    "providers": {
+      "lmstudio": {
+        "base_url": "http://127.0.0.1:1234/v1",
+        "health_url": "http://127.0.0.1:1234/api/v1/models",
+        "api_key_env": "",
+        "note": "Local LM Studio \u2014 probed at startup, skipped if offline"
+      },
+      "siliconflow": {
+        "base_url": "https://api.siliconflow.com/v1",
+        "api_key_env": "SILICONFLOW_API_KEY"
+      },
+      "openrouter": {
+        "base_url": "https://openrouter.ai/api/v1",
+        "api_key_env": "OPENROUTER_API_KEY"
+      }
+    },
+    "model_pool": [
+      {
+        "model": "nvidia/nemotron-3-nano-4b",
+        "provider": "lmstudio",
+        "note": "local priority slot"
+      },
+      {
+        "model": "deepseek-ai/DeepSeek-V4-Flash",
+        "provider": "siliconflow"
+      },
+      {
+        "model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+        "provider": "openrouter",
+        "note": "free tier"
+      },
+      {
+        "model": "tencent/Hy3-preview",
+        "provider": "siliconflow"
+      },
+      {
+        "model": "google/gemma-4-26B-A4B-it",
+        "provider": "siliconflow"
+      }
+    ],
+    "patience": {
+      "initial_backoff_s": 5,
+      "max_backoff_s": 120,
+      "backoff_multiplier": 2.0,
+      "max_retries": 6,
+      "inter_task_pause_s": [
+        3,
+        8
+      ]
     }
   }
 }

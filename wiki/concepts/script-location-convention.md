@@ -1,3 +1,8 @@
+---
+type: concept
+title: Script Location Convention
+---
+
 # Script Location Convention
 
 ## Two locations, two purposes

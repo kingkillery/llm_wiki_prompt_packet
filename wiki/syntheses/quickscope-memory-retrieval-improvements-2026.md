@@ -1,3 +1,10 @@
+---
+type: synthesis
+title: QuickScope Memory Retrieval Improvements (2026)
+sources:
+  - internal
+---
+
 # QuickScope²: Memory Retrieval Improvements
 
 > **Goal:** Close the two verified retrieval gaps versus SOTA (recency decay + graph traversal) with the minimum surface area and zero breaking changes.

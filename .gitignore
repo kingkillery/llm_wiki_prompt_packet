@@ -33,3 +33,7 @@ support/scripts/.llm-wiki/
 .artifacts/pokemon-benchmark/
 graph/.cache/
 graph/tmp/
+
+.env
+.llm-wiki/state/
+

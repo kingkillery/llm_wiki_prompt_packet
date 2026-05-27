@@ -1,3 +1,10 @@
+---
+type: synthesis
+title: Retrieval Quality and Graph Layer (2026-04-25)
+sources:
+  - internal
+---
+
 # Retrieval Quality And Graph Layer (2026-04-25)
 
 ## Summary

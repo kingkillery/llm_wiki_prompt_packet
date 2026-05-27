@@ -1,3 +1,10 @@
+---
+type: synthesis
+title: Obsidian Wiki Update Setup Validation (2026-04-24)
+sources:
+  - internal
+---
+
 # Obsidian Wiki Update Setup Validation (2026-04-24)
 
 ## Result

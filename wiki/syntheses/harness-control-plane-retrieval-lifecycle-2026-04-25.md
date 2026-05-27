@@ -1,3 +1,10 @@
+---
+type: synthesis
+title: Harness Control Plane Retrieval Lifecycle (2026-04-25)
+sources:
+  - internal
+---
+
 # Harness Control Plane Retrieval Lifecycle (2026-04-25)
 
 ## Summary

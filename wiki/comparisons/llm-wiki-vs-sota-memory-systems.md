@@ -1,3 +1,10 @@
+---
+type: synthesis
+title: LLM Wiki vs SoTA Memory Systems
+sources:
+  - internal
+---
+
 # LLM Wiki Memory Packet vs. State-of-the-Art Memory Systems
 
 > **Scope:** Compare the `llm-wiki-memory` stack against the leading LLM/agent memory architectures as of early 2026. Draw concrete insights for where the packet should double down, where it should borrow, and where the literature validates existing design choices.

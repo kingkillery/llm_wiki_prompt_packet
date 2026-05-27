@@ -1,3 +1,71 @@
+## Auto-Update — 2026-05-27T07:27:12+00:00
+
+## Wiki Auto-Update Log
+
+- **Pages compiled:** 18 (0 pending changed sources)
+- **Lint status:** 1 error, 0 warnings, 15 info
+- **Skill registry:** update failed (API error 400: "Compute error.")
+
+**Skills registered:**
+[LLM skill summary failed: lmstudio API error 400: {"error":"Compute error."}]
+
+---
+
+## Auto-Update — 2026-05-27T07:15:56+00:00
+
+**Auto-update completed with warnings.**
+
+- Compile: 18 pages
+- Skill index: ok
+- LLM log generation error: openrouter API error 400: {"error":{"message":"deepseek/deepseek-chat-v4-flash:free is not a valid model ID","code":400},"user_id":"user_2frpuvANfjW5NjPQBhdRhOV9y3b"}
+
+
+**Skills registered:**
+[LLM skill summary failed: lmstudio API error 400: {"error":"Compute error."}]
+
+---
+
+---
+type: log
+title: Wiki Log
+---
+
+## Auto-Update — 2026-05-27T05:00:57+00:00
+
+## Wiki Update: Compilation & Registry
+
+### Compilation
+* **Pages:** 18 compiled (0 sources processed).
+* **Lint:** 16 errors, 1 warning, 15 info messages.
+
+### Skill Registry
+* Added **dry-skill-consolidation**: Automates deduplication and merging of repetitive skill definitions.
+* Added **submodule-commit-and-parent-pointer-bump**: Handles updating Git submodules and bumping parent repo references.
+* **Focus:** Repository maintenance and consistency (skill cleanup vs. versioning).
+
+**Skills registered:**
+- Registers **dry-skill-consolidation** (`skill-dry-skill-consolidation`): automates deduplication and merging of repetitive skill definitions across the registry.
+- Registers **submodule-commit-and-parent-pointer-bump** (`skill-submodule-commit-and-parent-pointer-bump`): handles the workflow for updating a Git submodule and automatically bumping the parent repo’s reference.
+- Both skills center on repository maintenance and consistency: one cleans up skill artifacts, the other manages Git submodule versioning.
+- The naming convention follows a hyphenated, imperative style (`dry-skill-consolidation`, `submodule-commit-and-parent-pointer-bump`), and each skill ID mirrors the filename prefixed with `skill-`.
+- No overlapping capabilities are observed; the two skills address distinct operational concerns within a monorepo or multi-repo setup.
+
+---
+
+## Auto-Update — 2026-05-27T04:59:00+00:00
+
+**Auto-update completed with warnings.**
+
+- Compile: 18 pages
+- Skill index: ok
+- LLM log generation error: SiliconFlow API error 401: "Api key is invalid"
+
+
+**Skills registered:**
+[LLM skill summary failed: SiliconFlow API error 401: "Api key is invalid"]
+
+---
+
 # Wiki Log
 
 ## 2026-04-25T19:40:00Z - implement: real retrieval spine

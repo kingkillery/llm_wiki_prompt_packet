@@ -1,3 +1,10 @@
+---
+type: synthesis
+title: Real Retrieval Spine (2026-04-25)
+sources:
+  - internal
+---
+
 # Real Retrieval Spine (2026-04-25)
 
 ## Summary

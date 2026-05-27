@@ -1,3 +1,10 @@
+---
+type: synthesis
+title: Agentic Memory Skill Stack Upgrade (2026)
+sources:
+  - internal
+---
+
 # Agentic Memory Skill Stack Upgrade (2026)
 
 ## Goal

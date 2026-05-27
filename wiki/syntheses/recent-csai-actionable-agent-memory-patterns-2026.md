@@ -1,3 +1,10 @@
+---
+type: synthesis
+title: Recent cs.AI Actionable Agent Memory Patterns (2026)
+sources:
+  - internal
+---
+
 # Recent cs.AI Actionable Agent Memory Patterns (2026)
 
 ## Goal

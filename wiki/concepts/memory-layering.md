@@ -1,3 +1,8 @@
+---
+type: concept
+title: Memory Layering
+---
+
 # Memory Layering
 
 The stack uses five distinct memory layers. Each has a specific store, retrieval path, and write trigger.

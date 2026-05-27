@@ -1,3 +1,10 @@
+---
+type: synthesis
+title: Retrieval Spine Hardening (2026-04-25)
+sources:
+  - internal
+---
+
 # Retrieval Spine Hardening (2026-04-25)
 
 ## Summary

@@ -23,7 +23,6 @@ This project wires four MCP servers via `.mcp.json`. Each is available as `mcp__
 | `pk-qmd` | stdio | Source evidence, docs, prompts, notes retrieval | **Always** |
 | `llm-wiki-skills` | stdio | Skill lifecycle (lookup, reflect, validate, evolve, retire) | **Always** |
 | `obsidian` | stdio (npx) | Vault read/write — the scribing surface for wiki notes | **Pivotal but optional** |
-| `brv` | stdio | Durable memory, preferences, workflow quirks | Optional |
 
 ### Obsidian: pivotal but optional
 
@@ -42,10 +41,6 @@ When `obsidian` is unavailable (desktop app not running, vault not mounted, MCP 
 3. Note any link-integrity risk — Obsidian-aware moves preserve backlinks; raw file moves do not.
 4. If the task is a rename or move, prefer pausing and asking the user to open Obsidian rather than risking broken links.
 
-### BRV: skip gracefully
-
-If `brv` has no connected provider, skip `brv query`/`brv curate` and continue with source evidence from `pk-qmd`.
-
 ## Routing
 
 - Use `pk-qmd` for repo-specific evidence and prompt or docs lookup.
@@ -54,9 +49,6 @@ If `brv` has no connected provider, skip `brv query`/`brv curate` and continue w
 - Prefer code-mode or packet CLI/provider paths for vault reads and writes; use `obsidian` MCP only when it is already available and materially cheaper.
 - Proactively offer to save source-backed findings to Obsidian when they are likely to be useful later, especially research-paper notes, resolved investigations, durable decisions, and reusable procedures.
 - Treat `agent-cli-obsidian` as the recommended Obsidian behavior layer for wiki save/query/autoresearch conventions; treat `mcpvault` or `mcp-obsidian` as the lower-level vault transport.
-- Use `brv` only for durable memory and repeated workflow knowledge.
-- If `pk-qmd` and `brv` disagree, trust current source evidence.
-- If BRV has no connected provider, skip BRV query/curate and continue with source evidence.
 - Treat `GitVizz` as the configured local graph surface.
 - Use `GitVizz` when the task is about repo structure, API surface, dependency context, or narrowing around a known folder, route, or component.
 

@@ -194,6 +194,34 @@ returncode: {returncode}
     marker_path.unlink()
 
     print(f"Draft reducer packet written: {draft_path}")
+
+    # Implicitly trigger AI reduction in background (integrating claude-mem background worker)
+    try:
+        if marker.get("goal") and not marker.get("goal", "").startswith("Launch "):
+            kwargs = {}
+            if os.name == "nt":
+                # DETACHED_PROCESS = 0x00000008
+                kwargs["creationflags"] = 0x00000008
+            else:
+                kwargs["start_new_session"] = True
+            subprocess.Popen(
+                [
+                    sys.executable,
+                    str(workspace / "scripts" / "llm_wiki_packet.py"),
+                    "reduce",
+                    "--workspace-root", str(workspace),
+                    "--run-id", draft_id,
+                    "--task", marker.get("goal", ""),
+                    "--source-file", str(draft_path),
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                **kwargs
+            )
+            print(f"Background AI reduction triggered for draft: {draft_id}")
+    except Exception as exc:
+        print(f"Failed to trigger background auto-reduction: {exc}", file=sys.stderr)
+
     return 0
 
 
@@ -229,6 +257,29 @@ def cmd_approve(args: argparse.Namespace) -> int:
     dest = packets_dir / target.name
     target.rename(dest)
     print(f"Approved: {dest}")
+
+    # Synchronously trigger promote --apply to write promoted memories to the ledger
+    try:
+        res = subprocess.run(
+            [
+                sys.executable,
+                str(workspace / "scripts" / "llm_wiki_packet.py"),
+                "promote",
+                "--workspace-root", str(workspace),
+                "--run-id", args.draft_id,
+                "--apply",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if res.returncode == 0:
+            print("Successfully promoted memory layers via promote --apply.")
+        else:
+            print(f"Promotion failed with code {res.returncode}: {res.stderr.strip()}", file=sys.stderr)
+    except Exception as exc:
+        print(f"Failed to promote memory layers: {exc}", file=sys.stderr)
+
     return 0
 
 

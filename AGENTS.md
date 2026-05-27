@@ -10,7 +10,7 @@ Before substantive work:
 2. Read `LLM_WIKI_MEMORY.md` if present.
 3. Read `SKILL_CREATION_AT_EXPERT_LEVEL.md` if present when the task touches reusable skill authoring or review.
 4. Read `.llm-wiki/config.json` if present.
-5. If `pk-qmd`, `brv`, or GitVizz are missing, run the installed setup helper before deeper work:
+5. If `pk-qmd` or GitVizz are missing, run the installed setup helper before deeper work:
    - PowerShell: `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup_llm_wiki_memory.ps1`
    - Shell: `bash ./scripts/setup_llm_wiki_memory.sh`
 6. Read `wiki/index.md`.
@@ -26,8 +26,6 @@ Codex startup uses no repo-local MCP autostart by default. Treat `llm-wiki-skill
 | `llm-wiki-skills` | Skill lifecycle (lookup, reflect, validate, evolve, retire) | Default via skill/CLI; MCP opt-in only |
 | `pk-qmd` | Source evidence via `llm-wiki-packet context/evidence` or non-Codex MCP wiring | **Always, outside Codex startup** |
 | `obsidian` | Vault read/write via provider/save CLI or non-Codex MCP wiring | **Pivotal but optional, outside Codex startup** |
-| `brv` | Durable memory via BRV CLI wrappers | Optional, outside Codex startup |
-
 ### Obsidian: pivotal but optional
 
 The `obsidian` MCP server connects to the configured Obsidian vault and provides `read_note`, `write_note`, `search_notes`, `manage_tags`, and `move_note` tools. It is the **preferred path** for all wiki scribing - creating, updating, and organizing notes.
@@ -45,10 +43,6 @@ When `obsidian` is unavailable (desktop app not running, vault not mounted, MCP 
 3. Note any link-integrity risk - Obsidian-aware moves preserve backlinks; raw file moves do not.
 4. If the task is a rename or move, prefer pausing and asking the user to open Obsidian rather than risking broken links.
 
-### BRV: skip gracefully
-
-If `brv` has no connected provider, do not rely on `brv query` or `brv curate` for task completion.
-
 ## Script locations
 
 - `support/scripts/` - source tree for all Python and shell scripts; read this for code review, debugging, or test authoring.
@@ -63,9 +57,6 @@ If `brv` has no connected provider, do not rely on `brv query` or `brv curate` f
 - Prefer code-mode or packet CLI/provider paths for vault reads and writes; use `obsidian` MCP only when it is already available and materially cheaper.
 - Proactively offer to save source-backed findings to Obsidian when they are likely to be useful later, especially research-paper notes, prior-art reviews, resolved investigations, durable decisions, and reusable procedures.
 - Treat `agent-cli-obsidian` as the recommended Obsidian behavior layer for wiki save/query/autoresearch conventions; treat `mcpvault` or `mcp-obsidian` as the lower-level vault transport.
-- Use `brv` only for durable preferences, decisions, and workflow quirks.
-- Prefer current source evidence over `brv` memory when they conflict.
-- If BRV has no connected provider, do not rely on `brv query` or `brv curate` for task completion.
 - Use configured `GitVizz` URLs for local graph and web access.
 - Use `GitVizz` when you need repo topology, API surface, route relationships, or to hone in after `pk-qmd` found the likely area.
 - Do not surface raw tool choices to end users unless asked.
@@ -146,7 +137,6 @@ Use this workspace as a KADE-HQ-backed memory workspace. Treat `AGENTS.md`, `LLM
 - Use `pk-qmd` first for source-backed repo, prompt, note, and wiki evidence when the right file or concept is not already known.
 - Prefer code-mode/direct file I/O or packet CLI/provider paths for wiki note reads, writes, moves, and tag updates; use Obsidian MCP only when it is already connected and clearly cheaper.
 - Use `llm-wiki-skills` for reusable skill lookup, reflection, validation, evolution, and retirement only when its MCP server is already available; otherwise use repo-local code-mode/CLI paths.
-- Use BRV only for durable preferences, repeated workflow quirks, and decisions; do not rely on it when no provider is connected.
 - Use GitVizz for repo topology, API surface, route relationships, and graph-oriented navigation after retrieval has identified the likely area.
 - Prefer current source evidence over memory when sources and memory conflict.
 - Start with `llm-wiki-packet context --task "..."` for a compact task bundle; use `llm-wiki-packet evidence --query "..."`, `llm-wiki-packet evidence --plane source --query "..."`, or `llm-wiki-packet context --mode deep` only when broader hybrid/source search is useful.

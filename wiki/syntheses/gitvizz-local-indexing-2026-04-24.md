@@ -1,3 +1,10 @@
+---
+type: synthesis
+title: GitVizz Local Indexing Fix (2026-04-24)
+sources:
+  - internal
+---
+
 # GitVizz Local Indexing Fix (2026-04-24)
 
 ## Summary

@@ -1,3 +1,8 @@
+---
+type: index
+title: Skills Index
+---
+
 # Skill Index
 
 ## Active
