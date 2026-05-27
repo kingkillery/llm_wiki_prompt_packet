@@ -379,9 +379,23 @@ Three opt-in HF surfaces are wired into the packet:
 
 Claude and Codex installs include lifecycle hooks for `SessionStart`, `UserPromptSubmit`, `Stop`, and `SessionEnd`. The hook records the event under `.llm-wiki/state/agent-updater/` and launches `scripts/llm_wiki_agent_updater.py` as a background updater worker.
 
-Set `SILICONFLOW_API_KEY` or `LLM_WIKI_SILICONFLOW_API_KEY` to enable the SiliconFlow extraction path. Without a key, the updater still runs and falls back to the local rule-based memory controller. Set `LLM_WIKI_UPDATER_ENABLED=0` to disable launch enforcement for a session.
+The updater is designed as a cheap context-agent lane: it extracts durable repo decisions, preferences, follow-up obligations, and useful implementation facts from agent lifecycle events. Set `SILICONFLOW_API_KEY` or `LLM_WIKI_SILICONFLOW_API_KEY` to enable the SiliconFlow extraction path. Without a key, the updater still runs and falls back to the local rule-based memory controller. Set `LLM_WIKI_UPDATER_ENABLED=0` to disable launch enforcement for a session.
 
 Use `python installers/wire_repo_agent_hooks.py --workspace <repo-root> --agents claude,codex --self-test` from a packet checkout, or `python plugins/llm-wiki-organizer/scripts/install_repo_hooks.py --workspace <repo-root> --agents claude,codex --self-test` from the plugin package, to wire an existing repo after `kade-hq` or `g-kade` bootstrap and verify the hook command can write updater state.
+
+Typical repo wiring:
+
+```powershell
+python installers\wire_repo_agent_hooks.py --workspace . --agents claude,codex --self-test
+```
+
+Plugin package wiring:
+
+```powershell
+python plugins\llm-wiki-organizer\scripts\install_repo_hooks.py --workspace . --agents claude,codex --self-test
+```
+
+Successful self-test output includes `self-test ok` and creates `.llm-wiki/state/agent-updater/hook-events.jsonl`. If live Codex sessions do not fire hooks, run the self-test first: a passing self-test means the installed hook command is valid and the remaining issue is Codex project config/trust activation, not the updater script.
 
 ### Home skill roots
 
@@ -600,7 +614,8 @@ The pipeline now keeps internal skill-learning artifacts under:
 Failure capture now has two surfaces:
 
 - Claude Code: project-local `.claude/settings.local.json` hooks record `PostToolUseFailure` and `StopFailure` automatically.
-- Claude Code, Codex, Factory Droid, and `pi`: the shared launcher wrapper `scripts/run_llm_wiki_agent.*` records non-zero CLI exits into the same failure collector, which is the intended path for Codex, Droid, and `pi`.
+- Claude Code and Codex: lifecycle updater hooks record session events and launch the background llm-wiki updater when installed with `wire_repo_agent_hooks.py --self-test`.
+- Claude Code, Codex, Factory Droid, and `pi`: the shared launcher wrapper `scripts/run_llm_wiki_agent.*` records non-zero CLI exits into the same failure collector. This remains the fallback path when a host agent does not load project hooks.
 
 The intended loop is:
 
