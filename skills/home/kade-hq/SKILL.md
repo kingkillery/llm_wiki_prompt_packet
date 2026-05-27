@@ -63,11 +63,11 @@ When bootstrapping a repo workspace, prefer:
 
 After the workspace files are present, wire Claude and Codex lifecycle hooks:
 
-- `python installers/wire_repo_agent_hooks.py --workspace <repo-root> --agents claude,codex`
+- `python installers/wire_repo_agent_hooks.py --workspace <repo-root> --agents claude,codex --self-test`
 
 If invoked from the Codex plugin package instead of the packet checkout, use:
 
-- `python plugins/llm-wiki-organizer/scripts/install_repo_hooks.py --workspace <repo-root> --agents claude,codex`
+- `python plugins/llm-wiki-organizer/scripts/install_repo_hooks.py --workspace <repo-root> --agents claude,codex --self-test`
 
 This flow should leave these KADE surfaces in place:
 

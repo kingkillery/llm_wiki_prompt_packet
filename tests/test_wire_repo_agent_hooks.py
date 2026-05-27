@@ -66,6 +66,18 @@ class WireRepoAgentHooksTests(unittest.TestCase):
         self.assertTrue((self.workspace / "scripts" / "llm_wiki_agent_updater.py").exists())
         self.assertTrue((self.workspace / "scripts" / "llm_wiki_agent_updater_hook.py").exists())
 
+    def test_self_test_exercises_installed_codex_hook(self) -> None:
+        self.module.copy_hook_scripts(self.workspace, force=False, dry_run=False)
+
+        ok, message = self.module.run_self_test(self.workspace, "codex")
+
+        self.assertTrue(ok, message)
+        state = self.workspace / ".llm-wiki" / "state" / "agent-updater"
+        self.assertTrue((state / "hook-events.jsonl").exists())
+        event = json.loads((state / "hook-events.jsonl").read_text(encoding="utf-8").splitlines()[0])
+        self.assertEqual(event["agent"], "codex")
+        self.assertEqual(event["event"], "UserPromptSubmit")
+
 
 if __name__ == "__main__":
     unittest.main()

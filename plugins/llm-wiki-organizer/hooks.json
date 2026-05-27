@@ -7,6 +7,8 @@
           {
             "type": "command",
             "command": "python \"scripts/llm_wiki_agent_updater_hook.py\" --agent codex --workspace \".\"",
+            "commandWindows": "python \"scripts\\llm_wiki_agent_updater_hook.py\" --agent codex --workspace \".\"",
+            "statusMessage": "llm-wiki updater",
             "timeout": 5
           }
         ]
@@ -18,6 +20,8 @@
           {
             "type": "command",
             "command": "python \"scripts/llm_wiki_agent_updater_hook.py\" --agent codex --workspace \".\"",
+            "commandWindows": "python \"scripts\\llm_wiki_agent_updater_hook.py\" --agent codex --workspace \".\"",
+            "statusMessage": "llm-wiki updater",
             "timeout": 5
           }
         ]
@@ -29,6 +33,8 @@
           {
             "type": "command",
             "command": "python \"scripts/llm_wiki_agent_updater_hook.py\" --agent codex --workspace \".\"",
+            "commandWindows": "python \"scripts\\llm_wiki_agent_updater_hook.py\" --agent codex --workspace \".\"",
+            "statusMessage": "llm-wiki updater",
             "timeout": 5
           }
         ]
@@ -40,6 +46,8 @@
           {
             "type": "command",
             "command": "python \"scripts/llm_wiki_agent_updater_hook.py\" --agent codex --workspace \".\"",
+            "commandWindows": "python \"scripts\\llm_wiki_agent_updater_hook.py\" --agent codex --workspace \".\"",
+            "statusMessage": "llm-wiki updater",
             "timeout": 5
           }
         ]

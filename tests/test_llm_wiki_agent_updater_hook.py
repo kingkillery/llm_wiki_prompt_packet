@@ -80,6 +80,36 @@ class AgentUpdaterHookTests(unittest.TestCase):
             self.assertEqual(run["event"], "UserPromptSubmit")
             self.assertIn(run["memory_extract"]["status"], {"ok", "failed"})
 
+    def test_codex_event_name_and_input_payload_are_supported(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            payload = {
+                "event_name": "UserPromptSubmit",
+                "input": "Remember that Codex hook payloads may use input instead of prompt.",
+            }
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(HOOK),
+                    "--workspace",
+                    str(workspace),
+                    "--agent",
+                    "codex",
+                    "--inline",
+                ],
+                input=json.dumps(payload),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            event_files = list((workspace / ".llm-wiki" / "state" / "agent-updater" / "events").glob("*.json"))
+            self.assertEqual(len(event_files), 1)
+            event = json.loads(event_files[0].read_text(encoding="utf-8"))
+            self.assertEqual(event["hook_event_name"], "UserPromptSubmit")
+
 
 if __name__ == "__main__":
     unittest.main()

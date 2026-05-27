@@ -3,20 +3,20 @@ hooks = true
 
 [[hooks.SessionStart]]
 hooks = [
-  { type = "command", command = "python \"scripts/llm_wiki_agent_updater_hook.py\" --agent codex --workspace \".\"", timeout = 5 }
+  { type = "command", command = "python \"scripts/llm_wiki_agent_updater_hook.py\" --agent codex --workspace \".\"", commandWindows = "python \"scripts\\llm_wiki_agent_updater_hook.py\" --agent codex --workspace \".\"", timeout = 5, statusMessage = "llm-wiki updater" }
 ]
 
 [[hooks.UserPromptSubmit]]
 hooks = [
-  { type = "command", command = "python \"scripts/llm_wiki_agent_updater_hook.py\" --agent codex --workspace \".\"", timeout = 5 }
+  { type = "command", command = "python \"scripts/llm_wiki_agent_updater_hook.py\" --agent codex --workspace \".\"", commandWindows = "python \"scripts\\llm_wiki_agent_updater_hook.py\" --agent codex --workspace \".\"", timeout = 5, statusMessage = "llm-wiki updater" }
 ]
 
 [[hooks.Stop]]
 hooks = [
-  { type = "command", command = "python \"scripts/llm_wiki_agent_updater_hook.py\" --agent codex --workspace \".\"", timeout = 5 }
+  { type = "command", command = "python \"scripts/llm_wiki_agent_updater_hook.py\" --agent codex --workspace \".\"", commandWindows = "python \"scripts\\llm_wiki_agent_updater_hook.py\" --agent codex --workspace \".\"", timeout = 5, statusMessage = "llm-wiki updater" }
 ]
 
 [[hooks.SessionEnd]]
 hooks = [
-  { type = "command", command = "python \"scripts/llm_wiki_agent_updater_hook.py\" --agent codex --workspace \".\"", timeout = 5 }
+  { type = "command", command = "python \"scripts/llm_wiki_agent_updater_hook.py\" --agent codex --workspace \".\"", commandWindows = "python \"scripts\\llm_wiki_agent_updater_hook.py\" --agent codex --workspace \".\"", timeout = 5, statusMessage = "llm-wiki updater" }
 ]

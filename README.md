@@ -381,7 +381,7 @@ Claude and Codex installs include lifecycle hooks for `SessionStart`, `UserPromp
 
 Set `SILICONFLOW_API_KEY` or `LLM_WIKI_SILICONFLOW_API_KEY` to enable the SiliconFlow extraction path. Without a key, the updater still runs and falls back to the local rule-based memory controller. Set `LLM_WIKI_UPDATER_ENABLED=0` to disable launch enforcement for a session.
 
-Use `python installers/wire_repo_agent_hooks.py --workspace <repo-root> --agents claude,codex` from a packet checkout, or `python plugins/llm-wiki-organizer/scripts/install_repo_hooks.py --workspace <repo-root> --agents claude,codex` from the plugin package, to wire an existing repo after `kade-hq` or `g-kade` bootstrap.
+Use `python installers/wire_repo_agent_hooks.py --workspace <repo-root> --agents claude,codex --self-test` from a packet checkout, or `python plugins/llm-wiki-organizer/scripts/install_repo_hooks.py --workspace <repo-root> --agents claude,codex --self-test` from the plugin package, to wire an existing repo after `kade-hq` or `g-kade` bootstrap and verify the hook command can write updater state.
 
 ### Home skill roots
 

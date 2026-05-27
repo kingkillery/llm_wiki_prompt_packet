@@ -38,10 +38,19 @@ def append_jsonl(path: Path, payload: dict[str, Any]) -> None:
 
 def event_text(payload: dict[str, Any]) -> str:
     parts: list[str] = []
-    for key in ("prompt", "user_prompt", "message", "transcript", "stop_reason"):
+    for key in ("prompt", "user_prompt", "userPrompt", "input", "message", "transcript", "stop_reason", "stopReason"):
         value = payload.get(key)
         if isinstance(value, str) and value.strip():
             parts.append(f"{key}: {value.strip()}")
+    messages = payload.get("messages")
+    if isinstance(messages, list):
+        for item in messages[-3:]:
+            if not isinstance(item, dict):
+                continue
+            role = item.get("role", "message")
+            content = item.get("content")
+            if isinstance(content, str) and content.strip():
+                parts.append(f"{role}: {content.strip()}")
     tool_input = payload.get("tool_input")
     if isinstance(tool_input, dict):
         for key in ("command", "description", "prompt"):

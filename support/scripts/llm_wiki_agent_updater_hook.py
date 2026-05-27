@@ -91,7 +91,13 @@ def main() -> int:
 
     workspace = Path(args.workspace).expanduser().resolve(strict=False)
     payload = load_stdin_json()
-    event = args.event or str(payload.get("hook_event_name") or payload.get("event") or "unknown")
+    event = args.event or str(
+        payload.get("hook_event_name")
+        or payload.get("hook_event")
+        or payload.get("event_name")
+        or payload.get("event")
+        or "unknown"
+    )
     payload.setdefault("hook_event_name", event)
     payload["llm_wiki_agent"] = args.agent
     payload["llm_wiki_workspace"] = str(workspace)
@@ -140,7 +146,15 @@ def main() -> int:
         f"llm-wiki updater hook recorded {event} and "
         f"{'launched updater worker' if launch.get('launched') else 'did not launch updater worker: ' + str(launch.get('reason'))}."
     )
-    print(json.dumps({"continue": True, "hookSpecificOutput": {"additionalContext": additional_context}}))
+    print(
+        json.dumps(
+            {
+                "continue": True,
+                "hookSpecificOutput": {"additionalContext": additional_context},
+                "additionalContext": additional_context,
+            }
+        )
+    )
     return 0
 
 

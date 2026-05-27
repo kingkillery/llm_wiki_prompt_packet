@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
+import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -50,6 +53,12 @@ def command_for(agent: str) -> str:
     if agent == "claude":
         return 'python "$CLAUDE_PROJECT_DIR/scripts/llm_wiki_agent_updater_hook.py" --agent claude --workspace "$CLAUDE_PROJECT_DIR"'
     return 'python "scripts/llm_wiki_agent_updater_hook.py" --agent codex --workspace "."'
+
+
+def command_windows_for(agent: str) -> str:
+    if agent == "claude":
+        return 'python "%CLAUDE_PROJECT_DIR%\\scripts\\llm_wiki_agent_updater_hook.py" --agent claude --workspace "%CLAUDE_PROJECT_DIR%"'
+    return 'python "scripts\\llm_wiki_agent_updater_hook.py" --agent codex --workspace "."'
 
 
 def claude_hook_block() -> dict[str, list[dict[str, list[dict[str, object]]]]]:
@@ -106,12 +115,13 @@ def codex_managed_block() -> str:
         MANAGED_START,
     ]
     command = json.dumps(command_for("codex"))
+    command_windows = json.dumps(command_windows_for("codex"))
     for event in CODEX_EVENTS:
         lines.extend(
             [
                 f"[[hooks.{event}]]",
                 "hooks = [",
-                f'  {{ type = "command", command = {command}, timeout = 5 }}',
+                f'  {{ type = "command", command = {command}, commandWindows = {command_windows}, timeout = 5, statusMessage = "llm-wiki updater" }}',
                 "]",
                 "",
             ]
@@ -173,6 +183,43 @@ def merge_codex_config(workspace: Path, *, dry_run: bool) -> list[str]:
     return [f"write  {config_path} (Codex hooks){suffix}"]
 
 
+def run_self_test(workspace: Path, agent: str) -> tuple[bool, str]:
+    hook = workspace / "scripts" / "llm_wiki_agent_updater_hook.py"
+    if not hook.exists():
+        return False, f"missing hook script: {hook}"
+    payload = {
+        "hook_event_name": "UserPromptSubmit",
+        "prompt": "Remember that llm-wiki updater hooks should stay wired for Claude and Codex.",
+        "source": "wire_repo_agent_hooks self-test",
+    }
+    env = dict(os.environ)
+    env["LLM_WIKI_UPDATER_ENABLED"] = "0"
+    completed = subprocess.run(
+        [sys.executable, str(hook), "--workspace", str(workspace), "--agent", agent],
+        input=json.dumps(payload),
+        text=True,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        cwd=str(workspace),
+        env=env,
+        timeout=20,
+        check=False,
+    )
+    if completed.returncode != 0:
+        return False, f"hook exited {completed.returncode}: {completed.stderr.strip()[:500]}"
+    state_file = workspace / ".llm-wiki" / "state" / "agent-updater" / "hook-events.jsonl"
+    if not state_file.exists():
+        return False, f"hook returned success but did not write {state_file}"
+    try:
+        response = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        return False, f"hook stdout was not JSON: {exc}: {completed.stdout[:500]}"
+    if response.get("continue") is not True:
+        return False, f"hook response did not allow continuation: {completed.stdout[:500]}"
+    return True, f"self-test ok ({agent}); state={state_file}"
+
+
 def normalize_agents(raw: str) -> list[str]:
     agents = [item.strip().lower() for item in raw.split(",") if item.strip()]
     invalid = [item for item in agents if item not in {"claude", "codex"}]
@@ -187,6 +234,7 @@ def main() -> int:
     parser.add_argument("--agents", default="claude,codex", help="Comma-separated agents: claude,codex")
     parser.add_argument("--force", action="store_true", help="Overwrite existing hook scripts and invalid Claude settings.")
     parser.add_argument("--dry-run", action="store_true", help="Print planned actions without writing files.")
+    parser.add_argument("--self-test", action="store_true", help="After writing, invoke the installed hook with a Codex-style payload.")
     args = parser.parse_args()
 
     workspace = Path(args.workspace).expanduser().resolve()
@@ -200,6 +248,13 @@ def main() -> int:
         actions.extend(merge_claude_settings(workspace, force=args.force, dry_run=args.dry_run))
     if "codex" in agents:
         actions.extend(merge_codex_config(workspace, dry_run=args.dry_run))
+    if args.self_test and not args.dry_run:
+        for agent in agents:
+            ok, message = run_self_test(workspace, agent)
+            actions.append(("ok     " if ok else "fail   ") + message)
+            if not ok:
+                print("\n".join(actions))
+                return 1
     print("\n".join(actions))
     return 0
 
