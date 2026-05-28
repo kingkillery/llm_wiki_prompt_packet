@@ -31,6 +31,8 @@ npm-debug.log*
 .llm-wiki/memory-ledger/index.json
 support/scripts/.llm-wiki/
 .artifacts/pokemon-benchmark/
+.artifacts/*.log
+.artifacts/*.err
 graph/.cache/
 graph/tmp/
 
