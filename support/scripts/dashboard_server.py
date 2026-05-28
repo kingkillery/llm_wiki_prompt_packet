@@ -27,6 +27,11 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from skill_index import ensure_index
 
+try:
+    from ouroboros_adapter import discover_ouroboros_sessions
+except Exception:
+    discover_ouroboros_sessions = None
+
 
 class DashboardHandler(BaseHTTPRequestHandler):
     workspace: Path = Path.cwd()
@@ -570,6 +575,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         ):
             providers.append(status)
             sessions.extend(items)
+        if discover_ouroboros_sessions:
+            status, items = discover_ouroboros_sessions(self.workspace, Path.home(), self.session_scan_limit)
+        else:
+            status, items = {"provider": "Ouroboros", "available": False, "message": "Adapter unavailable"}, []
+        providers.append(status)
+        sessions.extend(items)
         sessions.sort(key=lambda item: item.get("updated_at", 0), reverse=True)
         return {"providers": providers, "sessions": sessions[:200]}
 

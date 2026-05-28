@@ -241,6 +241,33 @@ class TestDashboardServer(unittest.TestCase):
         self.assertIn("codex resume codex-session", commands["codex-session"])
         self.assertIn("claude --resume claude-session", commands["claude-session"])
 
+    def test_session_sources_reads_ouroboros_state(self) -> None:
+        handler = self.dashboard.DashboardHandler
+        handler.workspace = self.workspace
+        ouroboros_file = self.workspace / ".ouroboros" / "runs" / "ouroboros-session.jsonl"
+        ouroboros_file.parent.mkdir(parents=True)
+        ouroboros_file.write_text(
+            json.dumps(
+                {
+                    "session_id": "ouroboros-session",
+                    "cwd": str(self.workspace),
+                    "title": "Ouroboros planning loop",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        with patch("pathlib.Path.home", return_value=self.workspace):
+            data = handler._session_sources(handler)
+
+        providers = {item["provider"]: item for item in data["providers"]}
+        self.assertTrue(providers["Ouroboros"]["available"])
+        sessions = {item["id"]: item for item in data["sessions"]}
+        self.assertIn("ouroboros-session", sessions)
+        self.assertEqual(sessions["ouroboros-session"]["title"], "Ouroboros planning loop")
+        self.assertEqual(sessions["ouroboros-session"]["status"], "detected")
+
     def test_http_pages_route_accepts_query_string(self) -> None:
         self.dashboard.DashboardHandler.workspace = self.workspace
         server = self.dashboard.HTTPServer(("127.0.0.1", 0), self.dashboard.DashboardHandler)
