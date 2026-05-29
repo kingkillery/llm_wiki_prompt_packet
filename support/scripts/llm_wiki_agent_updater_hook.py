@@ -146,15 +146,18 @@ def main() -> int:
         f"llm-wiki updater hook recorded {event} and "
         f"{'launched updater worker' if launch.get('launched') else 'did not launch updater worker: ' + str(launch.get('reason'))}."
     )
-    print(
-        json.dumps(
-            {
-                "continue": True,
-                "hookSpecificOutput": {"additionalContext": additional_context},
-                "additionalContext": additional_context,
-            }
-        )
-    )
+    # Claude Code requires `hookEventName` inside `hookSpecificOutput` whenever
+    # it is present, and only UserPromptSubmit / SessionStart / PostToolUse
+    # support injecting `additionalContext`. For other events (Stop, SessionEnd,
+    # SubagentStop, ...) emit a bare `continue` so output validation passes.
+    context_events = {"UserPromptSubmit", "SessionStart", "PostToolUse"}
+    output: dict[str, Any] = {"continue": True}
+    if event in context_events:
+        output["hookSpecificOutput"] = {
+            "hookEventName": event,
+            "additionalContext": additional_context,
+        }
+    print(json.dumps(output))
     return 0
 
 
