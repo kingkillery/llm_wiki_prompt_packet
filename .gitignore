@@ -39,6 +39,8 @@ graph/tmp/
 .env
 .llm-wiki/state/
 .llm-wiki/dashboard-wiki-projects.json
+.pi/context-cache/
+.pi/context-manifest.json
 
 # Temporary provider debug scripts
 test_openrouter*.py

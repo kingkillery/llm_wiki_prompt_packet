@@ -377,9 +377,15 @@ Three opt-in HF surfaces are wired into the packet:
 
 ### Lifecycle updater hooks
 
-Claude and Codex installs include lifecycle hooks for `SessionStart`, `UserPromptSubmit`, `Stop`, and `SessionEnd`. The hook records the event under `.llm-wiki/state/agent-updater/` and launches `scripts/llm_wiki_agent_updater.py` as a background updater worker.
+Claude installs include lifecycle hooks for `SessionStart`, `UserPromptSubmit`, `PostToolUse`, `Stop`, and `SessionEnd`. Codex installs include lifecycle hooks for `SessionStart`, `UserPromptSubmit`, `Stop`, and `SessionEnd`. Lifecycle events launch `scripts/llm_wiki_agent_updater.py` as a background updater worker. Claude `PostToolUse` is context-layer-only: it records bounded tool-observation jobs without launching the updater worker.
 
 The updater is designed as a cheap context-agent lane: it extracts durable repo decisions, preferences, follow-up obligations, and useful implementation facts from agent lifecycle events. Set `SILICONFLOW_API_KEY` or `LLM_WIKI_SILICONFLOW_API_KEY` to enable SiliconFlow, and set `OPENROUTER_API_KEY` or `LLM_WIKI_OPENROUTER_API_KEY` to enable OpenRouter. By default the updater tries `siliconflow,openrouter`, then falls back to the local rule-based memory controller. Override that order with `LLM_WIKI_CONTEXT_PROVIDERS=openrouter,siliconflow` or force only OpenRouter with `LLM_WIKI_CONTEXT_PROVIDERS=openrouter`. Set `LLM_WIKI_UPDATER_ENABLED=0` to disable launch enforcement for a session.
+
+Hooks also write a shared context-layer handoff protocol under `.llm-wiki/state/context-layer/`:
+
+- `events.jsonl` records hook events seen by Claude, Codex, and compatible agents.
+- `manifest.json` tracks event counts, queue depth, cache/worker counters, recent jobs, and the last event.
+- `queue/*.json` stores context-worker jobs for prompts or tool observations that reference paths, URLs, media, long context, or observed Claude tool use.
 
 Useful cheap-context model overrides:
 
@@ -632,7 +638,7 @@ The pipeline now keeps internal skill-learning artifacts under:
 Failure capture now has two surfaces:
 
 - Claude Code: project-local `.claude/settings.local.json` hooks record `PostToolUseFailure` and `StopFailure` automatically.
-- Claude Code and Codex: lifecycle updater hooks record session events and launch the background llm-wiki updater when installed with `wire_repo_agent_hooks.py --self-test`.
+- Claude Code and Codex: lifecycle updater hooks record session events and launch the background llm-wiki updater when installed with `wire_repo_agent_hooks.py --self-test`. Claude Code also records successful `PostToolUse` events for lightweight tool-observation context.
 - Claude Code, Codex, Factory Droid, and `pi`: the shared launcher wrapper `scripts/run_llm_wiki_agent.*` records non-zero CLI exits into the same failure collector. This remains the fallback path when a host agent does not load project hooks.
 
 The intended loop is:

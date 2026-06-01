@@ -1,0 +1,21 @@
+{
+  "name": "pi-context-layer",
+  "version": "0.1.0",
+  "description": "Pi extension for cheap context-worker compression, caching, and context injection.",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "context"
+  ],
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-agent-core": "*",
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}

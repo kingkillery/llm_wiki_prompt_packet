@@ -58,6 +58,41 @@ class WireRepoAgentHooksTests(unittest.TestCase):
         self.assertEqual(parsed["permissions"], {"allow": ["Read"]})
         self.assertIn("UserPromptSubmit", parsed["hooks"])
         self.assertIn("llm_wiki_agent_updater_hook.py", parsed["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"])
+        self.assertIn("PostToolUse", parsed["hooks"])
+        self.assertEqual(parsed["hooks"]["PostToolUse"][0]["matcher"], "*")
+        self.assertIn("llm_wiki_agent_updater_hook.py", parsed["hooks"]["PostToolUse"][0]["hooks"][0]["command"])
+
+    def test_claude_settings_merge_preserves_existing_post_tool_use_hooks(self) -> None:
+        settings_path = self.workspace / ".claude" / "settings.json"
+        settings_path.parent.mkdir(parents=True)
+        settings_path.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "PostToolUse": [
+                            {
+                                "matcher": "Read",
+                                "hooks": [
+                                    {"type": "command", "command": "echo custom"}
+                                ],
+                            }
+                        ]
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        self.module.merge_claude_settings(self.workspace, force=False, dry_run=False)
+        self.module.merge_claude_settings(self.workspace, force=False, dry_run=False)
+
+        parsed = json.loads(settings_path.read_text(encoding="utf-8"))
+        post_groups = parsed["hooks"]["PostToolUse"]
+        self.assertEqual(len(post_groups), 2)
+        self.assertEqual(post_groups[0]["matcher"], "Read")
+        self.assertEqual(post_groups[0]["hooks"][0]["command"], "echo custom")
+        self.assertEqual(post_groups[1]["matcher"], "*")
+        self.assertIn("llm_wiki_agent_updater_hook.py", post_groups[1]["hooks"][0]["command"])
 
     def test_copy_hook_scripts_installs_worker_and_hook(self) -> None:
         actions = self.module.copy_hook_scripts(self.workspace, force=False, dry_run=False)

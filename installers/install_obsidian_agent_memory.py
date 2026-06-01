@@ -1442,7 +1442,7 @@ def build_stack_config(args: argparse.Namespace) -> dict[str, object]:
             "worker_script_path": "scripts/llm_wiki_agent_updater.py",
             "state_dir": ".llm-wiki/state/agent-updater",
             "agents": ["claude", "codex"],
-            "events": ["SessionStart", "UserPromptSubmit", "Stop", "SessionEnd", "SubagentStop", "TaskCompleted"],
+            "events": ["SessionStart", "UserPromptSubmit", "PostToolUse", "Stop", "SessionEnd", "SubagentStop", "TaskCompleted"],
             "provider": {
                 "default": "siliconflow",
                 "api_key_env": "SILICONFLOW_API_KEY",

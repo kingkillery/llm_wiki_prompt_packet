@@ -13,7 +13,7 @@ from pathlib import Path
 
 PACKET_ROOT = Path(__file__).resolve().parents[1]
 HOOK_SCRIPT_NAMES = ("llm_wiki_agent_updater.py", "llm_wiki_agent_updater_hook.py")
-CLAUDE_EVENTS = ("SessionStart", "UserPromptSubmit", "Stop", "SessionEnd")
+CLAUDE_EVENTS = ("SessionStart", "UserPromptSubmit", "PostToolUse", "Stop", "SessionEnd")
 CODEX_EVENTS = ("SessionStart", "UserPromptSubmit", "Stop", "SessionEnd")
 MANAGED_START = "# llm-wiki-agent-updater:start"
 MANAGED_END = "# llm-wiki-agent-updater:end"
@@ -61,11 +61,12 @@ def command_windows_for(agent: str) -> str:
     return 'python "scripts\\llm_wiki_agent_updater_hook.py" --agent codex --workspace "."'
 
 
-def claude_hook_block() -> dict[str, list[dict[str, list[dict[str, object]]]]]:
+def claude_hook_block() -> dict[str, list[dict[str, object]]]:
     command = command_for("claude")
     return {
         event: [
             {
+                **({"matcher": "*"} if event == "PostToolUse" else {}),
                 "hooks": [
                     {
                         "type": "command",
@@ -77,6 +78,33 @@ def claude_hook_block() -> dict[str, list[dict[str, list[dict[str, object]]]]]:
         ]
         for event in CLAUDE_EVENTS
     }
+
+
+def is_managed_claude_hook(hook: object) -> bool:
+    if not isinstance(hook, dict):
+        return False
+    command = hook.get("command")
+    return isinstance(command, str) and "llm_wiki_agent_updater_hook.py" in command and "--agent claude" in command
+
+
+def remove_managed_claude_hooks(groups: object) -> list[dict[str, object]]:
+    if not isinstance(groups, list):
+        return []
+    cleaned: list[dict[str, object]] = []
+    for group in groups:
+        if not isinstance(group, dict):
+            continue
+        hooks = group.get("hooks")
+        if not isinstance(hooks, list):
+            cleaned.append(dict(group))
+            continue
+        filtered_hooks = [hook for hook in hooks if not is_managed_claude_hook(hook)]
+        if not filtered_hooks:
+            continue
+        replacement = dict(group)
+        replacement["hooks"] = filtered_hooks
+        cleaned.append(replacement)
+    return cleaned
 
 
 def merge_claude_settings(workspace: Path, *, force: bool, dry_run: bool) -> list[str]:
@@ -96,8 +124,9 @@ def merge_claude_settings(workspace: Path, *, force: bool, dry_run: bool) -> lis
     changed = False
     for event, desired_groups in managed.items():
         current_groups = merged_hooks.get(event)
-        if current_groups != desired_groups:
-            merged_hooks[event] = desired_groups
+        desired_event_groups = [*remove_managed_claude_hooks(current_groups), *desired_groups]
+        if current_groups != desired_event_groups:
+            merged_hooks[event] = desired_event_groups
             changed = True
     existing["hooks"] = merged_hooks
     if not changed and settings_path.exists():
